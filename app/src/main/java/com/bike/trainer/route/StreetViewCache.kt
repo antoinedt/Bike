@@ -39,6 +39,9 @@ object StreetViewCache {
         return File(base, "svcache").apply { if (!exists()) mkdirs() }
     }
 
+    /** Root folder holding every route's cached frames (for backup/restore). */
+    fun cacheRoot(context: Context): File = baseDir(context)
+
     fun routeDir(context: Context, routeId: String): File =
         File(baseDir(context), sanitize(routeId)).apply { if (!exists()) mkdirs() }
 

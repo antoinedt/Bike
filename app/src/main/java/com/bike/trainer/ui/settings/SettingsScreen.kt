@@ -62,25 +62,30 @@ fun SettingsScreen(onBack: () -> Unit) {
     var showStravaDialog by remember { mutableStateOf(false) }
 
     val backupExport = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("application/json"),
+        ActivityResultContracts.CreateDocument("application/zip"),
     ) { uri: Uri? ->
         if (uri != null) scope.launch {
-            val json = ServiceLocator.backupManager.export()
             val ok = withContext(Dispatchers.IO) {
-                runCatching { context.contentResolver.openOutputStream(uri)?.use { it.write(json.toByteArray()) } }.isSuccess
+                runCatching {
+                    context.contentResolver.openOutputStream(uri)?.use {
+                        ServiceLocator.backupManager.exportZip(context, it)
+                    }
+                }.isSuccess
             }
-            Toast.makeText(context, if (ok) "Settings backed up" else "Backup failed", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, if (ok) "Backed up (settings + routes + Street View)" else "Backup failed", Toast.LENGTH_SHORT).show()
         }
     }
     val backupRestore = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
     ) { uri: Uri? ->
         if (uri != null) scope.launch {
-            val text = withContext(Dispatchers.IO) {
-                runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytes().decodeToString() } }.getOrNull()
+            val bytes = withContext(Dispatchers.IO) {
+                runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
             }
-            val ok = text != null && ServiceLocator.backupManager.import(text)
-            Toast.makeText(context, if (ok) "Settings restored" else "Couldn't restore that file", Toast.LENGTH_LONG).show()
+            val ok = bytes != null && withContext(Dispatchers.IO) {
+                runCatching { ServiceLocator.backupManager.importAuto(context, bytes) }.getOrDefault(false)
+            }
+            Toast.makeText(context, if (ok) "Restored" else "Couldn't restore that file", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -170,15 +175,16 @@ fun SettingsScreen(onBack: () -> Unit) {
             Text("Backup", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(6.dp))
             Text(
-                "Save riders, stats and keys to a file (pick Google Drive in the save " +
-                    "dialog), then restore after an update or reinstall.",
+                "Save riders, stats, keys, your GPX routes and prefetched Street View " +
+                    "frames to one .zip (pick Google Drive in the save dialog), then " +
+                    "restore after an update or reinstall.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { backupExport.launch("bike-settings-backup.json") }) { Text("Back up") }
-                OutlinedButton(onClick = { backupRestore.launch(arrayOf("application/json", "*/*")) }) { Text("Restore") }
+                OutlinedButton(onClick = { backupExport.launch("bike-backup.zip") }) { Text("Back up") }
+                OutlinedButton(onClick = { backupRestore.launch(arrayOf("application/zip", "application/json", "*/*")) }) { Text("Restore") }
             }
         }
         Spacer(Modifier.height(24.dp))

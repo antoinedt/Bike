@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Route
 import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Slider
 import androidx.compose.material3.DropdownMenuItem
@@ -274,6 +275,7 @@ private fun PrefetchDialog(file: java.io.File, onDismiss: () -> Unit) {
 
     var route by remember { mutableStateOf<Route?>(null) }
     var spacing by remember { mutableStateOf(20f) }
+    var reuse by remember { mutableStateOf(true) }
     var running by remember { mutableStateOf(false) }
     var progress by remember { mutableStateOf<StreetViewPrefetcher.Progress?>(null) }
     var status by remember { mutableStateOf<String?>(null) }
@@ -334,6 +336,15 @@ private fun PrefetchDialog(file: java.io.File, onDismiss: () -> Unit) {
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    if (existing != null) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = reuse, onCheckedChange = { reuse = it }, enabled = !running)
+                            Text(
+                                "Reuse already-downloaded frames",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
                     val p = progress
                     if (p != null) {
                         Spacer(Modifier.height(12.dp))
@@ -365,6 +376,7 @@ private fun PrefetchDialog(file: java.io.File, onDismiss: () -> Unit) {
                         val result = StreetViewPrefetcher.prefetch(
                             context, r, routeId, spacing.toDouble(),
                             com.bike.trainer.BuildConfig.MAPS_API_KEY,
+                            reuseExisting = reuse,
                         ) { progress = it }
                         running = false
                         status = when (result) {

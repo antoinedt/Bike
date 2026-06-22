@@ -9,6 +9,7 @@ import okhttp3.Request
 import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.TimeUnit
+import kotlin.math.abs
 
 /**
  * Downloads Street View **Static** API frames along a route and writes a
@@ -45,14 +46,27 @@ object StreetViewPrefetcher {
         routeId: String,
         spacingMeters: Double,
         apiKey: String,
+        reuseExisting: Boolean = true,
         onProgress: (Progress) -> Unit,
     ): Result = withContext(Dispatchers.IO) {
         if (apiKey.isBlank()) return@withContext Result.Error("No Google Maps API key in this build")
         val dir = StreetViewCache.routeDir(context, routeId)
-        dir.listFiles()?.forEach { it.delete() }
+
+        // Frames already on disk we can reuse (same route, file present). When
+        // re-fetching at a finer spacing, points that coincide with the old grid
+        // are reused; only the genuinely new in-between points are downloaded.
+        val previous = if (reuseExisting) {
+            StreetViewCache.load(context, routeId)?.takeIf {
+                it.routeFingerprint.isEmpty() || it.routeFingerprint == StreetViewCache.fingerprint(route)
+            }
+        } else null
+        val reusable = previous?.samples?.filter { it.file != null && File(dir, it.file).exists() } ?: emptyList()
+        val reuseRadius = spacingMeters * 0.5
+        if (previous == null) dir.listFiles()?.forEach { it.delete() }
 
         val n = sampleCount(route.totalDistance, spacingMeters)
         val samples = ArrayList<StreetViewSample>(n)
+        val referenced = HashSet<String>()
         var withImage = 0
         try {
             for (i in 0 until n) {
@@ -60,16 +74,32 @@ object StreetViewPrefetcher {
                 val dist = (i * spacingMeters).coerceAtMost(route.totalDistance)
                 val p = route.pointAt(dist)
                 val headingDeg = Math.toDegrees(p.heading)
-                val fileName = "%05d.jpg".format(i)
-                val saved = if (hasCoverage(p.lat, p.lon, apiKey)) {
-                    downloadImage(p.lat, p.lon, headingDeg, apiKey, File(dir, fileName))
-                } else false
-                if (saved) withImage++
-                samples.add(StreetViewSample(distance = dist, file = if (saved) fileName else null))
+
+                val nearby = reusable.minByOrNull { abs(it.distance - dist) }
+                    ?.takeIf { abs(it.distance - dist) <= reuseRadius }
+                val fileName: String? = when {
+                    nearby?.file != null -> nearby.file
+                    hasCoverage(p.lat, p.lon, apiKey) -> {
+                        val dest = freshFile(dir)
+                        if (downloadImage(p.lat, p.lon, headingDeg, apiKey, dest)) dest.name
+                        else { dest.delete(); null }
+                    }
+                    else -> null
+                }
+                if (fileName != null) {
+                    withImage++
+                    referenced.add(fileName)
+                }
+                samples.add(StreetViewSample(distance = dist, file = fileName))
                 onProgress(Progress(done = i + 1, total = n, withImage = withImage))
             }
         } catch (e: Exception) {
             return@withContext Result.Error(e.message ?: "Prefetch failed")
+        }
+
+        // Drop any old frames the new manifest no longer references.
+        dir.listFiles()?.forEach { f ->
+            if (f.name != "manifest.json" && f.name !in referenced) f.delete()
         }
 
         if (withImage == 0) {
@@ -84,6 +114,16 @@ object StreetViewPrefetcher {
         )
         StreetViewCache.save(context, manifest)
         Result.Success(manifest)
+    }
+
+    /** A cache filename that doesn't collide with frames kept from a previous fetch. */
+    private fun freshFile(dir: File): File {
+        var n = 0
+        while (true) {
+            val f = File(dir, "f%06d.jpg".format(n))
+            if (!f.exists()) return f
+            n++
+        }
     }
 
     private fun hasCoverage(lat: Double, lon: Double, key: String): Boolean = runCatching {
