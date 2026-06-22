@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -52,6 +53,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bike.trainer.data.RiderSettings
@@ -86,23 +88,24 @@ fun HomeScreen(
     val settings by settingsRepo.settings.collectAsStateWithLifecycle(initialValue = RiderSettings())
     val activeEntry by profileRepo.active.collectAsStateWithLifecycle(initialValue = null)
 
-    val startRide: (Route) -> Unit = { route ->
+    val startRide: (Route, Double) -> Unit = { route, startMeters ->
         ServiceLocator.activeRide = RideEngine(
             route = route,
             trainer = trainer,
             riderMassKg = activeEntry?.profile?.weightKg ?: 75.0,
             gears = VirtualGears(gearCount = settings.gearCount),
             heartRateManager = hrm,
+            startDistanceMeters = startMeters,
         )
         onStartRide()
     }
 
-    fun loadAndStart(name: String, id: String?, open: () -> java.io.InputStream?) {
+    fun loadAndStart(name: String, id: String?, startMeters: Double, open: () -> java.io.InputStream?) {
         scope.launch {
             val route = withContext(Dispatchers.IO) {
                 runCatching { open()?.use { GpxImporter.import(name, it, id) } }.getOrNull()
             }
-            if (route != null) startRide(route)
+            if (route != null) startRide(route, startMeters)
             else Toast.makeText(context, "Couldn't read that GPX route", Toast.LENGTH_LONG).show()
         }
     }
@@ -111,6 +114,7 @@ fun HomeScreen(
     var selectedGpx by remember { mutableStateOf<java.io.File?>(null) }
     var menuExpanded by remember { mutableStateOf(false) }
     var prefetchFor by remember { mutableStateOf<java.io.File?>(null) }
+    var startKm by remember { mutableStateOf("") }
 
     fun refreshGpx(select: java.io.File? = null) {
         scope.launch {
@@ -221,13 +225,25 @@ fun HomeScreen(
                 }
             }
 
+            if (selectedGpx != null) {
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = startKm,
+                    onValueChange = { s -> startKm = s.filter { it.isDigit() || it == '.' } },
+                    label = { Text("Start at km (optional)") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
                     enabled = selectedGpx != null,
                     onClick = {
                         val file = selectedGpx ?: return@Button
-                        loadAndStart(RouteLibrary.prettyName(file), file.nameWithoutExtension) {
+                        val startMeters = (startKm.toDoubleOrNull() ?: 0.0).coerceAtLeast(0.0) * 1000.0
+                        loadAndStart(RouteLibrary.prettyName(file), file.nameWithoutExtension, startMeters) {
                             java.io.FileInputStream(file)
                         }
                     },
@@ -253,7 +269,7 @@ fun HomeScreen(
         Spacer(Modifier.height(8.dp))
         Button(
             modifier = Modifier.fillMaxWidth(),
-            onClick = { startRide(RouteGenerator.generate(difficulty = settings.difficulty)) },
+            onClick = { startRide(RouteGenerator.generate(difficulty = settings.difficulty), 0.0) },
         ) {
             Icon(Icons.Filled.DirectionsBike, contentDescription = null)
             Text("  Start Random Ride", fontWeight = FontWeight.Bold)

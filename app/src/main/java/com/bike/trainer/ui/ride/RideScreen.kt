@@ -137,21 +137,21 @@ fun RideScreen(
                 // Prefetched frames: smooth, offline, no live panorama reloads.
                 CachedStreetView(
                     manifest = svManifest,
-                    distanceMeters = state.distanceMeters,
+                    distanceMeters = state.lapPositionMeters,
                     speedKmh = state.speedKmh,
                     modifier = Modifier.fillMaxSize(),
                 )
             } else if (googleStreet) {
                 StreetViewScene(
                     route = engine.route,
-                    distanceMeters = state.distanceMeters,
+                    distanceMeters = state.lapPositionMeters,
                     smoothTransitions = smoothTransitions,
                     modifier = Modifier.fillMaxSize(),
                 )
             } else {
                 MapSceneView(
                     route = engine.route,
-                    distanceMeters = state.distanceMeters,
+                    distanceMeters = state.lapPositionMeters,
                     mapTilesKey = appConfig?.mapTilesKey.orEmpty(),
                     streetLevel = streetLevel,
                     modifier = Modifier.fillMaxSize(),
@@ -300,7 +300,7 @@ fun RideScreen(
         // ---- Elevation profile ----
         ElevationProfileView(
             route = engine.route,
-            distanceMeters = state.distanceMeters,
+            distanceMeters = state.lapPositionMeters,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(90.dp)

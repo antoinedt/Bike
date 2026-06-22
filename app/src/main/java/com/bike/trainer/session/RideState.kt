@@ -5,6 +5,8 @@ data class RideState(
     val status: RideStatus = RideStatus.NotStarted,
     val elapsedSeconds: Long = 0L,
     val distanceMeters: Double = 0.0,
+    /** Position along the route (0..totalDistance); wraps when the route loops. */
+    val lapPositionMeters: Double = 0.0,
     val totalDistanceMeters: Double = 0.0,
     val speedKmh: Double = 0.0,
     val powerWatts: Int = 0,
@@ -22,7 +24,7 @@ data class RideState(
 ) {
     val progressFraction: Float
         get() = if (totalDistanceMeters > 0) {
-            (distanceMeters / totalDistanceMeters).toFloat().coerceIn(0f, 1f)
+            (lapPositionMeters / totalDistanceMeters).toFloat().coerceIn(0f, 1f)
         } else 0f
 }
 

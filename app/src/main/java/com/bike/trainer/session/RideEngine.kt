@@ -29,7 +29,13 @@ class RideEngine(
     private val bikeMassKg: Double = 8.0,
     val gears: VirtualGears = VirtualGears(),
     private val heartRateManager: HeartRateManager? = null,
+    /** Where on the route to begin (metres); the route loops, so this just offsets the start. */
+    startDistanceMeters: Double = 0.0,
 ) {
+    /** Absolute travelled distance (monotonic, includes the start offset). */
+    private var distance = startDistanceMeters.coerceAtLeast(0.0)
+    private val startDistance = distance
+
     private val _state = MutableStateFlow(initialState())
     val state: StateFlow<RideState> = _state.asStateFlow()
 
@@ -37,20 +43,29 @@ class RideEngine(
 
     private var loop: Job? = null
     private var speedMs = 0.0
-    private var distance = 0.0
     private var elapsedMs = 0L
     private var energyJoules = 0.0
     private var lastRecordedSecond = -1L
+
+    /** Position along the route, wrapped into [0, totalDistance). */
+    private fun lapPos(): Double {
+        val total = route.totalDistance
+        return if (total > 0) distance.mod(total) else distance
+    }
+
+    /** Distance ridden this session (for the HUD / recording). */
+    private fun ridden(): Double = distance - startDistance
 
     private fun initialState(): RideState = RideState(
         status = RideStatus.NotStarted,
         totalDistanceMeters = route.totalDistance,
         totalAscentMeters = route.totalAscent,
-        elevationMeters = route.elevationAt(0.0),
+        lapPositionMeters = lapPos(),
+        elevationMeters = route.elevationAt(lapPos()),
         gear = gears.current,
         gearCount = gears.gearCount,
         gearRatio = gears.displayRatio(),
-        gradePercent = CyclingPhysics.gradeToPercent(route.gradeAt(0.0)),
+        gradePercent = CyclingPhysics.gradeToPercent(route.gradeAt(lapPos())),
     )
 
     fun start(scope: CoroutineScope) {
@@ -72,7 +87,7 @@ class RideEngine(
     private fun tick(dt: Double) {
         val data = trainer.trainerData.value
         val totalMass = riderMassKg + bikeMassKg
-        val terrainGrade = route.gradeAt(distance)
+        val terrainGrade = route.gradeAt(lapPos())
         val connected = trainer.connectionState.value == TrainerConnectionState.Connected
         // Prefer a dedicated HR strap if connected; otherwise use the trainer's.
         val heartRate = heartRateManager?.heartRate?.value?.takeIf { it > 0 } ?: data.heartRate
@@ -106,24 +121,22 @@ class RideEngine(
         distance += CyclingPhysics.distanceStep(speedMs, dt)
         elapsedMs += (dt * 1000).toLong()
         energyJoules += power * dt
-
-        if (distance >= route.totalDistance) {
-            distance = route.totalDistance
-            finish()
-            return
-        }
+        // The route loops: on reaching the end we wrap back to the start and keep
+        // going (the rider ends a ride with the Finish button, not by distance).
 
         // Resistance the trainer should apply = terrain plus the gear offset.
         pushGradeToTrainer()
 
         val elapsedSeconds = elapsedMs / 1000
         val avgPower = if (elapsedSeconds > 0) (energyJoules / elapsedSeconds).toInt() else 0
-        val point = route.pointAt(distance)
+        val ridden = ridden()
+        val point = route.pointAt(lapPos())
 
         _state.value = _state.value.copy(
             status = RideStatus.Running,
             elapsedSeconds = elapsedSeconds,
-            distanceMeters = distance,
+            distanceMeters = ridden,
+            lapPositionMeters = lapPos(),
             speedKmh = CyclingPhysics.msToKmh(speedMs),
             powerWatts = power,
             cadenceRpm = cadence,
@@ -146,7 +159,7 @@ class RideEngine(
                     lat = point.lat,
                     lon = point.lon,
                     elevation = point.elevation,
-                    distanceMeters = distance,
+                    distanceMeters = ridden,
                     speedKmh = CyclingPhysics.msToKmh(speedMs),
                     powerWatts = power,
                     cadenceRpm = cadence,
@@ -157,7 +170,7 @@ class RideEngine(
     }
 
     private fun pushGradeToTrainer() {
-        val terrainGrade = route.gradeAt(distance)
+        val terrainGrade = route.gradeAt(lapPos())
         val effective = CyclingPhysics.gradeToPercent(terrainGrade + gears.gradeOffset())
         trainer.setSimulationGrade(effective)
     }
@@ -179,7 +192,7 @@ class RideEngine(
         loop = null
         _state.value = _state.value.copy(
             status = RideStatus.Finished,
-            distanceMeters = distance,
+            distanceMeters = ridden(),
         )
     }
 
