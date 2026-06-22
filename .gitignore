@@ -9,3 +9,8 @@ local.properties
 /captures/
 .externalNativeBuild/
 .cxx/
+
+# Local preview output from tools/gen_cyclist.py
+tools/preview.png
+tools/variants/
+tools/variants_sheet.png
