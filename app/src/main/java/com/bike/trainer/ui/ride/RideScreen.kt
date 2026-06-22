@@ -73,9 +73,9 @@ fun RideScreen(
     var streetLevel by remember { mutableStateOf(false) }
     var smoothTransitions by remember { mutableStateOf(true) }
     var sceneBounds by remember { mutableStateOf<android.graphics.Rect?>(null) }
-    // Prefetched Street View frames for this route, if any were downloaded.
+    // Prefetched Street View frames for this route, if a valid cache exists.
     val svManifest = remember(engine.route.id) {
-        com.bike.trainer.route.StreetViewCache.load(context, engine.route.id)
+        com.bike.trainer.route.StreetViewCache.loadFor(context, engine.route)
     }
 
     suspend fun captureScene(): Boolean {

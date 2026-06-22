@@ -75,7 +75,13 @@ object StreetViewPrefetcher {
         if (withImage == 0) {
             return@withContext Result.Error("No Street View coverage found along this route")
         }
-        val manifest = StreetViewManifest(routeId, spacingMeters, route.totalDistance, samples)
+        val manifest = StreetViewManifest(
+            routeId = routeId,
+            spacingMeters = spacingMeters,
+            totalDistance = route.totalDistance,
+            samples = samples,
+            routeFingerprint = StreetViewCache.fingerprint(route),
+        )
         StreetViewCache.save(context, manifest)
         Result.Success(manifest)
     }

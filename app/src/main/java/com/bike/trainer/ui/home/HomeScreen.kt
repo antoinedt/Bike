@@ -303,11 +303,22 @@ private fun PrefetchDialog(file: java.io.File, onDismiss: () -> Unit) {
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     if (existing != null) {
-                        Text(
-                            "Already cached: ${existing.imageCount} frames at ${existing.spacingMeters.toInt()} m",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
+                        val r = route
+                        val stale = r != null && existing.routeFingerprint.isNotEmpty() &&
+                            existing.routeFingerprint != StreetViewCache.fingerprint(r)
+                        if (stale) {
+                            Text(
+                                "Cached copy is out of date for this GPX — re-fetch recommended",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        } else {
+                            Text(
+                                "Already cached: ${existing.imageCount} frames at ${existing.spacingMeters.toInt()} m",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
                     }
                     Spacer(Modifier.height(12.dp))
                     Text("Sample every ${spacing.toInt()} m", style = MaterialTheme.typography.bodyMedium)
