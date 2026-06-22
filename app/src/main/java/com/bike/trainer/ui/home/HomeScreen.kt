@@ -144,6 +144,30 @@ fun HomeScreen(
         }
     }
 
+    // Back up settings to a file (the picker lets you choose Google Drive).
+    val backupExport = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json"),
+    ) { uri: Uri? ->
+        if (uri != null) scope.launch {
+            val json = ServiceLocator.backupManager.export()
+            val ok = withContext(Dispatchers.IO) {
+                runCatching { context.contentResolver.openOutputStream(uri)?.use { it.write(json.toByteArray()) } }.isSuccess
+            }
+            Toast.makeText(context, if (ok) "Settings backed up" else "Backup failed", Toast.LENGTH_SHORT).show()
+        }
+    }
+    val backupRestore = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri: Uri? ->
+        if (uri != null) scope.launch {
+            val text = withContext(Dispatchers.IO) {
+                runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytes().decodeToString() } }.getOrNull()
+            }
+            val ok = text != null && ServiceLocator.backupManager.import(text)
+            Toast.makeText(context, if (ok) "Settings restored" else "Couldn't restore that file", Toast.LENGTH_LONG).show()
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -307,6 +331,27 @@ fun HomeScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(8.dp))
                     OutlinedButton(onClick = { showStravaDialog = true }) { Text("Add Strava keys") }
+                }
+            }
+        }
+
+        // ---- Backup ----
+        SectionCard {
+            Text("Backup", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Save your riders, stats and keys to a file (pick Google Drive in the " +
+                    "save dialog to keep it there), then restore after an update or reinstall.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { backupExport.launch("bike-settings-backup.json") }) {
+                    Text("Back up")
+                }
+                OutlinedButton(onClick = { backupRestore.launch(arrayOf("application/json", "*/*")) }) {
+                    Text("Restore")
                 }
             }
         }
