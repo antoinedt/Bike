@@ -61,32 +61,40 @@ fun MapSceneView(
                     .tilt(62.0)
                     .bearing(Math.toDegrees(start.heading))
                     .build()
-
-                val builder = if (mapTilesKey.isNotBlank()) {
-                    Style.Builder().fromJson(MapStyle.styleJson(mapTilesKey))
-                } else {
-                    Style.Builder().fromUri(MapStyle.DEMO_STYLE_URL)
-                }
-                libreMap.setStyle(builder) { style ->
-                    addRouteLine(style, route)
-                    val rider = GeoJsonSource(RIDER_SOURCE, pointGeoJson(start.lat, start.lon))
-                    style.addSource(rider)
-                    style.addLayer(
-                        CircleLayer(RIDER_LAYER, RIDER_SOURCE).withProperties(
-                            PropertyFactory.circleColor(Color.parseColor("#FF7A1A")),
-                            PropertyFactory.circleRadius(7f),
-                            PropertyFactory.circleStrokeColor(Color.WHITE),
-                            PropertyFactory.circleStrokeWidth(2.5f),
-                        )
-                    )
-                    riderSource = rider
-                    map = libreMap
-                    ready = true
-                }
+                map = libreMap
             }
             mapView
         },
     )
+
+    // (Re)load the style whenever the map is ready OR the MapTiler key changes.
+    // The saved key loads asynchronously, so this catches the moment it arrives
+    // and swaps the flat demo tiles for the real 3D MapTiler style.
+    LaunchedEffect(map, mapTilesKey) {
+        val m = map ?: return@LaunchedEffect
+        ready = false
+        val builder = if (mapTilesKey.isNotBlank()) {
+            Style.Builder().fromJson(MapStyle.styleJson(mapTilesKey))
+        } else {
+            Style.Builder().fromUri(MapStyle.DEMO_STYLE_URL)
+        }
+        m.setStyle(builder) { style ->
+            addRouteLine(style, route)
+            val start = route.pointAt(0.0)
+            val rider = GeoJsonSource(RIDER_SOURCE, pointGeoJson(start.lat, start.lon))
+            style.addSource(rider)
+            style.addLayer(
+                CircleLayer(RIDER_LAYER, RIDER_SOURCE).withProperties(
+                    PropertyFactory.circleColor(Color.parseColor("#FF7A1A")),
+                    PropertyFactory.circleRadius(7f),
+                    PropertyFactory.circleStrokeColor(Color.WHITE),
+                    PropertyFactory.circleStrokeWidth(2.5f),
+                )
+            )
+            riderSource = rider
+            ready = true
+        }
+    }
 
     // Follow the rider every time the ride advances.
     LaunchedEffect(ready, distanceMeters) {
