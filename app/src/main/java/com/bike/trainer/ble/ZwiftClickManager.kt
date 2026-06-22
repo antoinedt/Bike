@@ -113,8 +113,10 @@ class ZwiftClickManager(appContext: Context) :
         val ZWIFT_CONTROL: UUID = UUID.fromString("00000003-19ca-4651-86e5-fa29dcdd09d1")
         val ZWIFT_RESPONSE: UUID = UUID.fromString("00000004-19ca-4651-86e5-fa29dcdd09d1")
 
-        // "RideOn" plus the app-hello bytes used by the controller handshake.
-        val RIDE_ON = byteArrayOf(0x52, 0x69, 0x64, 0x65, 0x4F, 0x6E, 0x01, 0x02)
+        // The handshake the app sends to unlock button notifications: ASCII
+        // "RideOn". (The device replies "RideOn" + 2 status bytes on the response
+        // characteristic.)
+        val RIDE_ON = byteArrayOf(0x52, 0x69, 0x64, 0x65, 0x4F, 0x6E)
 
         const val BUTTON_PLUS_FIELD = 1
         const val BUTTON_MINUS_FIELD = 2
