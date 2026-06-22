@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Bike test" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk><name>Test 100m</name><trkseg>
+      <trkpt lat="37.4200000" lon="-122.0850000"><ele>12.0</ele></trkpt>
+      <trkpt lat="37.4200000" lon="-122.0849434"><ele>12.0</ele></trkpt>
+      <trkpt lat="37.4200000" lon="-122.0848869"><ele>12.0</ele></trkpt>
+      <trkpt lat="37.4200000" lon="-122.0848303"><ele>12.0</ele></trkpt>
+      <trkpt lat="37.4200000" lon="-122.0847738"><ele>12.0</ele></trkpt>
+      <trkpt lat="37.4200000" lon="-122.0847172"><ele>12.0</ele></trkpt>
+      <trkpt lat="37.4200000" lon="-122.0846607"><ele>12.0</ele></trkpt>
+      <trkpt lat="37.4200000" lon="-122.0846041"><ele>12.0</ele></trkpt>
+      <trkpt lat="37.4200000" lon="-122.0845476"><ele>12.0</ele></trkpt>
+      <trkpt lat="37.4200000" lon="-122.0844910"><ele>12.0</ele></trkpt>
+      <trkpt lat="37.4200000" lon="-122.0844345"><ele>12.0</ele></trkpt>
+      <trkpt lat="37.4200000" lon="-122.0843779"><ele>12.0</ele></trkpt>
+      <trkpt lat="37.4200000" lon="-122.0843213"><ele>12.0</ele></trkpt>
+      <trkpt lat="37.4200000" lon="-122.0842648"><ele>12.0</ele></trkpt>
+      <trkpt lat="37.4200000" lon="-122.0842082"><ele>12.0</ele></trkpt>
+      <trkpt lat="37.4200000" lon="-122.0841517"><ele>12.0</ele></trkpt>
+      <trkpt lat="37.4200000" lon="-122.0840951"><ele>12.0</ele></trkpt>
+      <trkpt lat="37.4200000" lon="-122.0840386"><ele>12.0</ele></trkpt>
+      <trkpt lat="37.4200000" lon="-122.0839820"><ele>12.0</ele></trkpt>
+      <trkpt lat="37.4200000" lon="-122.0839255"><ele>12.0</ele></trkpt>
+      <trkpt lat="37.4200000" lon="-122.0838689"><ele>12.0</ele></trkpt>
+  </trkseg></trk>
+</gpx>

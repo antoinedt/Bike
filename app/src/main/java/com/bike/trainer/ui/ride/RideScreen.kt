@@ -21,6 +21,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
@@ -29,6 +31,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Animation
 import androidx.compose.material.icons.filled.BlurOff
 import androidx.compose.material.icons.filled.BlurOn
 import androidx.compose.material.icons.filled.Pause
@@ -81,6 +84,8 @@ fun RideScreen(
     // is present, otherwise the near-ground map view).
     var streetLevel by remember { mutableStateOf(true) }
     var smoothTransitions by remember { mutableStateOf(true) }
+    var svMotion by remember { mutableStateOf(SvMotion.DOLLY) }
+    var motionMenu by remember { mutableStateOf(false) }
     var sceneBounds by remember { mutableStateOf<android.graphics.Rect?>(null) }
     // Prefetched Street View frames for this route, if a valid cache exists.
     val svManifest = remember(engine.route.id) {
@@ -139,6 +144,7 @@ fun RideScreen(
                     manifest = svManifest,
                     distanceMeters = state.lapPositionMeters,
                     speedKmh = state.speedKmh,
+                    mode = svMotion,
                     modifier = Modifier.fillMaxSize(),
                 )
             } else if (googleStreet) {
@@ -219,6 +225,39 @@ fun RideScreen(
                     .padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                // Motion-style picker, only when playing prefetched frames.
+                if (googleStreet && svManifest != null) {
+                    Box {
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f))
+                                .clickable { motionMenu = true }
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                Icons.Filled.Animation,
+                                contentDescription = "Motion style",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Text(
+                                "  Motion: ${svMotion.label}",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                        DropdownMenu(expanded = motionMenu, onDismissRequest = { motionMenu = false }) {
+                            SvMotion.entries.forEach { m ->
+                                DropdownMenuItem(
+                                    text = { Text(m.label) },
+                                    onClick = { svMotion = m; motionMenu = false },
+                                )
+                            }
+                        }
+                    }
+                }
                 // Smooth-transition on/off, only for the live (non-cached) panorama.
                 if (googleStreet && svManifest == null) {
                     Row(
