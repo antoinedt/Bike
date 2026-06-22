@@ -70,6 +70,22 @@ STRAVA_CLIENT_SECRET=your_secret_here
 Without them the app still runs; only the Strava upload is disabled. The OAuth
 redirect URI is `bike://strava-auth` (wired up in the manifest).
 
+### 3D map scenery (MapTiler)
+
+The ride view renders a real 3D map (satellite imagery + 3D terrain + extruded
+OpenStreetMap buildings) via [MapLibre](https://maplibre.org/), following the
+route. The tiles come from [MapTiler](https://www.maptiler.com/) — add a free
+key at build time:
+
+```
+MAPTILES_API_KEY=your_maptiler_key
+```
+
+Without a key the ride falls back to MapLibre's free demo tiles: still a real
+world map (GPX routes show the right place) but flat — no terrain, satellite, or
+buildings. The map needs a network connection while riding; the rest of the app
+(trainer, gears, resistance, recording) works offline.
+
 ## How a ride works
 
 1. Pick a difficulty and your weight on the home screen, connect your trainer.

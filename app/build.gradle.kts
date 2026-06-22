@@ -22,6 +22,10 @@ android {
         val stravaClientSecret = (project.findProperty("STRAVA_CLIENT_SECRET") as String?) ?: ""
         buildConfigField("String", "STRAVA_CLIENT_ID", "\"$stravaClientId\"")
         buildConfigField("String", "STRAVA_CLIENT_SECRET", "\"$stravaClientSecret\"")
+        // MapTiler key powers the real 3D map (terrain + satellite + OSM buildings).
+        // Without it the ride falls back to MapLibre's free demo tiles (flat, no 3D).
+        val mapTilesKey = (project.findProperty("MAPTILES_API_KEY") as String?) ?: ""
+        buildConfigField("String", "MAPTILES_API_KEY", "\"$mapTilesKey\"")
         // Redirect scheme used by the OAuth callback (bike://strava-auth).
         manifestPlaceholders["stravaRedirectScheme"] = "bike"
         manifestPlaceholders["stravaRedirectHost"] = "strava-auth"
@@ -73,4 +77,5 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.browser)
+    implementation(libs.maplibre.android)
 }
