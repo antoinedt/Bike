@@ -16,10 +16,10 @@ import com.bike.trainer.R
 
 /**
  * The cyclist you're chasing, drawn from behind so it matches the forward-moving
- * map camera. It's a hand-illustrated flat-design sprite (8 PNG frames covering
- * one pedal revolution) animated by cycling through the frames — the cadence (or
- * a speed estimate when there's no trainer) sets how fast the legs spin, so the
- * animation naturally speeds up in harder/faster gears and slows on the climbs.
+ * map camera. It's a rendered sprite (PNG frames covering one pedal revolution)
+ * animated by cycling through the frames — the cadence (or a speed estimate when
+ * there's no trainer) sets how fast the legs spin, so the animation naturally
+ * speeds up in harder/faster gears and slows on the climbs.
  *
  * Fully offline: the frames ship in res/drawable, no model asset or network.
  */
@@ -28,10 +28,6 @@ private val FRAMES = intArrayOf(
     R.drawable.cyclist_1,
     R.drawable.cyclist_2,
     R.drawable.cyclist_3,
-    R.drawable.cyclist_4,
-    R.drawable.cyclist_5,
-    R.drawable.cyclist_6,
-    R.drawable.cyclist_7,
 )
 
 @Composable
