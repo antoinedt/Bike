@@ -32,10 +32,24 @@ data class RiderStats(
     val bestAvgPowerW: Map<Int, Int> = emptyMap(),
 )
 
+/** Per-rider Strava credentials + OAuth tokens (each rider connects their own). */
+@Serializable
+data class StravaAccount(
+    val clientId: String = "",
+    val clientSecret: String = "",
+    val accessToken: String = "",
+    val refreshToken: String = "",
+    val expiresAt: Long = 0L,
+) {
+    val configured: Boolean get() = clientId.isNotBlank() && clientSecret.isNotBlank()
+    val connected: Boolean get() = refreshToken.isNotBlank()
+}
+
 @Serializable
 data class ProfileEntry(
     val profile: RiderProfile,
     val stats: RiderStats = RiderStats(),
+    val strava: StravaAccount = StravaAccount(),
 )
 
 @Serializable

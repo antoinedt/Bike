@@ -16,8 +16,6 @@ import kotlinx.serialization.json.Json
 data class BackupBundle(
     val version: Int = 1,
     val profiles: ProfilesState = ProfilesState(),
-    val stravaClientId: String = "",
-    val stravaClientSecret: String = "",
     val mapTilesKey: String = "",
     val gearCount: Int = 12,
     val difficulty: String = "ROLLING",
@@ -36,8 +34,6 @@ class BackupManager(
         val s = settings.settings.first()
         val bundle = BackupBundle(
             profiles = profiles.current(),
-            stravaClientId = cfg.stravaClientId,
-            stravaClientSecret = cfg.stravaClientSecret,
             mapTilesKey = cfg.mapTilesKey,
             gearCount = s.gearCount,
             difficulty = s.difficulty.name,
@@ -49,7 +45,6 @@ class BackupManager(
     suspend fun import(raw: String): Boolean {
         val bundle = runCatching { json.decodeFromString<BackupBundle>(raw) }.getOrNull() ?: return false
         profiles.replaceAll(bundle.profiles)
-        config.setStravaCredentials(bundle.stravaClientId, bundle.stravaClientSecret)
         config.setMapTilesKey(bundle.mapTilesKey)
         settings.setGearCount(bundle.gearCount)
         runCatching { com.bike.trainer.route.RouteGenerator.Difficulty.valueOf(bundle.difficulty) }

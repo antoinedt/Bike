@@ -27,9 +27,7 @@ object ServiceLocator {
     val settingsRepository: SettingsRepository by lazy { SettingsRepository(appContext.appDataStore) }
     val appConfigRepository: AppConfigRepository by lazy { AppConfigRepository(appContext.appDataStore) }
     val profileRepository: ProfileRepository by lazy { ProfileRepository(appContext.appDataStore) }
-    val stravaRepository: StravaRepository by lazy {
-        StravaRepository(appContext.appDataStore, appConfigRepository)
-    }
+    val stravaRepository: StravaRepository by lazy { StravaRepository(profileRepository) }
     val backupManager: BackupManager by lazy {
         BackupManager(profileRepository, appConfigRepository, settingsRepository)
     }
