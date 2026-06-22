@@ -2,6 +2,8 @@ package com.bike.trainer.session
 
 import com.bike.trainer.ble.HeartRateManager
 import com.bike.trainer.ble.TrainerConnectionManager
+import com.bike.trainer.ble.TrainerConnectionState
+import kotlin.math.roundToInt
 import com.bike.trainer.physics.CyclingPhysics
 import com.bike.trainer.physics.VirtualGears
 import com.bike.trainer.route.Route
@@ -69,19 +71,36 @@ class RideEngine(
 
     private fun tick(dt: Double) {
         val data = trainer.trainerData.value
-        val power = data.powerWatts.toDouble()
         val totalMass = riderMassKg + bikeMassKg
+        val terrainGrade = route.gradeAt(distance)
+        val connected = trainer.connectionState.value == TrainerConnectionState.Connected
         // Prefer a dedicated HR strap if connected; otherwise use the trainer's.
         val heartRate = heartRateManager?.heartRate?.value?.takeIf { it > 0 } ?: data.heartRate
 
-        val terrainGrade = route.gradeAt(distance)
-        speedMs = CyclingPhysics.stepSpeed(
-            speed = speedMs,
-            powerWatts = power,
-            gradeFraction = terrainGrade,
-            totalMassKg = totalMass,
-            dtSeconds = dt,
-        )
+        val power: Int
+        val cadence: Int
+        if (connected) {
+            // Real ride: speed comes from the rider's measured power.
+            power = data.powerWatts
+            cadence = data.cadenceRpm
+            speedMs = CyclingPhysics.stepSpeed(
+                speed = speedMs,
+                powerWatts = power.toDouble(),
+                gradeFraction = terrainGrade,
+                totalMassKg = totalMass,
+                dtSeconds = dt,
+            )
+        } else {
+            // Demo mode (no trainer): cruise ~20 km/h, easier on climbs, faster
+            // downhill, with synthesized power/cadence so the HUD and rider move.
+            val targetKmh = (DEMO_SPEED_KMH - CyclingPhysics.gradeToPercent(terrainGrade) * 1.5)
+                .coerceIn(8.0, 45.0)
+            val targetMs = targetKmh / 3.6
+            speedMs += (targetMs - speedMs) * (dt * 0.7).coerceAtMost(1.0)
+            power = CyclingPhysics.powerForSteadySpeed(speedMs, terrainGrade, totalMass).roundToInt()
+            cadence = if (speedMs > 0.5) 82 else 0
+        }
+
         distance += CyclingPhysics.distanceStep(speedMs, dt)
         elapsedMs += (dt * 1000).toLong()
         energyJoules += power * dt
@@ -104,8 +123,8 @@ class RideEngine(
             elapsedSeconds = elapsedSeconds,
             distanceMeters = distance,
             speedKmh = CyclingPhysics.msToKmh(speedMs),
-            powerWatts = data.powerWatts,
-            cadenceRpm = data.cadenceRpm,
+            powerWatts = power,
+            cadenceRpm = cadence,
             heartRate = heartRate,
             gradePercent = CyclingPhysics.gradeToPercent(terrainGrade),
             trainerGradePercent = CyclingPhysics.gradeToPercent(terrainGrade + gears.gradeOffset()),
@@ -127,8 +146,8 @@ class RideEngine(
                     elevation = point.elevation,
                     distanceMeters = distance,
                     speedKmh = CyclingPhysics.msToKmh(speedMs),
-                    powerWatts = data.powerWatts,
-                    cadenceRpm = data.cadenceRpm,
+                    powerWatts = power,
+                    cadenceRpm = cadence,
                     heartRate = heartRate,
                 )
             )
@@ -178,5 +197,7 @@ class RideEngine(
 
     companion object {
         private const val TICK_MS = 250L
+        /** Flat-ground cruising speed used in demo mode (no trainer connected). */
+        private const val DEMO_SPEED_KMH = 20.0
     }
 }
