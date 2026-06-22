@@ -31,7 +31,23 @@ android {
         manifestPlaceholders["stravaRedirectHost"] = "strava-auth"
     }
 
+    signingConfigs {
+        // A fixed, committed debug keystore (password "android") so every build —
+        // including each CI run — is signed with the SAME key. Without this each
+        // ephemeral runner generates a random debug key, so new APKs can't update
+        // an installed one in place (signature mismatch) and require a reinstall.
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("debug")
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
