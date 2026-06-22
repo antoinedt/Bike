@@ -36,6 +36,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bike.trainer.di.ServiceLocator
 import com.bike.trainer.export.LocalRideStore
 import com.bike.trainer.export.TcxWriter
+import com.bike.trainer.session.RideStatsCalculator
 import com.bike.trainer.strava.UploadResult
 import com.bike.trainer.ui.components.SectionCard
 import com.bike.trainer.ui.components.StatTile
@@ -67,14 +68,16 @@ fun SummaryScreen(onDone: () -> Unit) {
     var uploadState by remember { mutableStateOf<UploadUiState>(UploadUiState.Idle) }
     var savedFile by remember { mutableStateOf<File?>(null) }
 
-    // Auto-save the finished ride locally so it can be uploaded/added manually later.
+    // On finish: save the TCX locally and fold the ride into the rider's stats.
     LaunchedEffect(Unit) {
+        val points = engine.recorder.snapshot()
         savedFile = withContext(Dispatchers.IO) {
             runCatching {
-                val tcx = TcxWriter.write(engine.route.name, engine.recorder.snapshot())
-                LocalRideStore.save(context, engine.route.name, tcx)
+                LocalRideStore.save(context, engine.route.name, TcxWriter.write(engine.route.name, points))
             }.getOrNull()
         }
+        val summary = RideStatsCalculator.compute(points)
+        runCatching { ServiceLocator.profileRepository.applyRideToActive(summary) }
     }
 
     val exporter = rememberLauncherForActivityResult(

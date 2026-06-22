@@ -9,6 +9,7 @@ import com.bike.trainer.ui.connect.ConnectScreen
 import com.bike.trainer.ui.connect.SensorScanScreen
 import com.bike.trainer.ui.home.HomeScreen
 import com.bike.trainer.ui.ride.RideScreen
+import com.bike.trainer.ui.stats.StatsScreen
 import com.bike.trainer.ui.summary.SummaryScreen
 
 object Routes {
@@ -16,6 +17,7 @@ object Routes {
     const val CONNECT = "connect"
     const val CONNECT_HR = "connect_hr"
     const val CONNECT_CONTROLLER = "connect_controller"
+    const val STATS = "stats"
     const val RIDE = "ride"
     const val SUMMARY = "summary"
 }
@@ -29,6 +31,7 @@ fun BikeNavHost() {
                 onConnectTrainer = { navController.navigate(Routes.CONNECT) },
                 onConnectHeartRate = { navController.navigate(Routes.CONNECT_HR) },
                 onConnectController = { navController.navigate(Routes.CONNECT_CONTROLLER) },
+                onViewStats = { navController.navigate(Routes.STATS) },
                 onStartRide = { navController.navigate(Routes.RIDE) },
             )
         }
@@ -50,6 +53,9 @@ fun BikeNavHost() {
                 sensor = ServiceLocator.zwiftClickManager,
                 onBack = { navController.popBackStack() },
             )
+        }
+        composable(Routes.STATS) {
+            StatsScreen(onBack = { navController.popBackStack() })
         }
         composable(Routes.RIDE) {
             RideScreen(
