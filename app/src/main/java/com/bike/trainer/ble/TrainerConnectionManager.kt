@@ -2,6 +2,7 @@ package com.bike.trainer.ble
 
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCallback
 import android.bluetooth.BluetoothGattCharacteristic
@@ -119,7 +120,7 @@ class TrainerConnectionManager(private val appContext: Context) {
         _connectionState.value = TrainerConnectionState.Connecting
         _connectedDeviceName.value = device.name
         resetGattState()
-        gatt = device.connectGatt(appContext, false, gattCallback, BluetoothGatt.TRANSPORT_LE)
+        gatt = device.connectGatt(appContext, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
     }
 
     fun disconnect() {
