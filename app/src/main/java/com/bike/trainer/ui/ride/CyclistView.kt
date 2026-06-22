@@ -28,6 +28,8 @@ private val FRAMES = intArrayOf(
     R.drawable.cyclist_1,
     R.drawable.cyclist_2,
     R.drawable.cyclist_3,
+    R.drawable.cyclist_4,
+    R.drawable.cyclist_5,
 )
 
 @Composable
