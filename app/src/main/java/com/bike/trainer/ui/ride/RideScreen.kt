@@ -67,16 +67,15 @@ fun RideScreen(
             .fillMaxSize()
             .systemBarsPadding(),
     ) {
-        // ---- Corridor with grade + gear overlay ----
+        // ---- 3D map scenery with grade + route overlay ----
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(240.dp),
+                .height(280.dp),
         ) {
-            CorridorView(
+            MapSceneView(
                 route = engine.route,
                 distanceMeters = state.distanceMeters,
-                gradePercent = state.gradePercent,
                 modifier = Modifier.fillMaxSize(),
             )
             // Grade badge.
