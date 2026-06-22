@@ -42,6 +42,8 @@ jobs:
           # project properties, which app/build.gradle.kts reads.
           ORG_GRADLE_PROJECT_STRAVA_CLIENT_ID: ${{ secrets.STRAVA_CLIENT_ID }}
           ORG_GRADLE_PROJECT_STRAVA_CLIENT_SECRET: ${{ secrets.STRAVA_CLIENT_SECRET }}
+          # Optional Google Maps key for the interactive Street View panorama.
+          ORG_GRADLE_PROJECT_MAPS_API_KEY: ${{ secrets.MAPS_API_KEY }}
 
       - name: Stage APK
         run: cp app/build/outputs/apk/debug/app-debug.apk bike-debug.apk
