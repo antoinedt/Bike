@@ -36,6 +36,7 @@ enum class SvMotion(val label: String) {
     PARALLAX("Parallax"),
     MORPH("Morph"),
     FLOW("Flow (optical)"),
+    FLOW_DOLLY("Flow + Dolly"),
 }
 
 /**
@@ -103,10 +104,11 @@ fun CachedStreetView(
     // "Flow" mode: compute optical flow between the two frames once (off-thread)
     // when the front frame changes. Until it's ready we fall back to the analytic
     // morph, so there's never a stall.
+    val usesFlow = mode == SvMotion.FLOW || mode == SvMotion.FLOW_DOLLY
     LaunchedEffect(front, mode) {
         val a = back
         val b = front
-        if (mode == SvMotion.FLOW && a != null && b != null && a !== b) {
+        if (usesFlow && a != null && b != null && a !== b) {
             val grid = withContext(Dispatchers.Default) {
                 OpticalFlow.gridFlow(a, b, MESH_W, MESH_H)
             }
@@ -121,12 +123,15 @@ fun CachedStreetView(
         val h = size.height
         val fadeV = fade.value
         val progV = progress.value
-        val flow = if (mode == SvMotion.FLOW) flowGrid else null
-        // In Flow mode the morph blend tracks progress (the warp), not the quick fade.
+        val flow = if (usesFlow) flowGrid else null
+        // Flow morphs blend over the whole segment (alpha = progress); analytic
+        // modes use the quick dissolve.
         val frontAlpha = if (flow != null) progV else fadeV
         drawIntoCanvas { canvas ->
             val nc = canvas.nativeCanvas
-            back?.let { drawWarped(nc, it, w, h, progV, mode, 255, paint, flow, progV) }
+            // Back is held at its FINAL warp (p = 1) so it doesn't snap back when the
+            // next frame takes over — that snap was the "jump".
+            back?.let { drawWarped(nc, it, w, h, 1f, mode, 255, paint, flow, progV) }
             front?.let {
                 drawWarped(
                     nc, it, w, h, progV, mode,
@@ -171,9 +176,15 @@ private fun drawWarped(
 
     val foeX = 0.5f * w
     val foeY = 0.45f * h          // vanishing point sits a bit above centre
-    val useFlow = mode == SvMotion.FLOW && flow != null
-    // FLOW without a computed grid yet behaves like MORPH.
-    val analytic = if (mode == SvMotion.FLOW) SvMotion.MORPH else mode
+    val useFlow = (mode == SvMotion.FLOW || mode == SvMotion.FLOW_DOLLY) && flow != null
+    // Which analytic expansion (if any) to apply on top: pure Flow / Dissolve add
+    // none; Flow+Dolly adds a Dolly; a Flow without a ready grid falls back to Morph.
+    val expand: SvMotion? = when {
+        mode == SvMotion.DISSOLVE -> null
+        mode == SvMotion.FLOW -> if (flow == null) SvMotion.MORPH else null
+        mode == SvMotion.FLOW_DOLLY -> SvMotion.DOLLY
+        else -> mode
+    }
 
     val verts = FloatArray((MESH_W + 1) * (MESH_H + 1) * 2)
     var k = 0
@@ -183,16 +194,17 @@ private fun drawWarped(
             val u = j.toFloat() / MESH_W
             val bx = ox + u * dw
             val by = oy + v * dh
+            var x = bx
+            var y = by
             if (useFlow) {
-                verts[k] = bx + flow!![k] * dw * flowScale
-                verts[k + 1] = by + flow[k + 1] * dh * flowScale
-                k += 2
-            } else {
+                x += flow!![k] * dw * flowScale
+                y += flow[k + 1] * dh * flowScale
+            }
+            if (expand != null) {
                 val cx: Float
                 val cy: Float
                 val s: Float
-                when (analytic) {
-                    SvMotion.DISSOLVE -> { cx = bx; cy = by; s = 1f }
+                when (expand) {
                     SvMotion.DOLLY -> { cx = 0.5f * w; cy = 0.5f * h; s = 1f + EXPAND * p }
                     SvMotion.PARALLAX -> {
                         cx = foeX; cy = foeY
@@ -201,9 +213,11 @@ private fun drawWarped(
                     }
                     else -> { cx = foeX; cy = foeY; s = 1f + EXPAND * p } // MORPH
                 }
-                verts[k++] = cx + (bx - cx) * s
-                verts[k++] = cy + (by - cy) * s
+                x = cx + (x - cx) * s
+                y = cy + (y - cy) * s
             }
+            verts[k++] = x
+            verts[k++] = y
         }
     }
     paint.alpha = alpha
