@@ -195,11 +195,16 @@ private fun rememberMapViewWithLifecycle(): MapView {
         // We may enter composition already started/resumed.
         mapView.onStart()
         mapView.onResume()
+        // Expose this GL view so the screenshot can copy its surface directly.
+        com.bike.trainer.di.ServiceLocator.sceneView = mapView
         onDispose {
             lifecycle.removeObserver(observer)
             mapView.onPause()
             mapView.onStop()
             mapView.onDestroy()
+            if (com.bike.trainer.di.ServiceLocator.sceneView === mapView) {
+                com.bike.trainer.di.ServiceLocator.sceneView = null
+            }
         }
     }
     return mapView

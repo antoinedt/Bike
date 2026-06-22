@@ -8,6 +8,9 @@ import android.graphics.Rect
 import android.os.Handler
 import android.os.Looper
 import android.view.PixelCopy
+import android.view.SurfaceView
+import android.view.View
+import android.view.ViewGroup
 import android.view.Window
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
@@ -28,6 +31,44 @@ object ScreenCapture {
         while (ctx is ContextWrapper) {
             if (ctx is Activity) return ctx
             ctx = ctx.baseContext
+        }
+        return null
+    }
+
+    /**
+     * Capture the ride scene. If [sceneView] hosts a GL [SurfaceView] (live Street
+     * View / map), copy that surface directly — some devices read GL surfaces back
+     * as black through a whole-window copy. Otherwise fall back to the windowed
+     * copy cropped to [crop].
+     */
+    suspend fun captureScene(window: Window, sceneView: View?, crop: Rect?): Bitmap? {
+        val sv = findSurfaceView(sceneView)
+        if (sv != null && sv.width > 0 && sv.height > 0) {
+            val dest = Bitmap.createBitmap(sv.width, sv.height, Bitmap.Config.ARGB_8888)
+            val ok = suspendCancellableCoroutine { cont ->
+                try {
+                    PixelCopy.request(
+                        sv,
+                        dest,
+                        { result -> cont.resume(result == PixelCopy.SUCCESS) },
+                        Handler(Looper.getMainLooper()),
+                    )
+                } catch (_: Throwable) {
+                    cont.resume(false)
+                }
+            }
+            if (ok) return dest
+        }
+        return capture(window, crop)
+    }
+
+    private fun findSurfaceView(root: View?): SurfaceView? {
+        if (root == null) return null
+        if (root is SurfaceView) return root
+        if (root is ViewGroup) {
+            for (i in 0 until root.childCount) {
+                findSurfaceView(root.getChildAt(i))?.let { return it }
+            }
         }
         return null
     }

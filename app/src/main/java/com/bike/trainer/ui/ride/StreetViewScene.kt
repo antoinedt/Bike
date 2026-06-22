@@ -66,10 +66,15 @@ fun StreetViewScene(
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         view.onResume()
+        // Expose this GL view so the screenshot can copy its surface directly.
+        com.bike.trainer.di.ServiceLocator.sceneView = view
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
             view.onPause()
             view.onDestroy()
+            if (com.bike.trainer.di.ServiceLocator.sceneView === view) {
+                com.bike.trainer.di.ServiceLocator.sceneView = null
+            }
         }
     }
 
