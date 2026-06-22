@@ -27,6 +27,14 @@ trainer.
   grade into virtual speed and distance (gravity, rolling resistance, aero drag).
 - **Strava upload** — finished rides are exported to TCX (with power) and
   uploaded via the Strava v3 API using OAuth.
+- **Heart-rate monitor** — pair any standard BLE heart-rate strap (Heart Rate
+  Service 0x180D); HR flows into the HUD, recording and TCX.
+- **Physical gear controller** — connect a Zwift Click / Play controller to
+  shift the virtual gears (best-effort, community-documented protocol).
+- **In-app keys** — enter your Strava API keys and MapTiler key directly in the
+  app (stored on-device); no rebuild needed. Build-time values are the fallback.
+- **Local ride files** — every finished ride is saved as a TCX in the app's
+  storage and can be exported/shared to upload manually later.
 
 ## Project layout
 

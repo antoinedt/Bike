@@ -30,14 +30,14 @@ import java.util.ArrayDeque
  * scan/connect; the UI layer requests them.
  */
 @SuppressLint("MissingPermission")
-class TrainerConnectionManager(private val appContext: Context) {
+class TrainerConnectionManager(private val appContext: Context) : BleSensor {
 
     private val bluetoothManager =
         appContext.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager?
     private val adapter: BluetoothAdapter? = bluetoothManager?.adapter
 
     private val _connectionState = MutableStateFlow(TrainerConnectionState.Idle)
-    val connectionState: StateFlow<TrainerConnectionState> = _connectionState.asStateFlow()
+    override val connectionState: StateFlow<TrainerConnectionState> = _connectionState.asStateFlow()
 
     private val _controlMode = MutableStateFlow(TrainerControlMode.Unknown)
     val controlMode: StateFlow<TrainerControlMode> = _controlMode.asStateFlow()
@@ -46,10 +46,10 @@ class TrainerConnectionManager(private val appContext: Context) {
     val trainerData: StateFlow<TrainerData> = _trainerData.asStateFlow()
 
     private val _discovered = MutableStateFlow<List<DiscoveredTrainer>>(emptyList())
-    val discovered: StateFlow<List<DiscoveredTrainer>> = _discovered.asStateFlow()
+    override val discovered: StateFlow<List<DiscoveredTrainer>> = _discovered.asStateFlow()
 
     private val _connectedDeviceName = MutableStateFlow<String?>(null)
-    val connectedDeviceName: StateFlow<String?> = _connectedDeviceName.asStateFlow()
+    override val connectedDeviceName: StateFlow<String?> = _connectedDeviceName.asStateFlow()
 
     private var gatt: BluetoothGatt? = null
     private var controlPoint: BluetoothGattCharacteristic? = null
@@ -83,7 +83,7 @@ class TrainerConnectionManager(private val appContext: Context) {
         }
     }
 
-    fun startScan() {
+    override fun startScan() {
         val scanner = adapter?.bluetoothLeScanner ?: run {
             _connectionState.value = TrainerConnectionState.Failed
             return
@@ -105,7 +105,7 @@ class TrainerConnectionManager(private val appContext: Context) {
         scanner.startScan(filters, settings, scanCallback)
     }
 
-    fun stopScan() {
+    override fun stopScan() {
         adapter?.bluetoothLeScanner?.stopScan(scanCallback)
         if (_connectionState.value == TrainerConnectionState.Scanning) {
             _connectionState.value = TrainerConnectionState.Idle
@@ -114,7 +114,7 @@ class TrainerConnectionManager(private val appContext: Context) {
 
     // --------------------------------------------------------------- connection
 
-    fun connect(address: String) {
+    override fun connect(address: String) {
         stopScan()
         val device = adapter?.getRemoteDevice(address) ?: return
         _connectionState.value = TrainerConnectionState.Connecting
@@ -123,7 +123,7 @@ class TrainerConnectionManager(private val appContext: Context) {
         gatt = device.connectGatt(appContext, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
     }
 
-    fun disconnect() {
+    override fun disconnect() {
         gatt?.disconnect()
         gatt?.close()
         resetGattState()

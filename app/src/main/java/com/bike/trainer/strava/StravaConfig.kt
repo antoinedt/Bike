@@ -1,7 +1,5 @@
 package com.bike.trainer.strava
 
-import com.bike.trainer.BuildConfig
-
 /** Endpoints and OAuth parameters for the Strava v3 API. */
 object StravaConfig {
     const val AUTHORIZE_URL = "https://www.strava.com/oauth/mobile/authorize"
@@ -12,13 +10,8 @@ object StravaConfig {
     const val REDIRECT_URI = "bike://strava-auth"
     const val SCOPE = "activity:write,read"
 
-    val clientId: String get() = BuildConfig.STRAVA_CLIENT_ID
-    val clientSecret: String get() = BuildConfig.STRAVA_CLIENT_SECRET
-
-    /** True once real credentials have been supplied at build time. */
-    val isConfigured: Boolean get() = clientId.isNotBlank() && clientSecret.isNotBlank()
-
-    fun authorizeUrl(): String =
+    /** Build the authorization URL for a given (runtime-resolved) client id. */
+    fun authorizeUrl(clientId: String): String =
         "$AUTHORIZE_URL?client_id=$clientId" +
             "&redirect_uri=$REDIRECT_URI" +
             "&response_type=code" +

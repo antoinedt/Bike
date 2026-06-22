@@ -4,7 +4,9 @@ import androidx.compose.runtime.Composable
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.bike.trainer.di.ServiceLocator
 import com.bike.trainer.ui.connect.ConnectScreen
+import com.bike.trainer.ui.connect.SensorScanScreen
 import com.bike.trainer.ui.home.HomeScreen
 import com.bike.trainer.ui.ride.RideScreen
 import com.bike.trainer.ui.summary.SummaryScreen
@@ -12,6 +14,8 @@ import com.bike.trainer.ui.summary.SummaryScreen
 object Routes {
     const val HOME = "home"
     const val CONNECT = "connect"
+    const val CONNECT_HR = "connect_hr"
+    const val CONNECT_CONTROLLER = "connect_controller"
     const val RIDE = "ride"
     const val SUMMARY = "summary"
 }
@@ -23,11 +27,29 @@ fun BikeNavHost() {
         composable(Routes.HOME) {
             HomeScreen(
                 onConnectTrainer = { navController.navigate(Routes.CONNECT) },
+                onConnectHeartRate = { navController.navigate(Routes.CONNECT_HR) },
+                onConnectController = { navController.navigate(Routes.CONNECT_CONTROLLER) },
                 onStartRide = { navController.navigate(Routes.RIDE) },
             )
         }
         composable(Routes.CONNECT) {
             ConnectScreen(onBack = { navController.popBackStack() })
+        }
+        composable(Routes.CONNECT_HR) {
+            SensorScanScreen(
+                title = "Heart-rate monitor",
+                subtitle = "Scanning for Bluetooth heart-rate straps…",
+                sensor = ServiceLocator.heartRateManager,
+                onBack = { navController.popBackStack() },
+            )
+        }
+        composable(Routes.CONNECT_CONTROLLER) {
+            SensorScanScreen(
+                title = "Gear controller",
+                subtitle = "Scanning for a Zwift Click / Play controller…",
+                sensor = ServiceLocator.zwiftClickManager,
+                onBack = { navController.popBackStack() },
+            )
         }
         composable(Routes.RIDE) {
             RideScreen(

@@ -1,5 +1,6 @@
 package com.bike.trainer.session
 
+import com.bike.trainer.ble.HeartRateManager
 import com.bike.trainer.ble.TrainerConnectionManager
 import com.bike.trainer.physics.CyclingPhysics
 import com.bike.trainer.physics.VirtualGears
@@ -25,6 +26,7 @@ class RideEngine(
     private val riderMassKg: Double,
     private val bikeMassKg: Double = 8.0,
     val gears: VirtualGears = VirtualGears(),
+    private val heartRateManager: HeartRateManager? = null,
 ) {
     private val _state = MutableStateFlow(initialState())
     val state: StateFlow<RideState> = _state.asStateFlow()
@@ -69,6 +71,8 @@ class RideEngine(
         val data = trainer.trainerData.value
         val power = data.powerWatts.toDouble()
         val totalMass = riderMassKg + bikeMassKg
+        // Prefer a dedicated HR strap if connected; otherwise use the trainer's.
+        val heartRate = heartRateManager?.heartRate?.value?.takeIf { it > 0 } ?: data.heartRate
 
         val terrainGrade = route.gradeAt(distance)
         speedMs = CyclingPhysics.stepSpeed(
@@ -102,7 +106,7 @@ class RideEngine(
             speedKmh = CyclingPhysics.msToKmh(speedMs),
             powerWatts = data.powerWatts,
             cadenceRpm = data.cadenceRpm,
-            heartRate = data.heartRate,
+            heartRate = heartRate,
             gradePercent = CyclingPhysics.gradeToPercent(terrainGrade),
             trainerGradePercent = CyclingPhysics.gradeToPercent(terrainGrade + gears.gradeOffset()),
             elevationMeters = point.elevation,
@@ -125,7 +129,7 @@ class RideEngine(
                     speedKmh = CyclingPhysics.msToKmh(speedMs),
                     powerWatts = data.powerWatts,
                     cadenceRpm = data.cadenceRpm,
-                    heartRate = data.heartRate,
+                    heartRate = heartRate,
                 )
             )
         }

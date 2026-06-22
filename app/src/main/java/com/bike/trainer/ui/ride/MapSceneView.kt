@@ -37,6 +37,7 @@ import org.maplibre.android.style.sources.GeoJsonSource
 fun MapSceneView(
     route: Route,
     distanceMeters: Double,
+    mapTilesKey: String,
     modifier: Modifier = Modifier,
 ) {
     val mapView = rememberMapViewWithLifecycle()
@@ -61,8 +62,8 @@ fun MapSceneView(
                     .bearing(Math.toDegrees(start.heading))
                     .build()
 
-                val builder = if (MapStyle.hasMapTilerKey) {
-                    Style.Builder().fromJson(MapStyle.styleJson())
+                val builder = if (mapTilesKey.isNotBlank()) {
+                    Style.Builder().fromJson(MapStyle.styleJson(mapTilesKey))
                 } else {
                     Style.Builder().fromUri(MapStyle.DEMO_STYLE_URL)
                 }

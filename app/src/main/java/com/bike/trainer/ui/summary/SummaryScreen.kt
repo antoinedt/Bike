@@ -9,6 +9,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBarsPadding
+import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -26,15 +29,20 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bike.trainer.di.ServiceLocator
+import com.bike.trainer.export.LocalRideStore
 import com.bike.trainer.export.TcxWriter
 import com.bike.trainer.strava.UploadResult
 import com.bike.trainer.ui.components.SectionCard
 import com.bike.trainer.ui.components.StatTile
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 import java.util.Locale
 
 private sealed interface UploadUiState {
@@ -51,11 +59,38 @@ fun SummaryScreen(onDone: () -> Unit) {
         return
     }
 
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val state by engine.state.collectAsStateWithLifecycle()
     val stravaConnected by ServiceLocator.stravaRepository.isConnected.collectAsStateWithLifecycle(initialValue = false)
 
     var uploadState by remember { mutableStateOf<UploadUiState>(UploadUiState.Idle) }
+    var savedFile by remember { mutableStateOf<File?>(null) }
+
+    // Auto-save the finished ride locally so it can be uploaded/added manually later.
+    LaunchedEffect(Unit) {
+        savedFile = withContext(Dispatchers.IO) {
+            runCatching {
+                val tcx = TcxWriter.write(engine.route.name, engine.recorder.snapshot())
+                LocalRideStore.save(context, engine.route.name, tcx)
+            }.getOrNull()
+        }
+    }
+
+    val exporter = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/octet-stream"),
+    ) { uri ->
+        val file = savedFile
+        if (uri != null && file != null) {
+            scope.launch {
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                        context.contentResolver.openOutputStream(uri)?.use { it.write(file.readBytes()) }
+                    }
+                }
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -79,6 +114,24 @@ fun SummaryScreen(onDone: () -> Unit) {
                 StatTile("Avg Power", "${state.avgPowerWatts} W")
                 StatTile("Energy", "${state.energyKilojoules.toInt()} kJ")
                 StatTile("Avg Speed", avgSpeed(state.distanceMeters, state.elapsedSeconds))
+            }
+        }
+
+        SectionCard {
+            Text("Saved ride file", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(6.dp))
+            val file = savedFile
+            if (file != null) {
+                Text("Saved locally as ${file.name}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    "In ${file.parentFile?.absolutePath ?: "app storage"}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(onClick = { exporter.launch(file.name) }) { Text("Export / Save as…") }
+            } else {
+                Text("Saving…", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
 
