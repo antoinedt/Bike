@@ -74,10 +74,11 @@ fun RideScreen(
     var smoothTransitions by remember { mutableStateOf(true) }
     var sceneBounds by remember { mutableStateOf<android.graphics.Rect?>(null) }
 
-    suspend fun captureScene() {
-        val window = ScreenCapture.findActivity(context)?.window ?: return
-        val rect = sceneBounds ?: return
-        ScreenCapture.capture(window, rect)?.let { ServiceLocator.capturedRideImage = it }
+    suspend fun captureScene(): Boolean {
+        val window = ScreenCapture.findActivity(context)?.window ?: return false
+        val bmp = ScreenCapture.capture(window, sceneBounds) ?: return false
+        ServiceLocator.capturedRideImage = bmp
+        return true
     }
 
     LaunchedEffect(Unit) {
@@ -165,18 +166,20 @@ fun RideScreen(
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurface,
             )
-            // Animated rider that pedals with speed and stands up on climbs.
-            // Scaled smaller over Street View so it sits believably on the road.
-            CyclistView(
-                speedKmh = state.speedKmh,
-                cadenceRpm = state.cadenceRpm,
-                gradePercent = state.gradePercent,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = if (googleStreet) 10.dp else 6.dp)
-                    .fillMaxWidth(if (googleStreet) 0.4f else 0.6f)
-                    .height(if (googleStreet) 115.dp else 150.dp),
-            )
+            // Animated rider, shown only over Street View where it reads as a
+            // real cyclist on the road (the chase/map view has its own framing).
+            if (googleStreet) {
+                CyclistView(
+                    speedKmh = state.speedKmh,
+                    cadenceRpm = state.cadenceRpm,
+                    gradePercent = state.gradePercent,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 10.dp)
+                        .fillMaxWidth(0.4f)
+                        .height(115.dp),
+                )
+            }
             // Camera view toggle: chase <-> street.
             val toggleLabel = when {
                 !streetLevel -> "  Chase"
@@ -242,8 +245,12 @@ fun RideScreen(
                     .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f))
                     .clickable {
                         scope.launch {
-                            captureScene()
-                            Toast.makeText(context, "Captured", Toast.LENGTH_SHORT).show()
+                            val ok = captureScene()
+                            Toast.makeText(
+                                context,
+                                if (ok) "Captured" else "Couldn't capture the view",
+                                Toast.LENGTH_SHORT,
+                            ).show()
                         }
                     }
                     .padding(10.dp),

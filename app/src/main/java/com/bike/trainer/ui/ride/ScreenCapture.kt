@@ -13,8 +13,13 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 
 /**
- * Captures a region of the activity window — including the MapLibre / Street View
- * GL surfaces, which a normal view draw can't reach — into a Bitmap via PixelCopy.
+ * Captures the activity window — including the MapLibre / Street View GL surfaces,
+ * which a normal view draw can't reach — into a Bitmap via PixelCopy.
+ *
+ * We copy the whole window and then crop, rather than asking PixelCopy for a
+ * sub-rectangle: the sub-rect variant throws / returns no data on some devices
+ * when the requested rect doesn't sit perfectly inside the window surface, which
+ * is what made the in-ride capture silently fail over Street View.
  */
 object ScreenCapture {
 
@@ -27,23 +32,32 @@ object ScreenCapture {
         return null
     }
 
-    suspend fun capture(window: Window, rect: Rect): Bitmap? {
-        if (rect.width() <= 0 || rect.height() <= 0) return null
-        val dest = Bitmap.createBitmap(rect.width(), rect.height(), Bitmap.Config.ARGB_8888)
-        return suspendCancellableCoroutine { cont ->
+    /** Capture [window]; if [crop] is given, return just that region (clamped). */
+    suspend fun capture(window: Window, crop: Rect? = null): Bitmap? {
+        val decor = window.decorView
+        val w = decor.width
+        val h = decor.height
+        if (w <= 0 || h <= 0) return null
+        val full = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val ok = suspendCancellableCoroutine { cont ->
             try {
                 PixelCopy.request(
                     window,
-                    rect,
-                    dest,
-                    { result ->
-                        if (result == PixelCopy.SUCCESS) cont.resume(dest) else cont.resume(null)
-                    },
+                    full,
+                    { result -> cont.resume(result == PixelCopy.SUCCESS) },
                     Handler(Looper.getMainLooper()),
                 )
             } catch (_: Throwable) {
-                cont.resume(null)
+                cont.resume(false)
             }
+        }
+        if (!ok) return null
+
+        val r = crop?.let { Rect(it).apply { intersect(0, 0, w, h) } }
+        return if (r != null && r.width() > 0 && r.height() > 0) {
+            Bitmap.createBitmap(full, r.left, r.top, r.width(), r.height())
+        } else {
+            full
         }
     }
 }
