@@ -35,6 +35,7 @@ enum class SvMotion(val label: String) {
     DOLLY("Dolly"),
     PARALLAX("Parallax"),
     MORPH("Morph"),
+    FLOW("Flow (optical)"),
 }
 
 /**
@@ -74,6 +75,7 @@ fun CachedStreetView(
 
     var front by remember { mutableStateOf<Bitmap?>(null) }
     var back by remember { mutableStateOf<Bitmap?>(null) }
+    var flowGrid by remember { mutableStateOf<FloatArray?>(null) }
     val fade = remember { Animatable(1f) }       // front opacity 0→1
     val progress = remember { Animatable(0f) }    // front warp 0→1 across the segment
 
@@ -88,12 +90,27 @@ fun CachedStreetView(
         val first = front == null
         if (!first) back = front
         front = bmp
+        flowGrid = null
         progress.snapTo(0f)
         fade.snapTo(if (first) 1f else 0f)
         val dissolveMs = (segmentMs / 3).coerceIn(180, 600)
         coroutineScope {
             if (!first) launch { fade.animateTo(1f, tween(dissolveMs, easing = LinearEasing)) }
             launch { progress.animateTo(1f, tween(segmentMs, easing = LinearEasing)) }
+        }
+    }
+
+    // "Flow" mode: compute optical flow between the two frames once (off-thread)
+    // when the front frame changes. Until it's ready we fall back to the analytic
+    // morph, so there's never a stall.
+    LaunchedEffect(front, mode) {
+        val a = back
+        val b = front
+        if (mode == SvMotion.FLOW && a != null && b != null && a !== b) {
+            val grid = withContext(Dispatchers.Default) {
+                OpticalFlow.gridFlow(a, b, MESH_W, MESH_H)
+            }
+            if (b === front) flowGrid = grid
         }
     }
 
@@ -104,10 +121,19 @@ fun CachedStreetView(
         val h = size.height
         val fadeV = fade.value
         val progV = progress.value
+        val flow = if (mode == SvMotion.FLOW) flowGrid else null
+        // In Flow mode the morph blend tracks progress (the warp), not the quick fade.
+        val frontAlpha = if (flow != null) progV else fadeV
         drawIntoCanvas { canvas ->
             val nc = canvas.nativeCanvas
-            back?.let { drawWarped(nc, it, w, h, 1f, mode, 255, paint) }
-            front?.let { drawWarped(nc, it, w, h, progV, mode, (fadeV * 255f).toInt().coerceIn(0, 255), paint) }
+            back?.let { drawWarped(nc, it, w, h, progV, mode, 255, paint, flow, progV) }
+            front?.let {
+                drawWarped(
+                    nc, it, w, h, progV, mode,
+                    (frontAlpha * 255f).toInt().coerceIn(0, 255), paint,
+                    flow, -(1f - progV),
+                )
+            }
         }
     }
 }
@@ -116,7 +142,12 @@ private const val EXPAND = 0.16f
 private const val MESH_W = 12
 private const val MESH_H = 10
 
-/** Draws [bmp] cover-cropped to (w,h) and warped per [mode]/[p] via a bitmap mesh. */
+/**
+ * Draws [bmp] cover-cropped to (w,h) and warped via a bitmap mesh. For FLOW mode
+ * each vertex is displaced by [flow] (normalized dx,dy) times [flowScale]; for the
+ * analytic modes it expands about a centre by [p]. Falls back to MORPH if FLOW is
+ * selected but no [flow] is ready yet.
+ */
 private fun drawWarped(
     nc: android.graphics.Canvas,
     bmp: Bitmap,
@@ -126,6 +157,8 @@ private fun drawWarped(
     mode: SvMotion,
     alpha: Int,
     paint: Paint,
+    flow: FloatArray? = null,
+    flowScale: Float = 0f,
 ) {
     val bw = bmp.width.toFloat()
     val bh = bmp.height.toFloat()
@@ -138,6 +171,9 @@ private fun drawWarped(
 
     val foeX = 0.5f * w
     val foeY = 0.45f * h          // vanishing point sits a bit above centre
+    val useFlow = mode == SvMotion.FLOW && flow != null
+    // FLOW without a computed grid yet behaves like MORPH.
+    val analytic = if (mode == SvMotion.FLOW) SvMotion.MORPH else mode
 
     val verts = FloatArray((MESH_W + 1) * (MESH_H + 1) * 2)
     var k = 0
@@ -147,26 +183,27 @@ private fun drawWarped(
             val u = j.toFloat() / MESH_W
             val bx = ox + u * dw
             val by = oy + v * dh
-            val cx: Float
-            val cy: Float
-            val s: Float
-            when (mode) {
-                SvMotion.DISSOLVE -> { cx = bx; cy = by; s = 1f }
-                SvMotion.DOLLY -> {
-                    cx = 0.5f * w; cy = 0.5f * h; s = 1f + EXPAND * p
+            if (useFlow) {
+                verts[k] = bx + flow!![k] * dw * flowScale
+                verts[k + 1] = by + flow[k + 1] * dh * flowScale
+                k += 2
+            } else {
+                val cx: Float
+                val cy: Float
+                val s: Float
+                when (analytic) {
+                    SvMotion.DISSOLVE -> { cx = bx; cy = by; s = 1f }
+                    SvMotion.DOLLY -> { cx = 0.5f * w; cy = 0.5f * h; s = 1f + EXPAND * p }
+                    SvMotion.PARALLAX -> {
+                        cx = foeX; cy = foeY
+                        val below = (((by / h) - 0.45f) / 0.55f).coerceIn(0f, 1f)
+                        s = 1f + EXPAND * p * (0.35f + 1.5f * below)
+                    }
+                    else -> { cx = foeX; cy = foeY; s = 1f + EXPAND * p } // MORPH
                 }
-                SvMotion.MORPH -> {
-                    cx = foeX; cy = foeY; s = 1f + EXPAND * p
-                }
-                SvMotion.PARALLAX -> {
-                    cx = foeX; cy = foeY
-                    // Ground (below the horizon) expands more than the sky.
-                    val below = (((by / h) - 0.45f) / 0.55f).coerceIn(0f, 1f)
-                    s = 1f + EXPAND * p * (0.35f + 1.5f * below)
-                }
+                verts[k++] = cx + (bx - cx) * s
+                verts[k++] = cy + (by - cy) * s
             }
-            verts[k++] = cx + (bx - cx) * s
-            verts[k++] = cy + (by - cy) * s
         }
     }
     paint.alpha = alpha
