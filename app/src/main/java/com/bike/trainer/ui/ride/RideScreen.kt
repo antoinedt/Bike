@@ -73,6 +73,10 @@ fun RideScreen(
     var streetLevel by remember { mutableStateOf(false) }
     var smoothTransitions by remember { mutableStateOf(true) }
     var sceneBounds by remember { mutableStateOf<android.graphics.Rect?>(null) }
+    // Prefetched Street View frames for this route, if any were downloaded.
+    val svManifest = remember(engine.route.id) {
+        com.bike.trainer.route.StreetViewCache.load(context, engine.route.id)
+    }
 
     suspend fun captureScene(): Boolean {
         val window = ScreenCapture.findActivity(context)?.window ?: return false
@@ -125,7 +129,14 @@ fun RideScreen(
                 },
         ) {
             val googleStreet = streetLevel && com.bike.trainer.BuildConfig.HAS_MAPS_KEY
-            if (googleStreet) {
+            if (googleStreet && svManifest != null) {
+                // Prefetched frames: smooth, offline, no live panorama reloads.
+                CachedStreetView(
+                    manifest = svManifest,
+                    distanceMeters = state.distanceMeters,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else if (googleStreet) {
                 StreetViewScene(
                     route = engine.route,
                     distanceMeters = state.distanceMeters,
@@ -192,8 +203,8 @@ fun RideScreen(
                     .padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                // Smooth-transition on/off, only while Street View is active.
-                if (googleStreet) {
+                // Smooth-transition on/off, only for the live (non-cached) panorama.
+                if (googleStreet && svManifest == null) {
                     Row(
                         modifier = Modifier
                             .clip(RoundedCornerShape(10.dp))

@@ -20,10 +20,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.DirectionsBike
 import androidx.compose.material.icons.filled.Route
 import androidx.compose.material.icons.filled.UploadFile
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.Slider
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -56,6 +60,8 @@ import com.bike.trainer.route.GpxImporter
 import com.bike.trainer.route.Route
 import com.bike.trainer.route.RouteGenerator
 import com.bike.trainer.route.RouteLibrary
+import com.bike.trainer.route.StreetViewCache
+import com.bike.trainer.route.StreetViewPrefetcher
 import com.bike.trainer.session.RideEngine
 import com.bike.trainer.ui.components.SectionCard
 import kotlinx.coroutines.Dispatchers
@@ -90,10 +96,10 @@ fun HomeScreen(
         onStartRide()
     }
 
-    fun loadAndStart(name: String, open: () -> java.io.InputStream?) {
+    fun loadAndStart(name: String, id: String?, open: () -> java.io.InputStream?) {
         scope.launch {
             val route = withContext(Dispatchers.IO) {
-                runCatching { open()?.use { GpxImporter.import(name, it) } }.getOrNull()
+                runCatching { open()?.use { GpxImporter.import(name, it, id) } }.getOrNull()
             }
             if (route != null) startRide(route)
             else Toast.makeText(context, "Couldn't read that GPX route", Toast.LENGTH_LONG).show()
@@ -103,6 +109,7 @@ fun HomeScreen(
     var gpxFiles by remember { mutableStateOf<List<java.io.File>>(emptyList()) }
     var selectedGpx by remember { mutableStateOf<java.io.File?>(null) }
     var menuExpanded by remember { mutableStateOf(false) }
+    var prefetchFor by remember { mutableStateOf<java.io.File?>(null) }
 
     fun refreshGpx(select: java.io.File? = null) {
         scope.launch {
@@ -219,7 +226,9 @@ fun HomeScreen(
                     enabled = selectedGpx != null,
                     onClick = {
                         val file = selectedGpx ?: return@Button
-                        loadAndStart(RouteLibrary.prettyName(file)) { java.io.FileInputStream(file) }
+                        loadAndStart(RouteLibrary.prettyName(file), file.nameWithoutExtension) {
+                            java.io.FileInputStream(file)
+                        }
                     },
                 ) {
                     Icon(Icons.Filled.Route, contentDescription = null)
@@ -228,6 +237,14 @@ fun HomeScreen(
                 OutlinedButton(onClick = { gpxPicker.launch(arrayOf("*/*")) }) {
                     Icon(Icons.Filled.UploadFile, contentDescription = null)
                     Text("  Add GPX")
+                }
+            }
+            // Prefetch Google Street View frames along the selected route so the
+            // ride plays them smoothly and offline (needs a Google Maps key).
+            if (selectedGpx != null && com.bike.trainer.BuildConfig.HAS_MAPS_KEY) {
+                TextButton(onClick = { prefetchFor = selectedGpx }) {
+                    Icon(Icons.Filled.CloudDownload, contentDescription = null)
+                    Text("  Prefetch Street View…")
                 }
             }
         }
@@ -242,6 +259,124 @@ fun HomeScreen(
         }
         Spacer(Modifier.height(24.dp))
     }
+
+    prefetchFor?.let { file ->
+        PrefetchDialog(file = file, onDismiss = { prefetchFor = null })
+    }
+}
+
+/** Sampling/cost dialog that prefetches Street View frames for one GPX route. */
+@Composable
+private fun PrefetchDialog(file: java.io.File, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val routeId = file.nameWithoutExtension
+
+    var route by remember { mutableStateOf<Route?>(null) }
+    var spacing by remember { mutableStateOf(20f) }
+    var running by remember { mutableStateOf(false) }
+    var progress by remember { mutableStateOf<StreetViewPrefetcher.Progress?>(null) }
+    var status by remember { mutableStateOf<String?>(null) }
+    var job by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    val existing = remember(routeId) { StreetViewCache.load(context, routeId) }
+
+    LaunchedEffect(file) {
+        route = withContext(Dispatchers.IO) {
+            runCatching { file.inputStream().use { GpxImporter.import(routeId, it, routeId) } }.getOrNull()
+        }
+    }
+
+    val total = route?.totalDistance ?: 0.0
+    val count = StreetViewPrefetcher.sampleCount(total, spacing.toDouble())
+    val cost = count * StreetViewPrefetcher.USD_PER_IMAGE
+
+    AlertDialog(
+        onDismissRequest = { if (!running) onDismiss() },
+        title = { Text(if (running) "Prefetching Street View…" else "Prefetch Street View") },
+        text = {
+            Column {
+                if (route == null) {
+                    Text("Reading route…", style = MaterialTheme.typography.bodySmall)
+                } else {
+                    Text(
+                        "${RouteLibrary.prettyName(file)} • ${String.format(java.util.Locale.US, "%.1f", total / 1000.0)} km",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    if (existing != null) {
+                        Text(
+                            "Already cached: ${existing.imageCount} frames at ${existing.spacingMeters.toInt()} m",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Text("Sample every ${spacing.toInt()} m", style = MaterialTheme.typography.bodyMedium)
+                    Slider(
+                        value = spacing,
+                        onValueChange = { spacing = it },
+                        valueRange = 5f..60f,
+                        steps = 10,
+                        enabled = !running,
+                    )
+                    Text(
+                        "≈ $count images  •  ≈ \$${String.format(java.util.Locale.US, "%.2f", cost)} on your Google key",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    val p = progress
+                    if (p != null) {
+                        Spacer(Modifier.height(12.dp))
+                        LinearProgressIndicator(
+                            progress = { if (p.total > 0) p.done.toFloat() / p.total else 0f },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Text(
+                            "Downloading ${p.done}/${p.total} • ${p.withImage} with imagery",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    status?.let {
+                        Spacer(Modifier.height(8.dp))
+                        Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = route != null && !running,
+                onClick = {
+                    val r = route ?: return@TextButton
+                    running = true
+                    status = null
+                    progress = null
+                    job = scope.launch {
+                        val result = StreetViewPrefetcher.prefetch(
+                            context, r, routeId, spacing.toDouble(),
+                            com.bike.trainer.BuildConfig.MAPS_API_KEY,
+                        ) { progress = it }
+                        running = false
+                        status = when (result) {
+                            is StreetViewPrefetcher.Result.Success ->
+                                "Done — ${result.manifest.imageCount} frames cached"
+                            is StreetViewPrefetcher.Result.Error -> result.message
+                        }
+                    }
+                },
+            ) { Text(if (existing != null) "Re-fetch" else "Download") }
+        },
+        dismissButton = {
+            TextButton(onClick = {
+                if (running) {
+                    job?.cancel()
+                    running = false
+                    status = "Cancelled"
+                } else {
+                    onDismiss()
+                }
+            }) { Text(if (running) "Cancel" else "Close") }
+        },
+    )
 }
 
 /** Resolve a content Uri's display name (without extension) for the route title. */

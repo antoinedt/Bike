@@ -31,12 +31,12 @@ object GpxImporter {
     class GpxFormatException(message: String) : Exception(message)
 
     /** Parse + build in one call. [name] is used as the route's display name. */
-    fun import(name: String, input: InputStream): Route {
+    fun import(name: String, input: InputStream, id: String? = null): Route {
         val raw = parse(input)
         if (raw.size < 2) {
             throw GpxFormatException("GPX file has fewer than 2 track points")
         }
-        return buildRoute(name, raw)
+        return buildRoute(name, raw, id)
     }
 
     // --------------------------------------------------------------- parsing
@@ -92,7 +92,7 @@ object GpxImporter {
 
     // --------------------------------------------------------------- building
 
-    private fun buildRoute(name: String, raw: List<RawPoint>): Route {
+    private fun buildRoute(name: String, raw: List<RawPoint>, id: String? = null): Route {
         // 1. Drop consecutive duplicate fixes and compute cumulative distance.
         val cleaned = ArrayList<RawPoint>(raw.size)
         val cumulative = ArrayList<Double>(raw.size)
@@ -178,6 +178,7 @@ object GpxImporter {
             seed = 0L,
             points = points,
             stepMeters = STEP_METERS,
+            id = id,
         )
     }
 
