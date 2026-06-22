@@ -24,10 +24,15 @@ import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Remove
+import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.filled.Layers
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -56,6 +61,7 @@ fun RideScreen(
     val state by engine.state.collectAsStateWithLifecycle()
     val appConfig by ServiceLocator.appConfigRepository.config
         .collectAsStateWithLifecycle(initialValue = null)
+    var streetLevel by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         if (state.status == RideStatus.NotStarted) engine.start(scope)
@@ -88,6 +94,7 @@ fun RideScreen(
                 route = engine.route,
                 distanceMeters = state.distanceMeters,
                 mapTilesKey = appConfig?.mapTilesKey.orEmpty(),
+                streetLevel = streetLevel,
                 modifier = Modifier.fillMaxSize(),
             )
             // Grade badge.
@@ -126,6 +133,29 @@ fun RideScreen(
                     .fillMaxWidth(0.6f)
                     .height(150.dp),
             )
+            // Camera view toggle: chase <-> street level.
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(12.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f))
+                    .clickable { streetLevel = !streetLevel }
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    Icons.Filled.Layers,
+                    contentDescription = "Toggle view",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp),
+                )
+                Text(
+                    if (streetLevel) "  Street" else "  Chase",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
         }
 
         // ---- Primary metrics ----

@@ -38,6 +38,7 @@ fun MapSceneView(
     route: Route,
     distanceMeters: Double,
     mapTilesKey: String,
+    streetLevel: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val mapView = rememberMapViewWithLifecycle()
@@ -54,11 +55,13 @@ fun MapSceneView(
                     setAllGesturesEnabled(false)
                     isCompassEnabled = false
                 }
+                // Allow the near-horizontal pitch used by the street-level view.
+                libreMap.setMaxPitchPreference(85.0)
                 val start = route.pointAt(0.0)
                 libreMap.cameraPosition = CameraPosition.Builder()
                     .target(LatLng(start.lat, start.lon))
-                    .zoom(16.5)
-                    .tilt(62.0)
+                    .zoom(CHASE_ZOOM)
+                    .tilt(CHASE_TILT)
                     .bearing(Math.toDegrees(start.heading))
                     .build()
                 map = libreMap
@@ -96,18 +99,20 @@ fun MapSceneView(
         }
     }
 
-    // Follow the rider every time the ride advances.
-    LaunchedEffect(ready, distanceMeters) {
+    // Follow the rider every time the ride advances (or the view mode changes).
+    LaunchedEffect(ready, distanceMeters, streetLevel) {
         if (!ready) return@LaunchedEffect
         val m = map ?: return@LaunchedEffect
         val p = route.pointAt(distanceMeters)
         riderSource?.setGeoJson(pointGeoJson(p.lat, p.lon))
+        val zoom = if (streetLevel) STREET_ZOOM else CHASE_ZOOM
+        val tilt = if (streetLevel) STREET_TILT else CHASE_TILT
         m.animateCamera(
             CameraUpdateFactory.newCameraPosition(
                 CameraPosition.Builder()
                     .target(LatLng(p.lat, p.lon))
-                    .zoom(16.5)
-                    .tilt(62.0)
+                    .zoom(zoom)
+                    .tilt(tilt)
                     .bearing(Math.toDegrees(p.heading))
                     .build()
             ),
@@ -120,6 +125,12 @@ private const val ROUTE_SOURCE = "route-source"
 private const val ROUTE_LAYER = "route-layer"
 private const val RIDER_SOURCE = "rider-source"
 private const val RIDER_LAYER = "rider-layer"
+
+// Camera presets: an angled chase view, and a near-ground forward "street" view.
+private const val CHASE_ZOOM = 16.5
+private const val CHASE_TILT = 62.0
+private const val STREET_ZOOM = 18.0
+private const val STREET_TILT = 80.0
 
 private fun addRouteLine(style: Style, route: Route) {
     val points = route.points
