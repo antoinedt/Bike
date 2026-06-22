@@ -1,5 +1,6 @@
 package com.bike.trainer.ui.ride
 
+import android.content.res.Configuration
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -7,12 +8,15 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
@@ -42,6 +46,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -70,7 +75,9 @@ fun RideScreen(
     val state by engine.state.collectAsStateWithLifecycle()
     val appConfig by ServiceLocator.appConfigRepository.config
         .collectAsStateWithLifecycle(initialValue = null)
-    var streetLevel by remember { mutableStateOf(false) }
+    // Default to the Street View / ground view (real Street View when a Maps key
+    // is present, otherwise the near-ground map view).
+    var streetLevel by remember { mutableStateOf(true) }
     var smoothTransitions by remember { mutableStateOf(true) }
     var sceneBounds by remember { mutableStateOf<android.graphics.Rect?>(null) }
     // Prefetched Street View frames for this route, if a valid cache exists.
@@ -111,16 +118,11 @@ fun RideScreen(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .systemBarsPadding(),
-    ) {
-        // ---- 3D map scenery with grade + route overlay ----
+    // ---- 3D map scenery with grade + route overlay ----
+    @Composable
+    fun Scene(modifier: Modifier) {
         Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(280.dp)
+            modifier = modifier
                 .onGloballyPositioned { coords ->
                     val b = coords.boundsInWindow()
                     sceneBounds = android.graphics.Rect(
@@ -274,7 +276,12 @@ fun RideScreen(
                 )
             }
         }
+    }
 
+    // ---- Ride metrics, gears and finish ----
+    @Composable
+    fun Controls(modifier: Modifier) {
+      Column(modifier) {
         // ---- Primary metrics ----
         Row(
             modifier = Modifier
@@ -368,6 +375,35 @@ fun RideScreen(
             Text("Finish Ride", fontWeight = FontWeight.Bold)
         }
         Spacer(Modifier.height(12.dp))
+      }
+    }
+
+    // Landscape (tablets / rotated phones): scene on the left, controls scrolling
+    // on the right. Portrait: scene on top, controls below.
+    val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    if (landscape) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .systemBarsPadding(),
+        ) {
+            Scene(Modifier.weight(1.4f).fillMaxHeight())
+            Controls(
+                Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .verticalScroll(rememberScrollState()),
+            )
+        }
+    } else {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .systemBarsPadding(),
+        ) {
+            Scene(Modifier.fillMaxWidth().height(280.dp))
+            Controls(Modifier.fillMaxWidth())
+        }
     }
 }
 
