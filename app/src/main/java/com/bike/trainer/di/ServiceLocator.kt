@@ -36,6 +36,10 @@ object ServiceLocator {
     @Volatile
     var activeRide: RideEngine? = null
 
+    /** Best in-ride screenshot (auto or manual), shown on the recap screen. */
+    @Volatile
+    var capturedRideImage: android.graphics.Bitmap? = null
+
     fun init(context: Context) {
         appContext = context.applicationContext
     }

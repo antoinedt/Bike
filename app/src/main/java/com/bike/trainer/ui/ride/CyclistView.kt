@@ -70,14 +70,15 @@ fun CyclistView(
 
 private const val TWO_PI = (2.0 * PI).toFloat()
 
-private val JERSEY_LIGHT = Color(0xFFFF8A2A)
-private val JERSEY_DARK = Color(0xFFB0501A)
-private val SHORTS = Color(0xFF1B2430)
-private val SHORTS_HI = Color(0xFF2C3A4C)
-private val SKIN = Color(0xFFE2A074)
-private val SKIN_DARK = Color(0xFFB97E55)
-private val HELMET = Color(0xFF2B313C)
-private val HELMET_HI = Color(0xFF49525F)
+// Palette from the reference: blue jersey, red shorts, dark helmet, black bike.
+private val JERSEY_LIGHT = Color(0xFF3F73D6)
+private val JERSEY_DARK = Color(0xFF274C97)
+private val SHORTS = Color(0xFFCB3A2D)
+private val SHORTS_HI = Color(0xFF9E2C22)
+private val SKIN = Color(0xFFE6AC82)
+private val SKIN_DARK = Color(0xFFC2895F)
+private val HELMET = Color(0xFF1C2128)
+private val HELMET_HI = Color(0xFF333B45)
 private val SHOE = Color(0xFF0F1318)
 private val WHEEL = Color(0xFF0D1116)
 private val RIM = Color(0xFF3A4452)

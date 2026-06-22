@@ -1,5 +1,6 @@
 package com.bike.trainer.ui.ride
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,6 +24,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.filled.Layers
@@ -36,6 +38,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -43,6 +48,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bike.trainer.di.ServiceLocator
 import com.bike.trainer.session.RideStatus
 import com.bike.trainer.ui.components.StatTile
+import kotlinx.coroutines.launch
 import java.util.Locale
 
 @Composable
@@ -58,13 +64,31 @@ fun RideScreen(
     }
 
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     val state by engine.state.collectAsStateWithLifecycle()
     val appConfig by ServiceLocator.appConfigRepository.config
         .collectAsStateWithLifecycle(initialValue = null)
     var streetLevel by remember { mutableStateOf(false) }
+    var sceneBounds by remember { mutableStateOf<android.graphics.Rect?>(null) }
+
+    suspend fun captureScene() {
+        val window = ScreenCapture.findActivity(context)?.window ?: return
+        val rect = sceneBounds ?: return
+        ScreenCapture.capture(window, rect)?.let { ServiceLocator.capturedRideImage = it }
+    }
 
     LaunchedEffect(Unit) {
-        if (state.status == RideStatus.NotStarted) engine.start(scope)
+        if (state.status == RideStatus.NotStarted) {
+            ServiceLocator.capturedRideImage = null
+            engine.start(scope)
+        }
+    }
+    // Auto-capture a frame periodically as a recap fallback.
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(20_000)
+            if (state.status == RideStatus.Running) captureScene()
+        }
     }
     LaunchedEffect(state.status) {
         if (state.status == RideStatus.Finished) onFinished()
@@ -88,7 +112,13 @@ fun RideScreen(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(280.dp),
+                .height(280.dp)
+                .onGloballyPositioned { coords ->
+                    val b = coords.boundsInWindow()
+                    sceneBounds = android.graphics.Rect(
+                        b.left.toInt(), b.top.toInt(), b.right.toInt(), b.bottom.toInt(),
+                    )
+                },
         ) {
             val googleStreet = streetLevel && com.bike.trainer.BuildConfig.HAS_MAPS_KEY
             if (googleStreet) {
@@ -132,15 +162,16 @@ fun RideScreen(
                 color = MaterialTheme.colorScheme.onSurface,
             )
             // Animated rider that pedals with speed and stands up on climbs.
+            // Scaled smaller over Street View so it sits believably on the road.
             CyclistView(
                 speedKmh = state.speedKmh,
                 cadenceRpm = state.cadenceRpm,
                 gradePercent = state.gradePercent,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = 6.dp)
-                    .fillMaxWidth(0.6f)
-                    .height(150.dp),
+                    .padding(bottom = if (googleStreet) 10.dp else 6.dp)
+                    .fillMaxWidth(if (googleStreet) 0.4f else 0.6f)
+                    .height(if (googleStreet) 115.dp else 150.dp),
             )
             // Camera view toggle: chase <-> street.
             val toggleLabel = when {
@@ -168,6 +199,28 @@ fun RideScreen(
                     toggleLabel,
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+            // Manual capture button for the recap photo.
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(12.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f))
+                    .clickable {
+                        scope.launch {
+                            captureScene()
+                            Toast.makeText(context, "Captured", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                    .padding(10.dp),
+            ) {
+                Icon(
+                    Icons.Filled.PhotoCamera,
+                    contentDescription = "Capture photo",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(22.dp),
                 )
             }
         }
