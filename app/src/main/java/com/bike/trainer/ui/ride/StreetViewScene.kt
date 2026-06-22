@@ -1,7 +1,5 @@
 package com.bike.trainer.ui.ride
 
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,13 +11,11 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -38,11 +34,11 @@ import kotlin.math.abs
  * Interactive Google Street View panorama that follows the ride. Requires a
  * Google Maps API key in the manifest (build-time MAPS_API_KEY).
  *
- * The widget only ever shows one panorama, so to make movement feel continuous
- * rather than jumping every time we load a new one, we mask the panorama swap
- * with a quick crossfade/dissolve while the camera bearing animates smoothly
- * toward the route heading. The dissolve can be turned off with
- * [smoothTransitions] (some riders find the crossfade distracting / "pulsing").
+ * The widget only ever shows one panorama, so we re-anchor it along the route as
+ * the rider advances and let the SDK's own transition carry the swap. We no
+ * longer overlay a dark scrim between hops (that produced a regular black
+ * "blink"); [smoothTransitions] now just chooses whether the camera bearing
+ * eases toward the new heading or snaps to it.
  */
 @Composable
 fun StreetViewScene(
@@ -58,8 +54,6 @@ fun StreetViewScene(
     var panorama by remember { mutableStateOf<StreetViewPanorama?>(null) }
     var hasCoverage by remember { mutableStateOf(true) }
     var lastPositionedAt by remember { mutableDoubleStateOf(-1000.0) }
-    var hops by remember { mutableIntStateOf(0) }
-    val dissolve = remember { Animatable(0f) }
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -97,15 +91,6 @@ fun StreetViewScene(
             },
         )
 
-        // Dissolve scrim that briefly covers the hard panorama swap.
-        if (dissolve.value > 0f) {
-            Box(
-                Modifier
-                    .matchParentSize()
-                    .background(Color.Black.copy(alpha = dissolve.value)),
-            )
-        }
-
         if (!hasCoverage) {
             Text(
                 "No Street View imagery near here",
@@ -119,27 +104,19 @@ fun StreetViewScene(
         }
     }
 
-    // Animate the dissolve each time we hop to a new panorama.
-    LaunchedEffect(hops) {
-        if (hops > 0) {
-            dissolve.snapTo(0.55f)
-            dissolve.animateTo(0f, tween(durationMillis = 320))
-        }
-    }
-
-    // Track position/heading every tick; re-anchor (and dissolve) every ~12 m.
+    // Track position/heading every tick; re-anchor every ~HOP_METERS so we don't
+    // reload the panorama too often (which is what made it flicker).
     LaunchedEffect(panorama, distanceMeters, smoothTransitions) {
         val p = panorama ?: return@LaunchedEffect
         val point = route.pointAt(distanceMeters)
         if (abs(distanceMeters - lastPositionedAt) > HOP_METERS) {
             lastPositionedAt = distanceMeters
-            if (smoothTransitions) hops += 1
             // OUTDOOR restricts to official road-level Street View and drops
             // indoor panoramas and most user-contributed photo spheres.
             p.setPosition(LatLng(point.lat, point.lon), 120, StreetViewSource.OUTDOOR)
         }
-        // Only turn smoothly toward the route heading — keep the zoom fixed so the
-        // view no longer pulses forward-and-back between panorama hops.
+        // Only turn toward the route heading — keep the zoom fixed so the view
+        // no longer pulses forward-and-back between panorama hops.
         p.animateTo(
             StreetViewPanoramaCamera.Builder()
                 .bearing(Math.toDegrees(point.heading).toFloat())
@@ -151,4 +128,4 @@ fun StreetViewScene(
     }
 }
 
-private const val HOP_METERS = 12.0
+private const val HOP_METERS = 20.0

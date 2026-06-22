@@ -91,13 +91,12 @@ class RideEngine(
                 dtSeconds = dt,
             )
         } else {
-            // Demo mode (no trainer): cruise ~20 km/h scaled by the selected gear
-            // (shift up to go faster, down to go slower), easier on climbs and
-            // faster downhill, with synthesized power/cadence so the HUD and rider
-            // move.
-            val targetKmh = (DEMO_SPEED_KMH * gears.speedFactor() -
+            // Demo mode (no trainer): cruise ~20 km/h, then +10 km/h per gear up
+            // from neutral (and -10 per gear down), easier on climbs and faster
+            // downhill, with synthesized power/cadence so the HUD and rider move.
+            val targetKmh = (DEMO_SPEED_KMH + gears.demoSpeedBonusKmh() -
                 CyclingPhysics.gradeToPercent(terrainGrade) * 1.5)
-                .coerceIn(5.0, 60.0)
+                .coerceIn(5.0, 99.0)
             val targetMs = targetKmh / 3.6
             speedMs += (targetMs - speedMs) * (dt * 0.7).coerceAtMost(1.0)
             power = CyclingPhysics.powerForSteadySpeed(speedMs, terrainGrade, totalMass).roundToInt()

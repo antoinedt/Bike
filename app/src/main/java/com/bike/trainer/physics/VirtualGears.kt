@@ -58,10 +58,10 @@ class VirtualGears(
     }
 
     /**
-     * Demo-mode speed multiplier relative to the neutral gear. With no trainer
-     * to measure power, we model a rider spinning at a roughly constant cadence,
-     * so a harder (higher) gear covers more ground per stroke and goes faster,
-     * an easier gear slower. 1.0 at the neutral gear.
+     * Demo-mode speed bump for the selected gear (km/h), relative to the neutral
+     * gear. With no trainer to measure power, each gear up adds [perGear] km/h and
+     * each gear down removes it, on top of the base demo cruise — so shifting
+     * makes an obvious difference to how fast you go.
      */
-    fun speedFactor(): Double = ratioFor(current) / ratioFor(neutralGear)
+    fun demoSpeedBonusKmh(perGear: Double = 10.0): Double = (current - neutralGear) * perGear
 }
