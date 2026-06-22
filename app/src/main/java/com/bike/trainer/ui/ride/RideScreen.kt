@@ -24,6 +24,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.BlurOff
+import androidx.compose.material.icons.filled.BlurOn
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.foundation.clickable
@@ -69,6 +71,7 @@ fun RideScreen(
     val appConfig by ServiceLocator.appConfigRepository.config
         .collectAsStateWithLifecycle(initialValue = null)
     var streetLevel by remember { mutableStateOf(false) }
+    var smoothTransitions by remember { mutableStateOf(true) }
     var sceneBounds by remember { mutableStateOf<android.graphics.Rect?>(null) }
 
     suspend fun captureScene() {
@@ -125,6 +128,7 @@ fun RideScreen(
                 StreetViewScene(
                     route = engine.route,
                     distanceMeters = state.distanceMeters,
+                    smoothTransitions = smoothTransitions,
                     modifier = Modifier.fillMaxSize(),
                 )
             } else {
@@ -179,27 +183,55 @@ fun RideScreen(
                 com.bike.trainer.BuildConfig.HAS_MAPS_KEY -> "  Street View"
                 else -> "  Ground"
             }
-            Row(
+            Column(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
-                    .padding(12.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f))
-                    .clickable { streetLevel = !streetLevel }
-                    .padding(horizontal = 10.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Icon(
-                    Icons.Filled.Layers,
-                    contentDescription = "Toggle view",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp),
-                )
-                Text(
-                    toggleLabel,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
+                // Smooth-transition on/off, only while Street View is active.
+                if (googleStreet) {
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f))
+                            .clickable { smoothTransitions = !smoothTransitions }
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            if (smoothTransitions) Icons.Filled.BlurOn else Icons.Filled.BlurOff,
+                            contentDescription = "Toggle smooth transitions",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Text(
+                            if (smoothTransitions) "  Smooth: On" else "  Smooth: Off",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                }
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f))
+                        .clickable { streetLevel = !streetLevel }
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Filled.Layers,
+                        contentDescription = "Toggle view",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Text(
+                        toggleLabel,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
             }
             // Manual capture button for the recap photo.
             Box(
