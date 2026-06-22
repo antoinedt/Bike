@@ -89,6 +89,26 @@ object CyclingPhysics {
     /** Convert a slope ratio to its percent representation. */
     fun gradeToPercent(gradeFraction: Double): Double = gradeFraction * 100.0
 
+    /**
+     * The steady-state power required to hold [speed] on [gradeFraction]. Used to
+     * synthesize a believable power number in demo mode (no trainer connected).
+     */
+    fun powerForSteadySpeed(
+        speed: Double,
+        gradeFraction: Double,
+        totalMassKg: Double,
+        cda: Double = DEFAULT_CDA,
+        crr: Double = DEFAULT_CRR,
+    ): Double {
+        if (speed <= 0.0) return 0.0
+        val slopeAngle = atan(gradeFraction)
+        val gravityForce = totalMassKg * GRAVITY * sin(slopeAngle)
+        val rollingForce = totalMassKg * GRAVITY * cos(slopeAngle) * crr
+        val dragForce = 0.5 * AIR_DENSITY * cda * speed * speed
+        val totalForce = gravityForce + rollingForce + dragForce
+        return (totalForce * speed / DRIVETRAIN_EFFICIENCY).coerceAtLeast(0.0)
+    }
+
     /** Distance (m) covered while moving at [speed] for [dtSeconds]. */
     fun distanceStep(speed: Double, dtSeconds: Double): Double = speed * dtSeconds
 
