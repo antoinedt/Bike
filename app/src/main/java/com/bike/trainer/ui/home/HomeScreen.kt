@@ -396,8 +396,13 @@ private fun PrefetchDialog(file: java.io.File, onDismiss: () -> Unit) {
                         ) { progress = it }
                         running = false
                         status = when (result) {
-                            is StreetViewPrefetcher.Result.Success ->
-                                "Done — ${result.manifest.imageCount} frames cached"
+                            is StreetViewPrefetcher.Result.Success -> {
+                                val imgs = result.manifest.imageCount
+                                val depth = if (result.depthCount > 0) {
+                                    " • depth ${result.depthCount}/$imgs"
+                                } else " • no depth available"
+                                "Done — $imgs frames cached$depth"
+                            }
                             is StreetViewPrefetcher.Result.Error -> result.message
                         }
                     }
