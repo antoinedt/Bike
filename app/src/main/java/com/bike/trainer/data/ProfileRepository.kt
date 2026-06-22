@@ -45,6 +45,25 @@ class ProfileRepository(private val dataStore: DataStore<Preferences>) {
         entry.copy(stats = entry.stats.merged(summary))
     }
 
+    suspend fun setActiveStravaCredentials(clientId: String, clientSecret: String) = mutateActive { entry ->
+        entry.copy(strava = entry.strava.copy(clientId = clientId.trim(), clientSecret = clientSecret.trim()))
+    }
+
+    suspend fun setActiveStravaTokens(accessToken: String, refreshToken: String, expiresAt: Long) =
+        mutateActive { entry ->
+            entry.copy(
+                strava = entry.strava.copy(
+                    accessToken = accessToken,
+                    refreshToken = refreshToken,
+                    expiresAt = expiresAt,
+                ),
+            )
+        }
+
+    suspend fun clearActiveStravaTokens() = mutateActive { entry ->
+        entry.copy(strava = entry.strava.copy(accessToken = "", refreshToken = "", expiresAt = 0L))
+    }
+
     /** Replace all profiles wholesale (used when restoring a backup). */
     suspend fun replaceAll(state: ProfilesState) {
         val safe = if (state.entries.isEmpty()) ProfilesState() else state

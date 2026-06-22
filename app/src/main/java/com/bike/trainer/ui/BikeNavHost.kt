@@ -9,11 +9,15 @@ import com.bike.trainer.ui.connect.ConnectScreen
 import com.bike.trainer.ui.connect.SensorScanScreen
 import com.bike.trainer.ui.home.HomeScreen
 import com.bike.trainer.ui.ride.RideScreen
+import com.bike.trainer.ui.settings.SettingsScreen
+import com.bike.trainer.ui.setup.SetupScreen
 import com.bike.trainer.ui.stats.StatsScreen
 import com.bike.trainer.ui.summary.SummaryScreen
 
 object Routes {
+    const val SETUP = "setup"
     const val HOME = "home"
+    const val SETTINGS = "settings"
     const val CONNECT = "connect"
     const val CONNECT_HR = "connect_hr"
     const val CONNECT_CONTROLLER = "connect_controller"
@@ -25,15 +29,25 @@ object Routes {
 @Composable
 fun BikeNavHost() {
     val navController = rememberNavController()
-    NavHost(navController = navController, startDestination = Routes.HOME) {
-        composable(Routes.HOME) {
-            HomeScreen(
+    NavHost(navController = navController, startDestination = Routes.SETUP) {
+        composable(Routes.SETUP) {
+            SetupScreen(
                 onConnectTrainer = { navController.navigate(Routes.CONNECT) },
                 onConnectHeartRate = { navController.navigate(Routes.CONNECT_HR) },
                 onConnectController = { navController.navigate(Routes.CONNECT_CONTROLLER) },
+                onOpenSettings = { navController.navigate(Routes.SETTINGS) },
+                onConfirm = { navController.navigate(Routes.HOME) },
+            )
+        }
+        composable(Routes.HOME) {
+            HomeScreen(
+                onBack = { navController.popBackStack() },
                 onViewStats = { navController.navigate(Routes.STATS) },
                 onStartRide = { navController.navigate(Routes.RIDE) },
             )
+        }
+        composable(Routes.SETTINGS) {
+            SettingsScreen(onBack = { navController.popBackStack() })
         }
         composable(Routes.CONNECT) {
             ConnectScreen(onBack = { navController.popBackStack() })

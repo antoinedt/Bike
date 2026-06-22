@@ -1,15 +1,11 @@
 package com.bike.trainer.strava
 
-import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.longPreferencesKey
-import androidx.datastore.preferences.core.stringPreferencesKey
-import com.bike.trainer.data.AppConfigRepository
+import com.bike.trainer.BuildConfig
+import com.bike.trainer.data.ProfileRepository
+import com.bike.trainer.data.StravaAccount
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -22,13 +18,11 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.concurrent.TimeUnit
 
 /**
- * Persists Strava OAuth tokens and performs the token exchange/refresh plus the
- * activity upload. All network calls run on [Dispatchers.IO].
+ * Per-rider Strava: credentials + OAuth tokens live on the active profile, so
+ * each rider connects their own account. Performs the token exchange/refresh and
+ * the activity upload. All network calls run on [Dispatchers.IO].
  */
-class StravaRepository(
-    private val dataStore: DataStore<Preferences>,
-    private val appConfig: AppConfigRepository,
-) {
+class StravaRepository(private val profiles: ProfileRepository) {
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
@@ -37,25 +31,35 @@ class StravaRepository(
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    val isConnected: Flow<Boolean> =
-        dataStore.data.map { !it[REFRESH_TOKEN].isNullOrBlank() }
+    val isConnected: Flow<Boolean> = profiles.active.map { it?.strava?.connected == true }
 
-    /** Reflects whether usable Strava credentials (stored or built-in) exist. */
-    val isConfigured: Flow<Boolean> = appConfig.config.map { it.stravaConfigured }
-
-    /** Build the OAuth authorize URL with the effective client id, or null. */
-    suspend fun authorizeUrl(): String? {
-        val cfg = appConfig.current()
-        return if (cfg.stravaConfigured) StravaConfig.authorizeUrl(cfg.stravaClientId) else null
+    val isConfigured: Flow<Boolean> = profiles.active.map {
+        val (id, secret) = effectiveCredentials(it?.strava ?: StravaAccount())
+        id.isNotBlank() && secret.isNotBlank()
     }
 
-    /** Exchange an authorization code (from the OAuth redirect) for tokens. */
+    /** Effective client id/secret for the rider, falling back to build-time defaults. */
+    private fun effectiveCredentials(account: StravaAccount): Pair<String, String> {
+        val id = account.clientId.ifBlank { BuildConfig.STRAVA_CLIENT_ID }
+        val secret = account.clientSecret.ifBlank { BuildConfig.STRAVA_CLIENT_SECRET }
+        return id to secret
+    }
+
+    private suspend fun activeAccount(): StravaAccount =
+        profiles.current().active?.strava ?: StravaAccount()
+
+    /** OAuth authorize URL for the active rider, or null if not configured. */
+    suspend fun authorizeUrl(): String? {
+        val (id, secret) = effectiveCredentials(activeAccount())
+        return if (id.isNotBlank() && secret.isNotBlank()) StravaConfig.authorizeUrl(id) else null
+    }
+
     suspend fun exchangeAuthorizationCode(code: String): Boolean = withContext(Dispatchers.IO) {
-        val cfg = appConfig.current()
-        if (!cfg.stravaConfigured) return@withContext false
+        val (id, secret) = effectiveCredentials(activeAccount())
+        if (id.isBlank() || secret.isBlank()) return@withContext false
         val body = FormBody.Builder()
-            .add("client_id", cfg.stravaClientId)
-            .add("client_secret", cfg.stravaClientSecret)
+            .add("client_id", id)
+            .add("client_secret", secret)
             .add("code", code)
             .add("grant_type", "authorization_code")
             .build()
@@ -64,31 +68,23 @@ class StravaRepository(
             client.newCall(request).execute().use { resp ->
                 if (!resp.isSuccessful) return@use false
                 val tokens = json.decodeFromString<TokenResponse>(resp.body?.string().orEmpty())
-                persist(tokens)
+                profiles.setActiveStravaTokens(tokens.accessToken, tokens.refreshToken, tokens.expiresAt)
                 true
             }
         }.getOrDefault(false)
     }
 
-    suspend fun disconnect() {
-        dataStore.edit {
-            it.remove(ACCESS_TOKEN)
-            it.remove(REFRESH_TOKEN)
-            it.remove(EXPIRES_AT)
-        }
-    }
+    suspend fun disconnect() = profiles.clearActiveStravaTokens()
 
-    /**
-     * Upload a TCX file as a new Strava activity. Refreshes the token first if
-     * needed, then polls the upload until Strava finishes processing it.
-     */
     suspend fun uploadTcx(
         name: String,
         description: String,
         tcx: ByteArray,
     ): UploadResult = withContext(Dispatchers.IO) {
-        if (!appConfig.current().stravaConfigured) return@withContext UploadResult.NotConfigured
-        val token = validAccessToken() ?: return@withContext UploadResult.NotAuthorized
+        val account = activeAccount()
+        val (id, secret) = effectiveCredentials(account)
+        if (id.isBlank() || secret.isBlank()) return@withContext UploadResult.NotConfigured
+        val token = validAccessToken(account, id, secret) ?: return@withContext UploadResult.NotAuthorized
 
         val fileBody = tcx.toRequestBody("application/xml".toMediaType())
         val multipart = MultipartBody.Builder()
@@ -139,26 +135,20 @@ class StravaRepository(
             status.error?.let { return UploadResult.Error(it) }
             if (status.activityId != null) return UploadResult.Success(status.activityId)
         }
-        // Strava accepted it but is still processing; treat as success.
         return UploadResult.Success(null)
     }
 
-    private suspend fun validAccessToken(): String? {
-        val prefs = dataStore.data.first()
-        val access = prefs[ACCESS_TOKEN]
-        val refresh = prefs[REFRESH_TOKEN] ?: return null
-        val expiresAt = prefs[EXPIRES_AT] ?: 0L
-        val tokens = StravaTokens(access.orEmpty(), refresh, expiresAt)
-        if (!tokens.isExpired() && access != null) return access
-        return refreshAccessToken(refresh)
+    private suspend fun validAccessToken(account: StravaAccount, clientId: String, clientSecret: String): String? {
+        val tokens = StravaTokens(account.accessToken, account.refreshToken, account.expiresAt)
+        if (account.refreshToken.isBlank()) return null
+        if (!tokens.isExpired() && account.accessToken.isNotBlank()) return account.accessToken
+        return refreshAccessToken(account.refreshToken, clientId, clientSecret)
     }
 
-    private suspend fun refreshAccessToken(refreshToken: String): String? {
-        val cfg = appConfig.current()
-        if (!cfg.stravaConfigured) return null
+    private suspend fun refreshAccessToken(refreshToken: String, clientId: String, clientSecret: String): String? {
         val body = FormBody.Builder()
-            .add("client_id", cfg.stravaClientId)
-            .add("client_secret", cfg.stravaClientSecret)
+            .add("client_id", clientId)
+            .add("client_secret", clientSecret)
             .add("grant_type", "refresh_token")
             .add("refresh_token", refreshToken)
             .build()
@@ -167,23 +157,9 @@ class StravaRepository(
             client.newCall(request).execute().use { resp ->
                 if (!resp.isSuccessful) return null
                 val tokens = json.decodeFromString<TokenResponse>(resp.body?.string().orEmpty())
-                persist(tokens)
+                profiles.setActiveStravaTokens(tokens.accessToken, tokens.refreshToken, tokens.expiresAt)
                 tokens.accessToken
             }
         }.getOrNull()
-    }
-
-    private suspend fun persist(tokens: TokenResponse) {
-        dataStore.edit {
-            it[ACCESS_TOKEN] = tokens.accessToken
-            it[REFRESH_TOKEN] = tokens.refreshToken
-            it[EXPIRES_AT] = tokens.expiresAt
-        }
-    }
-
-    private companion object {
-        val ACCESS_TOKEN = stringPreferencesKey("strava_access_token")
-        val REFRESH_TOKEN = stringPreferencesKey("strava_refresh_token")
-        val EXPIRES_AT = longPreferencesKey("strava_expires_at")
     }
 }
