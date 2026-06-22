@@ -27,9 +27,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.bike.trainer.data.STANDARD_INTERVALS
+import com.bike.trainer.data.ATTACK_INTERVALS
+import com.bike.trainer.data.CLIMB_INTERVALS
+import com.bike.trainer.data.RECENT_WINDOW_MS
+import com.bike.trainer.data.SPRINT_INTERVALS
 import com.bike.trainer.data.intervalLabel
 import com.bike.trainer.di.ServiceLocator
 import com.bike.trainer.ui.components.SectionCard
@@ -74,23 +78,14 @@ fun StatsScreen(onBack: () -> Unit) {
             }
         }
 
-        SectionCard {
-            Text("Best average speed", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(8.dp))
-            STANDARD_INTERVALS.forEach { w ->
-                BestRow(intervalLabel(w), stats?.bestAvgSpeedKmh?.get(w)?.let {
-                    String.format(Locale.US, "%.1f km/h", it)
-                })
-            }
+        Text("Power bests", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        val allTime = stats?.bestAvgPowerW ?: emptyMap()
+        val recent = remember(stats) {
+            stats?.bestPowerSince(System.currentTimeMillis() - RECENT_WINDOW_MS) ?: emptyMap()
         }
-
-        SectionCard {
-            Text("Best average power", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(8.dp))
-            STANDARD_INTERVALS.forEach { w ->
-                BestRow(intervalLabel(w), stats?.bestAvgPowerW?.get(w)?.let { "$it W" })
-            }
-        }
+        PowerSection("Sprint", SPRINT_INTERVALS, allTime, recent)
+        PowerSection("Attack", ATTACK_INTERVALS, allTime, recent)
+        PowerSection("Climb", CLIMB_INTERVALS, allTime, recent)
 
         OutlinedButton(
             onClick = { showReset = true },
@@ -123,13 +118,67 @@ fun StatsScreen(onBack: () -> Unit) {
 }
 
 @Composable
-private fun BestRow(label: String, value: String?) {
+private fun PowerSection(
+    title: String,
+    intervals: List<Int>,
+    allTime: Map<Int, Int>,
+    recent: Map<Int, Int>,
+) {
+    SectionCard {
+        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(8.dp))
+        // Column headers
+        Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+            Text(
+                "",
+                modifier = Modifier.weight(1.2f),
+                style = MaterialTheme.typography.labelMedium,
+            )
+            Text(
+                "All-time",
+                modifier = Modifier.weight(1f),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelMedium,
+                textAlign = TextAlign.End,
+            )
+            Text(
+                "90 days",
+                modifier = Modifier.weight(1f),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelMedium,
+                textAlign = TextAlign.End,
+            )
+        }
+        intervals.forEach { w ->
+            BestPowerRow(
+                label = intervalLabel(w),
+                allTime = allTime[w]?.let { "$it W" },
+                recent = recent[w]?.let { "$it W" },
+            )
+        }
+    }
+}
+
+@Composable
+private fun BestPowerRow(label: String, allTime: String?, recent: String?) {
     Row(
         Modifier.fillMaxWidth().padding(vertical = 4.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
     ) {
-        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value ?: "—", fontWeight = FontWeight.SemiBold)
+        Text(label, modifier = Modifier.weight(1.2f), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(
+            allTime ?: "—",
+            modifier = Modifier.weight(1f),
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.End,
+        )
+        Text(
+            recent ?: "—",
+            modifier = Modifier.weight(1f),
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.primary,
+            textAlign = TextAlign.End,
+        )
     }
 }
 

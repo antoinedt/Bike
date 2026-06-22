@@ -35,13 +35,11 @@ enum class SvMotion(val label: String) {
     DOLLY("Dolly"),
     PARALLAX("Parallax"),
     MORPH("Morph"),
-    FLOW("Flow (optical)"),
-    FLOW_DOLLY("Flow + Dolly"),
 }
 
 /**
- * Advanced, user-tunable knobs for the analytic Street View motion (set in
- * Settings → Street View motion). Defaults reproduce the original look.
+ * Advanced, user-tunable knobs for the Street View motion (set in Settings →
+ * Street View motion). Defaults reproduce the original look.
  *
  * @param strength overall expansion per segment (how hard the scene pushes forward)
  * @param horizon vanishing-point height as a fraction of the frame (0 = top)
@@ -97,7 +95,6 @@ fun CachedStreetView(
     // frame. Holding it there (instead of forcing 1f) keeps the swap jump-free even
     // when frames arrive faster than a segment completes (high speed).
     var backHold by remember { mutableStateOf(1f) }
-    var flowGrid by remember { mutableStateOf<FloatArray?>(null) }
     val fade = remember { Animatable(1f) }       // front opacity 0→1
     val progress = remember { Animatable(0f) }    // front warp 0→1 across the segment
 
@@ -117,28 +114,12 @@ fun CachedStreetView(
             backHold = progress.value   // freeze the outgoing frame where it stopped
         }
         front = bmp
-        flowGrid = null
         progress.snapTo(0f)
         fade.snapTo(if (first) 1f else 0f)
         val dissolveMs = (segmentMs / 3).coerceIn(120, 600)
         coroutineScope {
             if (!first) launch { fade.animateTo(1f, tween(dissolveMs, easing = LinearEasing)) }
             launch { progress.animateTo(1f, tween(segmentMs, easing = LinearEasing)) }
-        }
-    }
-
-    // "Flow" mode: compute optical flow between the two frames once (off-thread)
-    // when the front frame changes. Until it's ready we fall back to the analytic
-    // morph, so there's never a stall.
-    val usesFlow = mode == SvMotion.FLOW || mode == SvMotion.FLOW_DOLLY
-    LaunchedEffect(front, mode) {
-        val a = back
-        val b = front
-        if (usesFlow && a != null && b != null && a !== b) {
-            val grid = withContext(Dispatchers.Default) {
-                OpticalFlow.gridFlow(a, b, MESH_W, MESH_H)
-            }
-            if (b === front) flowGrid = grid
         }
     }
 
@@ -149,22 +130,14 @@ fun CachedStreetView(
         val h = size.height
         val fadeV = fade.value
         val progV = progress.value
-        val flow = if (usesFlow) flowGrid else null
-        // Flow morphs blend over the whole segment (alpha = progress); analytic
-        // modes use the quick dissolve.
-        val frontAlpha = if (flow != null) progV else fadeV
         drawIntoCanvas { canvas ->
             val nc = canvas.nativeCanvas
             // Back is held at the warp it had reached when it was superseded, so it
             // doesn't snap forward when the next frame takes over — that snap was the
             // "jump", and at high speed it would happen on every swap.
-            back?.let { drawWarped(nc, it, w, h, backHold, mode, 255, paint, params, flow, backHold) }
+            back?.let { drawWarped(nc, it, w, h, backHold, mode, 255, paint, params) }
             front?.let {
-                drawWarped(
-                    nc, it, w, h, progV, mode,
-                    (frontAlpha * 255f).toInt().coerceIn(0, 255), paint, params,
-                    flow, -(1f - progV),
-                )
+                drawWarped(nc, it, w, h, progV, mode, (fadeV * 255f).toInt().coerceIn(0, 255), paint, params)
             }
         }
     }
@@ -174,10 +147,8 @@ private const val MESH_W = 12
 private const val MESH_H = 10
 
 /**
- * Draws [bmp] cover-cropped to (w,h) and warped via a bitmap mesh. For FLOW mode
- * each vertex is displaced by [flow] (normalized dx,dy) times [flowScale]; for the
- * analytic modes it expands about a centre by [p], scaled by [params]. Falls back
- * to MORPH if FLOW is selected but no [flow] is ready yet.
+ * Draws [bmp] cover-cropped to (w,h) and warped via a bitmap mesh, expanding about
+ * a centre by [p], scaled by [params]. DISSOLVE applies no expansion (pure fade).
  */
 private fun drawWarped(
     nc: android.graphics.Canvas,
@@ -189,8 +160,6 @@ private fun drawWarped(
     alpha: Int,
     paint: Paint,
     params: SvMotionParams,
-    flow: FloatArray? = null,
-    flowScale: Float = 0f,
 ) {
     val bw = bmp.width.toFloat()
     val bh = bmp.height.toFloat()
@@ -205,15 +174,7 @@ private fun drawWarped(
     val horizon = params.horizon
     val foeX = 0.5f * w
     val foeY = horizon * h          // vanishing point height (tunable)
-    val useFlow = (mode == SvMotion.FLOW || mode == SvMotion.FLOW_DOLLY) && flow != null
-    // Which analytic expansion (if any) to apply on top: pure Flow / Dissolve add
-    // none; Flow+Dolly adds a Dolly; a Flow without a ready grid falls back to Morph.
-    val expand: SvMotion? = when {
-        mode == SvMotion.DISSOLVE -> null
-        mode == SvMotion.FLOW -> if (flow == null) SvMotion.MORPH else null
-        mode == SvMotion.FLOW_DOLLY -> SvMotion.DOLLY
-        else -> mode
-    }
+    val expand: SvMotion? = if (mode == SvMotion.DISSOLVE) null else mode
 
     val verts = FloatArray((MESH_W + 1) * (MESH_H + 1) * 2)
     var k = 0
@@ -225,10 +186,6 @@ private fun drawWarped(
             val by = oy + v * dh
             var x = bx
             var y = by
-            if (useFlow) {
-                x += flow!![k] * dw * flowScale
-                y += flow[k + 1] * dh * flowScale
-            }
             if (expand != null) {
                 val cx: Float
                 val cy: Float

@@ -111,7 +111,4 @@ dependencies {
     implementation(libs.androidx.browser)
     implementation(libs.maplibre.android)
     implementation(libs.play.services.maps)
-    // OpenCV for the optional optical-flow "Flow" Street View morph. Large (native
-    // libs for all ABIs) but only pulled in for that one feature.
-    implementation(libs.opencv)
 }
