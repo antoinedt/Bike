@@ -80,7 +80,7 @@ fun RideScreen(
 
     suspend fun captureScene(): Boolean {
         val window = ScreenCapture.findActivity(context)?.window ?: return false
-        val bmp = ScreenCapture.capture(window, sceneBounds) ?: return false
+        val bmp = ScreenCapture.captureScene(window, ServiceLocator.sceneView, sceneBounds) ?: return false
         ServiceLocator.capturedRideImage = bmp
         return true
     }

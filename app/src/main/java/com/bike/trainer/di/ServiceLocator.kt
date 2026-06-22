@@ -40,6 +40,14 @@ object ServiceLocator {
     @Volatile
     var capturedRideImage: android.graphics.Bitmap? = null
 
+    /**
+     * The live GL scene view (Street View / map). Captured directly via PixelCopy
+     * because some devices read GL SurfaceViews back as black through a whole-window
+     * copy. Null when the scene is a plain Compose image (cached frames).
+     */
+    @Volatile
+    var sceneView: android.view.View? = null
+
     fun init(context: Context) {
         appContext = context.applicationContext
     }
