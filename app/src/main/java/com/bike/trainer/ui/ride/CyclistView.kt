@@ -11,25 +11,25 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
-import com.bike.trainer.ui.theme.BikeOrange
 import kotlin.math.PI
-import kotlin.math.cos
-import kotlin.math.hypot
 import kotlin.math.sin
-import kotlin.math.sqrt
 
 /**
- * A stylized side-on cyclist drawn with Canvas, overlaid on the 3D map. The legs
- * pedal at a rate driven by cadence (or estimated from speed), the wheels spin
- * with speed, and the rider lifts off the saddle and straightens up as the
- * gradient steepens — the classic "standing on the climb" look.
+ * A stylized cyclist seen **from behind** (the rider you're chasing), so it
+ * matches the forward-moving map camera. The legs pump alternately at a rate
+ * driven by cadence (or estimated from speed), the body rocks with the pedal
+ * stroke, and the rider lifts off the saddle and rocks harder as the gradient
+ * steepens.
  *
- * This is a hand-rendered pseudo-3D rider, not a glTF model; it keeps the app
- * fully offline and dependency-free.
+ * Hand-rendered with shaded shapes/gradients — realistic-ish but stylized, and
+ * fully offline (no model asset, no network).
  */
 @Composable
 fun CyclistView(
@@ -42,8 +42,7 @@ fun CyclistView(
     val cadence by rememberUpdatedState(cadenceRpm)
     val grade by rememberUpdatedState(gradePercent)
 
-    var crank by remember { mutableFloatStateOf(0f) }
-    var wheel by remember { mutableFloatStateOf(0f) }
+    var phase by remember { mutableFloatStateOf(0f) }
 
     LaunchedEffect(Unit) {
         var last = 0L
@@ -54,11 +53,10 @@ fun CyclistView(
                     val ms = (speed / 3.6).toFloat()
                     val cad = when {
                         cadence > 0 -> cadence.toFloat()
-                        ms > 0.5f -> 80f // moving without a cadence sensor
+                        ms > 0.5f -> 80f
                         else -> 0f
                     }
-                    crank += cad / 60f * TWO_PI * dt
-                    wheel += ms / WHEEL_CIRCUMFERENCE * TWO_PI * dt
+                    phase += cad / 60f * TWO_PI * dt
                 }
                 last = now
             }
@@ -66,116 +64,152 @@ fun CyclistView(
     }
 
     Canvas(modifier = modifier) {
-        drawCyclist(crank, wheel, grade.toFloat())
+        drawCyclistRear(phase, grade.toFloat())
     }
 }
 
 private const val TWO_PI = (2.0 * PI).toFloat()
-private const val WHEEL_CIRCUMFERENCE = 2.1f // metres (700c road wheel)
 
-private val BIKE_COLOR = Color(0xFF223040)
-private val LEG_FAR = Color(0xFFB55A18)
-private val SKIN = Color(0xFFE8B58A)
+private val JERSEY_LIGHT = Color(0xFFFF8A2A)
+private val JERSEY_DARK = Color(0xFFB0501A)
+private val SHORTS = Color(0xFF1B2430)
+private val SHORTS_HI = Color(0xFF2C3A4C)
+private val SKIN = Color(0xFFE2A074)
+private val SKIN_DARK = Color(0xFFB97E55)
+private val HELMET = Color(0xFF2B313C)
+private val HELMET_HI = Color(0xFF49525F)
+private val SHOE = Color(0xFF0F1318)
+private val WHEEL = Color(0xFF0D1116)
+private val RIM = Color(0xFF3A4452)
 
-private fun DrawScope.drawCyclist(crank: Float, wheel: Float, gradePercent: Float) {
+private fun DrawScope.drawCyclistRear(phase: Float, gradePercent: Float) {
     val w = size.width
     val h = size.height
-    val ground = h * 0.94f
-    val wheelR = h * 0.17f
+    val cx = w / 2f
+    val ground = h * 0.98f
 
     val standF = ((gradePercent - 3f) / 6f).coerceIn(0f, 1f)
-    // A little side-to-side sway when out of the saddle, synced to the pedal stroke.
-    val sway = standF * sin(crank) * wheelR * 0.12f
+    // Out-of-the-saddle rock, plus a faint always-on rock.
+    val rock = (0.04f + standF * 0.16f) * sin(phase)
+    val swayTop = rock * w
+    val swayHip = rock * w * 0.35f
 
-    val rearHub = Offset(w * 0.32f, ground - wheelR)
-    val frontHub = Offset(w * 0.74f, ground - wheelR)
-    val bb = Offset(w * 0.52f, ground - wheelR * 0.95f)        // bottom bracket / crank centre
-    val saddle = Offset(w * 0.44f, ground - wheelR * 2.15f)
-    val bar = Offset(w * 0.73f, ground - wheelR * 1.95f)
+    // ---- Rear wheel (a narrow ellipse, seen end-on) ----
+    val wheelH = h * 0.46f
+    val wheelW = w * 0.13f
+    val wheelCx = cx
+    val wheelCy = ground - wheelH / 2f
+    drawOval(
+        WHEEL,
+        topLeft = Offset(wheelCx - wheelW / 2f, wheelCy - wheelH / 2f),
+        size = Size(wheelW, wheelH),
+    )
+    drawOval(
+        RIM,
+        topLeft = Offset(wheelCx - wheelW / 2f, wheelCy - wheelH / 2f),
+        size = Size(wheelW, wheelH),
+        style = Stroke(width = wheelW * 0.18f),
+    )
+    drawLine(RIM, Offset(wheelCx, wheelCy - wheelH / 2f), Offset(wheelCx, wheelCy + wheelH / 2f), wheelW * 0.10f)
 
-    // ---- Bike frame + wheels ----
-    drawWheel(rearHub, wheelR, wheel)
-    drawWheel(frontHub, wheelR, wheel)
-    val frame = Stroke(width = wheelR * 0.12f, cap = StrokeCap.Round)
-    drawLine(BIKE_COLOR, rearHub, bb, frame.width, StrokeCap.Round)
-    drawLine(BIKE_COLOR, bb, saddle, frame.width, StrokeCap.Round)
-    drawLine(BIKE_COLOR, saddle, bar, frame.width, StrokeCap.Round)
-    drawLine(BIKE_COLOR, bb, bar, frame.width, StrokeCap.Round)
-    drawLine(BIKE_COLOR, bar, frontHub, frame.width, StrokeCap.Round)
-    drawLine(BIKE_COLOR, rearHub, saddle, frame.width, StrokeCap.Round)
+    // ---- Anchors ----
+    val hipY = ground - wheelH * 0.62f - standF * h * 0.05f
+    val hipHalf = w * 0.085f
+    val torsoLen = h * (0.22f + standF * 0.03f)
+    val shoulderY = hipY - torsoLen
+    val shoulderHalf = w * 0.135f
 
-    // ---- Rider body anchors ----
-    val hipSeated = Offset(saddle.x, saddle.y - wheelR * 0.15f)
-    val hipStand = Offset(bb.x - wheelR * 0.15f + sway, bb.y - wheelR * 1.9f)
-    val hip = lerp(hipSeated, hipStand, standF)
+    val barY = hipY - torsoLen * 0.62f
+    val barHalf = w * 0.20f
 
-    val torsoLen = wheelR * 1.15f
-    // Lean: ~32° from vertical seated, straightening toward ~16° standing.
-    val leanDeg = 32f - 16f * standF
-    val lean = leanDeg * (PI.toFloat() / 180f)
-    val shoulder = Offset(hip.x + sin(lean) * torsoLen, hip.y - cos(lean) * torsoLen)
+    val pedalBaseY = ground - wheelH * 0.16f
+    val pedalAmp = wheelH * 0.13f
+    val pedalX = w * 0.13f
+    val leftPedal = Offset(cx - pedalX + swayHip, pedalBaseY + pedalAmp * sin(phase))
+    val rightPedal = Offset(cx + pedalX + swayHip, pedalBaseY + pedalAmp * sin(phase + PI.toFloat()))
 
-    // ---- Legs (two-bar IK from hip to each pedal) ----
-    val thigh = wheelR * 1.0f
-    val shin = wheelR * 1.05f
-    val crankLen = wheelR * 0.5f
-    val pedalNear = Offset(bb.x + cos(crank) * crankLen, bb.y - sin(crank) * crankLen)
-    val pedalFar = Offset(bb.x + cos(crank + PI.toFloat()) * crankLen, bb.y - sin(crank + PI.toFloat()) * crankLen)
+    // ---- Handlebar (peeking out front) ----
+    val barLeft = Offset(cx - barHalf + swayTop * 0.7f, barY)
+    val barRight = Offset(cx + barHalf + swayTop * 0.7f, barY)
+    drawLine(Color(0xFF161B22), barLeft, barRight, h * 0.018f, StrokeCap.Round)
 
-    // Far leg first (behind the frame), then near leg.
-    drawLeg(hip, pedalFar, thigh, shin, LEG_FAR, wheelR)
-    drawLine(BIKE_COLOR, bb, pedalFar, wheelR * 0.08f, StrokeCap.Round)
-    drawLeg(hip, pedalNear, thigh, shin, BikeOrange, wheelR)
-    drawLine(BIKE_COLOR, bb, pedalNear, wheelR * 0.08f, StrokeCap.Round)
+    // ---- Legs (behind the body) ----
+    drawLegRear(Offset(cx - hipHalf + swayHip, hipY), leftPedal, pedalBaseY, -1f, wheelH)
+    drawLegRear(Offset(cx + hipHalf + swayHip, hipY), rightPedal, pedalBaseY, +1f, wheelH)
 
-    // ---- Torso, arm, head ----
-    drawLine(BikeOrange, hip, shoulder, wheelR * 0.34f, StrokeCap.Round)
-    drawLine(SKIN, shoulder, bar, wheelR * 0.12f, StrokeCap.Round)
-    val head = Offset(shoulder.x + sin(lean) * wheelR * 0.35f, shoulder.y - cos(lean) * wheelR * 0.35f)
-    drawCircle(SKIN, wheelR * 0.28f, head)
-}
-
-private fun DrawScope.drawWheel(hub: Offset, r: Float, angle: Float) {
-    drawCircle(Color(0xFF11161C), r, hub, style = Stroke(width = r * 0.14f))
-    // A couple of spokes so rotation is visible.
-    for (k in 0 until 4) {
-        val a = angle + k * (PI.toFloat() / 2f)
-        drawLine(
-            Color(0x66FFFFFF),
-            hub,
-            Offset(hub.x + cos(a) * r, hub.y + sin(a) * r),
-            r * 0.05f,
-        )
+    // ---- Saddle / shorts seat ----
+    val seat = Path().apply {
+        moveTo(cx - hipHalf * 1.1f + swayHip, hipY)
+        lineTo(cx + hipHalf * 1.1f + swayHip, hipY)
+        lineTo(cx + hipHalf * 0.7f + swayHip, hipY + wheelH * 0.10f)
+        lineTo(cx - hipHalf * 0.7f + swayHip, hipY + wheelH * 0.10f)
+        close()
     }
-}
+    drawPath(seat, SHORTS)
 
-private fun DrawScope.drawLeg(hip: Offset, foot: Offset, a: Float, b: Float, color: Color, wheelR: Float) {
-    val knee = kneePosition(hip, foot, a, b)
-    drawLine(color, hip, knee, wheelR * 0.22f, StrokeCap.Round)
-    drawLine(color, knee, foot, wheelR * 0.18f, StrokeCap.Round)
-}
-
-/** Two-bar inverse kinematics; picks the forward-bending knee solution. */
-private fun kneePosition(hip: Offset, foot: Offset, a: Float, b: Float): Offset {
-    var dx = foot.x - hip.x
-    var dy = foot.y - hip.y
-    var d = hypot(dx, dy)
-    val maxD = a + b - 0.001f
-    if (d > maxD) {
-        val s = maxD / d
-        dx *= s; dy *= s; d = maxD
+    // ---- Torso (back / jersey) ----
+    val lHipX = cx - hipHalf + swayHip
+    val rHipX = cx + hipHalf + swayHip
+    val lShX = cx - shoulderHalf + swayTop
+    val rShX = cx + shoulderHalf + swayTop
+    val torso = Path().apply {
+        moveTo(lHipX, hipY)
+        lineTo(lShX, shoulderY + torsoLen * 0.10f)
+        quadraticBezierTo((lShX + rShX) / 2f, shoulderY - torsoLen * 0.06f, rShX, shoulderY + torsoLen * 0.10f)
+        lineTo(rHipX, hipY)
+        close()
     }
-    if (d < 0.001f) d = 0.001f
-    val a2 = (a * a - b * b + d * d) / (2f * d)
-    val hh = sqrt((a * a - a2 * a2).coerceAtLeast(0f))
-    val mx = hip.x + a2 * dx / d
-    val my = hip.y + a2 * dy / d
-    val px = -dy / d
-    val py = dx / d
-    val k1 = Offset(mx + hh * px, my + hh * py)
-    val k2 = Offset(mx - hh * px, my - hh * py)
-    return if (k1.x > k2.x) k1 else k2 // knee forward (toward the handlebars)
+    drawPath(
+        torso,
+        brush = Brush.horizontalGradient(
+            listOf(JERSEY_DARK, JERSEY_LIGHT, JERSEY_LIGHT, JERSEY_DARK),
+            startX = lShX,
+            endX = rShX,
+        ),
+    )
+    // Spine shading + a number-band hint.
+    drawLine(JERSEY_DARK, Offset((lHipX + rHipX) / 2f, hipY), Offset((lShX + rShX) / 2f, shoulderY), w * 0.012f)
+
+    // ---- Arms (shoulders to bar) ----
+    val lSh = Offset(lShX, shoulderY + torsoLen * 0.10f)
+    val rSh = Offset(rShX, shoulderY + torsoLen * 0.10f)
+    drawLine(SKIN_DARK, lSh, barLeft, w * 0.05f, StrokeCap.Round)
+    drawLine(SKIN, rSh, barRight, w * 0.05f, StrokeCap.Round)
+
+    // ---- Head + aero helmet ----
+    val headCx = (lShX + rShX) / 2f
+    val headCy = shoulderY - torsoLen * 0.04f
+    drawLine(SKIN_DARK, Offset(headCx, shoulderY), Offset(headCx, headCy), w * 0.045f, StrokeCap.Round)
+    val helmetW = w * 0.16f
+    val helmetH = h * 0.12f
+    drawOval(
+        brush = Brush.verticalGradient(listOf(HELMET_HI, HELMET)),
+        topLeft = Offset(headCx - helmetW / 2f, headCy - helmetH * 0.7f),
+        size = Size(helmetW, helmetH),
+    )
+    // Helmet trim stripe.
+    drawLine(
+        JERSEY_LIGHT,
+        Offset(headCx, headCy - helmetH * 0.7f),
+        Offset(headCx, headCy + helmetH * 0.3f),
+        w * 0.012f,
+    )
 }
 
-private fun lerp(a: Offset, b: Offset, t: Float): Offset =
-    Offset(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t)
+private fun DrawScope.drawLegRear(hip: Offset, pedal: Offset, pedalBaseY: Float, side: Float, wheelH: Float) {
+    // Knee bows outward; rises as the foot lifts.
+    val footLift = (pedalBaseY - pedal.y) // >0 when foot is up
+    val mid = Offset((hip.x + pedal.x) / 2f, (hip.y + pedal.y) / 2f)
+    val knee = Offset(
+        mid.x + side * wheelH * 0.10f,
+        mid.y - wheelH * 0.05f - footLift * 0.45f,
+    )
+    // Thigh (shorts), calf (skin), shoe.
+    drawLine(SHORTS, hip, knee, wheelH * 0.16f, StrokeCap.Round)
+    drawLine(if (side < 0) SKIN_DARK else SKIN, knee, pedal, wheelH * 0.12f, StrokeCap.Round)
+    drawOval(
+        SHOE,
+        topLeft = Offset(pedal.x - wheelH * 0.09f, pedal.y - wheelH * 0.035f),
+        size = Size(wheelH * 0.18f, wheelH * 0.09f),
+    )
+}
