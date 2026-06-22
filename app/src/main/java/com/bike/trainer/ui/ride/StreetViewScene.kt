@@ -104,28 +104,35 @@ fun StreetViewScene(
         }
     }
 
-    // Track position/heading every tick; re-anchor every ~HOP_METERS so we don't
-    // reload the panorama too often (which is what made it flicker).
+    // Re-anchor the panorama along the route as we advance. The Street View SDK
+    // plays its own short pano-to-pano transition on setPosition, so [smoothTransitions]
+    // controls how *often* we hop: short, frequent hops chain those transitions into
+    // continuous forward motion; long hops jump the rider ahead in discrete steps.
     LaunchedEffect(panorama, distanceMeters, smoothTransitions) {
         val p = panorama ?: return@LaunchedEffect
         val point = route.pointAt(distanceMeters)
-        if (abs(distanceMeters - lastPositionedAt) > HOP_METERS) {
+        val hopMeters = if (smoothTransitions) SMOOTH_HOP_METERS else STEP_HOP_METERS
+        if (abs(distanceMeters - lastPositionedAt) > hopMeters) {
             lastPositionedAt = distanceMeters
             // OUTDOOR restricts to official road-level Street View and drops
             // indoor panoramas and most user-contributed photo spheres.
             p.setPosition(LatLng(point.lat, point.lon), 120, StreetViewSource.OUTDOOR)
         }
-        // Only turn toward the route heading — keep the zoom fixed so the view
-        // no longer pulses forward-and-back between panorama hops.
+        // Turn toward the route heading — keep the zoom fixed so the view doesn't
+        // pulse forward-and-back between panorama hops.
         p.animateTo(
             StreetViewPanoramaCamera.Builder()
                 .bearing(Math.toDegrees(point.heading).toFloat())
                 .tilt(0f)
                 .zoom(0f)
                 .build(),
-            if (smoothTransitions) 600L else 0L,
+            if (smoothTransitions) 500L else 0L,
         )
     }
 }
 
-private const val HOP_METERS = 20.0
+/** Frequent hops chain the SDK's own transitions into continuous forward motion. */
+private const val SMOOTH_HOP_METERS = 9.0
+
+/** Sparse hops jump the rider ahead in obvious discrete steps. */
+private const val STEP_HOP_METERS = 32.0
