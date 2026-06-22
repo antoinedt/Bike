@@ -45,16 +45,19 @@ fun CachedStreetView(
         StreetViewCache.imageFileAt(context, manifest, distanceMeters)?.path
     }
 
-    Box(modifier.background(Color.Black)) {
-        Crossfade(targetState = path, animationSpec = tween(450), label = "streetview-cache") { p ->
-            val bitmap by produceState<ImageBitmap?>(initialValue = null, p) {
-                value = p?.let {
-                    withContext(Dispatchers.IO) {
-                        runCatching { BitmapFactory.decodeFile(it)?.asImageBitmap() }.getOrNull()
-                    }
-                }
+    // Decode OUTSIDE the Crossfade and keep the previous image until the next one
+    // is ready, so the crossfade animates between two real frames (no blank pop).
+    val bitmap by produceState<ImageBitmap?>(initialValue = null, path) {
+        path?.let {
+            val decoded = withContext(Dispatchers.IO) {
+                runCatching { BitmapFactory.decodeFile(it)?.asImageBitmap() }.getOrNull()
             }
-            val bmp = bitmap
+            if (decoded != null) value = decoded
+        }
+    }
+
+    Box(modifier.background(Color.Black)) {
+        Crossfade(targetState = bitmap, animationSpec = tween(700), label = "streetview-cache") { bmp ->
             if (bmp != null) {
                 Image(
                     bitmap = bmp,
