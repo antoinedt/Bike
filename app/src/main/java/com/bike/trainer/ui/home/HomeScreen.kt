@@ -54,6 +54,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bike.trainer.ble.TrainerConnectionState
 import com.bike.trainer.ble.TrainerControlMode
 import com.bike.trainer.data.AppConfig
+import com.bike.trainer.data.ProfileEntry
+import com.bike.trainer.data.ProfilesState
 import com.bike.trainer.data.RiderSettings
 import com.bike.trainer.di.ServiceLocator
 import com.bike.trainer.physics.VirtualGears
@@ -71,6 +73,7 @@ fun HomeScreen(
     onConnectTrainer: () -> Unit,
     onConnectHeartRate: () -> Unit,
     onConnectController: () -> Unit,
+    onViewStats: () -> Unit,
     onStartRide: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -81,6 +84,7 @@ fun HomeScreen(
     val settingsRepo = ServiceLocator.settingsRepository
     val configRepo = ServiceLocator.appConfigRepository
     val stravaRepo = ServiceLocator.stravaRepository
+    val profileRepo = ServiceLocator.profileRepository
 
     val trainerState by trainer.connectionState.collectAsStateWithLifecycle()
     val controlMode by trainer.controlMode.collectAsStateWithLifecycle()
@@ -92,9 +96,12 @@ fun HomeScreen(
     val settings by settingsRepo.settings.collectAsStateWithLifecycle(initialValue = RiderSettings())
     val config by configRepo.config.collectAsStateWithLifecycle(initialValue = null)
     val stravaConnected by stravaRepo.isConnected.collectAsStateWithLifecycle(initialValue = false)
+    val profiles by profileRepo.state.collectAsStateWithLifecycle(initialValue = ProfilesState())
+    val activeProfile = profiles.active
 
     var showStravaDialog by remember { mutableStateOf(false) }
     var showMapDialog by remember { mutableStateOf(false) }
+    var showProfileDialog by remember { mutableStateOf(false) }
     var promptedForMap by remember { mutableStateOf(false) }
 
     // Ask for a MapTiler key once if none has been provided yet.
@@ -110,7 +117,7 @@ fun HomeScreen(
         ServiceLocator.activeRide = RideEngine(
             route = route,
             trainer = trainer,
-            riderMassKg = settings.riderMassKg,
+            riderMassKg = activeProfile?.profile?.weightKg ?: 75.0,
             gears = VirtualGears(gearCount = settings.gearCount),
             heartRateManager = hrm,
         )
@@ -212,16 +219,35 @@ fun HomeScreen(
             }
         }
 
-        // ---- Rider weight ----
+        // ---- Rider profile ----
         SectionCard {
-            Text("Rider weight", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text("${settings.riderMassKg.toInt()} kg", style = MaterialTheme.typography.headlineSmall,
-                color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Rider", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(onClick = onViewStats) { Text("Stats") }
+                    TextButton(onClick = { showProfileDialog = true }) { Text("Switch") }
+                }
+            }
+            val weight = activeProfile?.profile?.weightKg ?: 75.0
+            Text(
+                "${activeProfile?.profile?.name ?: "Rider"} · ${weight.toInt()} kg",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Bold,
+            )
             Slider(
-                value = settings.riderMassKg.toFloat(),
-                onValueChange = { scope.launch { settingsRepo.setRiderMass(it.toDouble()) } },
+                value = weight.toFloat(),
+                onValueChange = { v ->
+                    scope.launch { profileRepo.updateActiveProfile { it.copy(weightKg = v.toDouble()) } }
+                },
                 valueRange = 40f..130f,
             )
+            Text("Weight is used to model how fast you climb for a given power.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
         // ---- 3D map (MapTiler key) ----
@@ -319,6 +345,72 @@ fun HomeScreen(
             },
         )
     }
+    if (showProfileDialog) {
+        ProfileDialog(
+            profiles = profiles,
+            onDismiss = { showProfileDialog = false },
+            onSelect = { id ->
+                scope.launch { profileRepo.setActive(id) }
+                showProfileDialog = false
+            },
+            onAdd = { name, weight ->
+                scope.launch { profileRepo.addProfile(name, weight) }
+                showProfileDialog = false
+            },
+        )
+    }
+}
+
+@Composable
+private fun ProfileDialog(
+    profiles: ProfilesState,
+    onDismiss: () -> Unit,
+    onSelect: (String) -> Unit,
+    onAdd: (String, Double) -> Unit,
+) {
+    var newName by remember { mutableStateOf("") }
+    var newWeight by remember { mutableStateOf("75") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Riders") },
+        text = {
+            Column {
+                profiles.entries.forEach { entry ->
+                    val isActive = entry.profile.id == profiles.activeId
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "${entry.profile.name} · ${entry.profile.weightKg.toInt()} kg",
+                            color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                            fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
+                        )
+                        TextButton(onClick = { onSelect(entry.profile.id) }) {
+                            Text(if (isActive) "Active" else "Select")
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Text("Add a rider", style = MaterialTheme.typography.labelLarge)
+                OutlinedTextField(value = newName, onValueChange = { newName = it },
+                    label = { Text("Name") }, singleLine = true)
+                Spacer(Modifier.height(6.dp))
+                OutlinedTextField(value = newWeight, onValueChange = { newWeight = it.filter { c -> c.isDigit() } },
+                    label = { Text("Weight (kg)") }, singleLine = true)
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onAdd(newName, newWeight.toDoubleOrNull() ?: 75.0) },
+                enabled = newName.isNotBlank(),
+            ) { Text("Add rider") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+    )
 }
 
 @Composable
