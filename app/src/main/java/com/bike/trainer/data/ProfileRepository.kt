@@ -45,6 +45,12 @@ class ProfileRepository(private val dataStore: DataStore<Preferences>) {
         entry.copy(stats = entry.stats.merged(summary))
     }
 
+    /** Replace all profiles wholesale (used when restoring a backup). */
+    suspend fun replaceAll(state: ProfilesState) {
+        val safe = if (state.entries.isEmpty()) ProfilesState() else state
+        dataStore.edit { it[KEY] = json.encodeToString(safe) }
+    }
+
     // ----------------------------------------------------------------- helpers
 
     private suspend fun ensureDefault(): ProfilesState {
