@@ -92,7 +92,9 @@ class StravaRepository(private val profiles: ProfileRepository) {
             .addFormDataPart("name", name)
             .addFormDataPart("description", description)
             .addFormDataPart("data_type", "tcx")
-            .addFormDataPart("trainer", "1")
+            // No "trainer" flag: these rides carry GPS (from the GPX or the
+            // synthesized corridor), and Strava hides the route map for
+            // trainer-flagged activities even when GPS is present.
             .addFormDataPart("file", "ride.tcx", fileBody)
             .build()
         val request = Request.Builder()
