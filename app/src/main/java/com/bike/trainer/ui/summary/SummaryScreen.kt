@@ -10,8 +10,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBarsPadding
 import android.content.Intent
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -29,12 +32,15 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bike.trainer.di.ServiceLocator
 import com.bike.trainer.export.LocalRideStore
+import com.bike.trainer.export.RecapImage
 import com.bike.trainer.export.TcxWriter
 import com.bike.trainer.session.RideStatsCalculator
 import com.bike.trainer.strava.UploadResult
@@ -105,6 +111,51 @@ fun SummaryScreen(onDone: () -> Unit) {
     ) {
         Text("Ride complete", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Text(engine.route.name, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+        // ---- Recap photo (captured during the ride) with stats overlay ----
+        val captured = ServiceLocator.capturedRideImage
+        if (captured != null) {
+            val recap = remember(captured) {
+                RecapImage.compose(
+                    captured,
+                    engine.route.name,
+                    listOf(
+                        "Distance" to String.format(Locale.US, "%.1f km", state.distanceMeters / 1000.0),
+                        "Time" to formatTime(state.elapsedSeconds),
+                        "Avg" to avgSpeed(state.distanceMeters, state.elapsedSeconds),
+                        "Climb" to "${state.totalAscentMeters.toInt()} m",
+                    ),
+                )
+            }
+            SectionCard {
+                Text("Recap photo", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(8.dp))
+                Image(
+                    bitmap = recap.asImageBitmap(),
+                    contentDescription = "Ride recap",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp)),
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(onClick = {
+                    scope.launch {
+                        val name = "bike-recap-" + System.currentTimeMillis()
+                        val where = withContext(Dispatchers.IO) { RecapImage.save(context, recap, name) }
+                        Toast.makeText(
+                            context,
+                            if (where != null) "Saved to $where" else "Couldn't save image",
+                            Toast.LENGTH_LONG,
+                        ).show()
+                    }
+                }) { Text("Save image") }
+                Text(
+                    "Add it to your Strava activity manually (Strava's API can't attach photos).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
 
         SectionCard {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
