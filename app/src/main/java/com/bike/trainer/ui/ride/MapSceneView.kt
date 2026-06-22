@@ -129,8 +129,8 @@ private const val RIDER_LAYER = "rider-layer"
 // Camera presets: an angled chase view, and a near-ground forward "street" view.
 private const val CHASE_ZOOM = 16.5
 private const val CHASE_TILT = 62.0
-private const val STREET_ZOOM = 18.0
-private const val STREET_TILT = 80.0
+private const val STREET_ZOOM = 19.5
+private const val STREET_TILT = 85.0
 
 private fun addRouteLine(style: Style, route: Route) {
     val points = route.points

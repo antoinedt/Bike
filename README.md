@@ -94,6 +94,26 @@ world map (GPX routes show the right place) but flat — no terrain, satellite, 
 buildings. The map needs a network connection while riding; the rest of the app
 (trainer, gears, resistance, recording) works offline.
 
+### Interactive Street View (Google Maps, optional)
+
+The ride view has a **Chase ⇄ Street View** toggle. When a Google Maps key is
+present it shows an interactive Google **Street View panorama** that follows the
+route; otherwise the toggle gives a rendered near-ground "ground" view of the 3D
+map.
+
+The Google Maps SDK reads its key from the manifest, so unlike the other keys
+this one is **build-time** (it can't be entered in-app). Create a key in the
+[Google Maps Platform](https://console.cloud.google.com/google/maps-apis) with
+the **Maps SDK for Android** enabled and **billing on**, then provide it at build
+time:
+
+```
+MAPS_API_KEY=your_google_maps_key
+```
+
+(or set the `MAPS_API_KEY` GitHub Actions secret). Street View only appears where
+Google has coverage; gaps show a small notice.
+
 ## How a ride works
 
 1. Pick a difficulty and your weight on the home screen, connect your trainer.

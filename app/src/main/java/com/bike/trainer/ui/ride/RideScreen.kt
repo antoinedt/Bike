@@ -90,13 +90,22 @@ fun RideScreen(
                 .fillMaxWidth()
                 .height(280.dp),
         ) {
-            MapSceneView(
-                route = engine.route,
-                distanceMeters = state.distanceMeters,
-                mapTilesKey = appConfig?.mapTilesKey.orEmpty(),
-                streetLevel = streetLevel,
-                modifier = Modifier.fillMaxSize(),
-            )
+            val googleStreet = streetLevel && com.bike.trainer.BuildConfig.HAS_MAPS_KEY
+            if (googleStreet) {
+                StreetViewScene(
+                    route = engine.route,
+                    distanceMeters = state.distanceMeters,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                MapSceneView(
+                    route = engine.route,
+                    distanceMeters = state.distanceMeters,
+                    mapTilesKey = appConfig?.mapTilesKey.orEmpty(),
+                    streetLevel = streetLevel,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
             // Grade badge.
             Box(
                 modifier = Modifier
@@ -122,18 +131,25 @@ fun RideScreen(
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurface,
             )
-            // Animated rider that pedals with speed and stands up on climbs.
-            CyclistView(
-                speedKmh = state.speedKmh,
-                cadenceRpm = state.cadenceRpm,
-                gradePercent = state.gradePercent,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 6.dp)
-                    .fillMaxWidth(0.6f)
-                    .height(150.dp),
-            )
-            // Camera view toggle: chase <-> street level.
+            // Animated rider — hidden over real Street View photos (it'd clash).
+            if (!googleStreet) {
+                CyclistView(
+                    speedKmh = state.speedKmh,
+                    cadenceRpm = state.cadenceRpm,
+                    gradePercent = state.gradePercent,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 6.dp)
+                        .fillMaxWidth(0.6f)
+                        .height(150.dp),
+                )
+            }
+            // Camera view toggle: chase <-> street.
+            val toggleLabel = when {
+                !streetLevel -> "  Chase"
+                com.bike.trainer.BuildConfig.HAS_MAPS_KEY -> "  Street View"
+                else -> "  Ground"
+            }
             Row(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
@@ -151,7 +167,7 @@ fun RideScreen(
                     modifier = Modifier.size(18.dp),
                 )
                 Text(
-                    if (streetLevel) "  Street" else "  Chase",
+                    toggleLabel,
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )

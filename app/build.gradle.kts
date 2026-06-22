@@ -26,6 +26,11 @@ android {
         // Without it the ride falls back to MapLibre's free demo tiles (flat, no 3D).
         val mapTilesKey = (project.findProperty("MAPTILES_API_KEY") as String?) ?: ""
         buildConfigField("String", "MAPTILES_API_KEY", "\"$mapTilesKey\"")
+        // Google Maps key (build-time) powers the interactive Street View panorama.
+        // The Maps SDK reads it from the manifest, so it can't be entered in-app.
+        val mapsApiKey = (project.findProperty("MAPS_API_KEY") as String?) ?: ""
+        manifestPlaceholders["mapsApiKey"] = mapsApiKey
+        buildConfigField("boolean", "HAS_MAPS_KEY", "${mapsApiKey.isNotBlank()}")
         // Redirect scheme used by the OAuth callback (bike://strava-auth).
         manifestPlaceholders["stravaRedirectScheme"] = "bike"
         manifestPlaceholders["stravaRedirectHost"] = "strava-auth"
@@ -94,4 +99,5 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.browser)
     implementation(libs.maplibre.android)
+    implementation(libs.play.services.maps)
 }
