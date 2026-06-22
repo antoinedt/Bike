@@ -131,19 +131,17 @@ fun RideScreen(
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurface,
             )
-            // Animated rider — hidden over real Street View photos (it'd clash).
-            if (!googleStreet) {
-                CyclistView(
-                    speedKmh = state.speedKmh,
-                    cadenceRpm = state.cadenceRpm,
-                    gradePercent = state.gradePercent,
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 6.dp)
-                        .fillMaxWidth(0.6f)
-                        .height(150.dp),
-                )
-            }
+            // Animated rider that pedals with speed and stands up on climbs.
+            CyclistView(
+                speedKmh = state.speedKmh,
+                cadenceRpm = state.cadenceRpm,
+                gradePercent = state.gradePercent,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 6.dp)
+                    .fillMaxWidth(0.6f)
+                    .height(150.dp),
+            )
             // Camera view toggle: chase <-> street.
             val toggleLabel = when {
                 !streetLevel -> "  Chase"
