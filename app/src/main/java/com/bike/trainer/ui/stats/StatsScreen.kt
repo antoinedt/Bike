@@ -13,12 +13,18 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -28,12 +34,15 @@ import com.bike.trainer.data.intervalLabel
 import com.bike.trainer.di.ServiceLocator
 import com.bike.trainer.ui.components.SectionCard
 import com.bike.trainer.ui.components.StatTile
+import kotlinx.coroutines.launch
 import java.util.Locale
 
 @Composable
 fun StatsScreen(onBack: () -> Unit) {
     val entry by ServiceLocator.profileRepository.active.collectAsStateWithLifecycle(initialValue = null)
     val stats = entry?.stats
+    val scope = rememberCoroutineScope()
+    var showReset by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -82,7 +91,34 @@ fun StatsScreen(onBack: () -> Unit) {
                 BestRow(intervalLabel(w), stats?.bestAvgPowerW?.get(w)?.let { "$it W" })
             }
         }
+
+        OutlinedButton(
+            onClick = { showReset = true },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("Reset all stats", color = MaterialTheme.colorScheme.error)
+        }
         Spacer(Modifier.height(24.dp))
+    }
+
+    if (showReset) {
+        AlertDialog(
+            onDismissRequest = { showReset = false },
+            title = { Text("Reset all stats?") },
+            text = {
+                Text(
+                    "This permanently clears ${entry?.profile?.name ?: "this rider"}'s lifetime " +
+                        "distance, time, records and bests. It can't be undone.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showReset = false
+                    scope.launch { ServiceLocator.profileRepository.resetActiveStats() }
+                }) { Text("Reset", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { showReset = false }) { Text("Cancel") } },
+        )
     }
 }
 

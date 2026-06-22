@@ -25,12 +25,15 @@ import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.BlurOff
 import androidx.compose.material.icons.filled.BlurOn
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.filled.Layers
@@ -54,7 +57,6 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bike.trainer.di.ServiceLocator
 import com.bike.trainer.session.RideStatus
-import com.bike.trainer.ui.components.StatTile
 import kotlinx.coroutines.launch
 import java.util.Locale
 
@@ -136,6 +138,7 @@ fun RideScreen(
                 CachedStreetView(
                     manifest = svManifest,
                     distanceMeters = state.distanceMeters,
+                    speedKmh = state.speedKmh,
                     modifier = Modifier.fillMaxSize(),
                 )
             } else if (googleStreet) {
@@ -154,31 +157,42 @@ fun RideScreen(
                     modifier = Modifier.fillMaxSize(),
                 )
             }
-            // Grade badge.
-            Box(
+            // ---- Top HUD: route + all live metrics, overlaid on the scene ----
+            Column(
                 modifier = Modifier
                     .align(Alignment.TopStart)
-                    .padding(12.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f))
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                    .fillMaxWidth()
+                    .background(
+                        androidx.compose.ui.graphics.Brush.verticalGradient(
+                            listOf(
+                                androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.6f),
+                                androidx.compose.ui.graphics.Color.Transparent,
+                            ),
+                        ),
+                    )
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Text(
-                    text = String.format(Locale.US, "%+.1f%%", state.gradePercent),
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = gradeColor(state.gradePercent),
+                    text = engine.route.name,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = androidx.compose.ui.graphics.Color.White,
+                    maxLines = 1,
                 )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    HudStat("GRADE", String.format(Locale.US, "%+.1f%%", state.gradePercent), gradeColor(state.gradePercent))
+                    HudStat("W", "${state.powerWatts}")
+                    HudStat("KM/H", String.format(Locale.US, "%.1f", state.speedKmh))
+                    HudStat("RPM", "${state.cadenceRpm}")
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    HudStat("KM", String.format(Locale.US, "%.2f", state.distanceMeters / 1000.0))
+                    HudStat("TIME", formatTime(state.elapsedSeconds))
+                    HudStat("ELEV", "${state.elevationMeters.toInt()}m")
+                    HudStat("BPM", if (state.heartRate > 0) "${state.heartRate}" else "—")
+                }
             }
-            // Route name.
-            Text(
-                text = engine.route.name,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(12.dp),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
             // Animated rider, shown only over Street View where it reads as a
             // real cyclist on the road (the chase/map view has its own framing).
             if (googleStreet) {
@@ -278,33 +292,11 @@ fun RideScreen(
         }
     }
 
-    // ---- Ride metrics, gears and finish ----
+    // ---- Progress chart, gears, pause/finish (the bottom panel) ----
     @Composable
     fun Controls(modifier: Modifier) {
       Column(modifier) {
-        // ---- Primary metrics ----
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 12.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-        ) {
-            StatTile("Power", "${state.powerWatts} W", accent = true)
-            StatTile("Speed", String.format(Locale.US, "%.1f", state.speedKmh) + " km/h")
-            StatTile("Cadence", "${state.cadenceRpm} rpm")
-        }
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 8.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-        ) {
-            StatTile("Distance", String.format(Locale.US, "%.2f km", state.distanceMeters / 1000.0))
-            StatTile("Time", formatTime(state.elapsedSeconds))
-            StatTile("Elev", "${state.elevationMeters.toInt()} m")
-            StatTile("HR", if (state.heartRate > 0) "${state.heartRate} bpm" else "—")
-        }
-
+        Spacer(Modifier.height(10.dp))
         // ---- Elevation profile ----
         ElevationProfileView(
             route = engine.route,
@@ -365,14 +357,30 @@ fun RideScreen(
 
         Spacer(Modifier.height(12.dp))
 
-        Button(
-            onClick = { engine.finish() },
+        val paused = state.status == RideStatus.Paused
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("Finish Ride", fontWeight = FontWeight.Bold)
+            OutlinedButton(
+                onClick = { if (paused) engine.resume() else engine.pause() },
+                modifier = Modifier.weight(1f),
+            ) {
+                Icon(
+                    if (paused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
+                    contentDescription = null,
+                )
+                Text(if (paused) "  Resume" else "  Pause", fontWeight = FontWeight.Bold)
+            }
+            Button(
+                onClick = { engine.finish() },
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+            ) {
+                Text("Finish", fontWeight = FontWeight.Bold)
+            }
         }
         Spacer(Modifier.height(12.dp))
       }
@@ -407,10 +415,37 @@ fun RideScreen(
     }
 }
 
+/** One compact stat in the top HUD: bold value over a small unit/label. */
+@Composable
+private fun HudStat(
+    label: String,
+    value: String,
+    valueColor: androidx.compose.ui.graphics.Color = androidx.compose.ui.graphics.Color.White,
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            value,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = valueColor,
+            maxLines = 1,
+        )
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.7f),
+            maxLines = 1,
+        )
+    }
+}
+
+private val BikeYellow = androidx.compose.ui.graphics.Color(0xFFF2C20E)
+
 private fun gradeColor(grade: Double) = when {
-    grade > 3 -> com.bike.trainer.ui.theme.BikeRed
-    grade < -1 -> com.bike.trainer.ui.theme.BikeGreen
-    else -> com.bike.trainer.ui.theme.BikeOrange
+    grade > 6 -> com.bike.trainer.ui.theme.BikeRed
+    grade > 3 -> com.bike.trainer.ui.theme.BikeOrange
+    grade > 0 -> BikeYellow
+    else -> com.bike.trainer.ui.theme.BikeGreen
 }
 
 private fun formatTime(totalSeconds: Long): String {

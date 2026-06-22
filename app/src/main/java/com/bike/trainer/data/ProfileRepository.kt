@@ -45,6 +45,11 @@ class ProfileRepository(private val dataStore: DataStore<Preferences>) {
         entry.copy(stats = entry.stats.merged(summary))
     }
 
+    /** Wipe the active rider's progression stats back to zero. */
+    suspend fun resetActiveStats() = mutateActive { entry ->
+        entry.copy(stats = RiderStats())
+    }
+
     suspend fun setActiveStravaCredentials(clientId: String, clientSecret: String) = mutateActive { entry ->
         entry.copy(strava = entry.strava.copy(clientId = clientId.trim(), clientSecret = clientSecret.trim()))
     }

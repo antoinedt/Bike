@@ -36,6 +36,7 @@ import kotlinx.coroutines.withContext
 fun CachedStreetView(
     manifest: StreetViewManifest,
     distanceMeters: Double,
+    speedKmh: Double,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -43,6 +44,14 @@ fun CachedStreetView(
     // Resolve the nearest cached frame; recomputed only when the file changes.
     val path = remember(manifest, bucket(distanceMeters)) {
         StreetViewCache.imageFileAt(context, manifest, distanceMeters)?.path
+    }
+
+    // Match the crossfade to how long the rider takes to cross one sample spacing
+    // at the current speed (spacing / speed). Faster riding / closer samples ⇒
+    // shorter fades so frames don't pile up; slower ⇒ longer, smoother fades.
+    val fadeMs = remember(manifest.spacingMeters, bucket(distanceMeters)) {
+        val speedMs = (speedKmh / 3.6).coerceAtLeast(0.3)
+        (manifest.spacingMeters / speedMs * 1000.0).toInt().coerceIn(150, 900)
     }
 
     // Decode OUTSIDE the Crossfade and keep the previous image until the next one
@@ -57,7 +66,7 @@ fun CachedStreetView(
     }
 
     Box(modifier.background(Color.Black)) {
-        Crossfade(targetState = bitmap, animationSpec = tween(700), label = "streetview-cache") { bmp ->
+        Crossfade(targetState = bitmap, animationSpec = tween(fadeMs), label = "streetview-cache") { bmp ->
             if (bmp != null) {
                 Image(
                     bitmap = bmp,
