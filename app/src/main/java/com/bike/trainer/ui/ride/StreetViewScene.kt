@@ -39,15 +39,16 @@ import kotlin.math.abs
  * Google Maps API key in the manifest (build-time MAPS_API_KEY).
  *
  * The widget only ever shows one panorama, so to make movement feel continuous
- * rather than jumping every time we load a new one, we: ramp a slight forward
- * zoom between hops (a sense of moving into the scene), then mask the panorama
- * swap with a quick crossfade/dissolve, while the camera bearing animates
- * smoothly toward the route heading.
+ * rather than jumping every time we load a new one, we mask the panorama swap
+ * with a quick crossfade/dissolve while the camera bearing animates smoothly
+ * toward the route heading. The dissolve can be turned off with
+ * [smoothTransitions] (some riders find the crossfade distracting / "pulsing").
  */
 @Composable
 fun StreetViewScene(
     route: Route,
     distanceMeters: Double,
+    smoothTransitions: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -127,25 +128,25 @@ fun StreetViewScene(
     }
 
     // Track position/heading every tick; re-anchor (and dissolve) every ~12 m.
-    LaunchedEffect(panorama, distanceMeters) {
+    LaunchedEffect(panorama, distanceMeters, smoothTransitions) {
         val p = panorama ?: return@LaunchedEffect
         val point = route.pointAt(distanceMeters)
         if (abs(distanceMeters - lastPositionedAt) > HOP_METERS) {
             lastPositionedAt = distanceMeters
-            hops += 1
+            if (smoothTransitions) hops += 1
             // OUTDOOR restricts to official road-level Street View and drops
             // indoor panoramas and most user-contributed photo spheres.
             p.setPosition(LatLng(point.lat, point.lon), 120, StreetViewSource.OUTDOOR)
         }
-        // Forward zoom builds across the segment to fake moving into the scene.
-        val progress = ((distanceMeters - lastPositionedAt) / HOP_METERS).coerceIn(0.0, 1.0)
+        // Only turn smoothly toward the route heading — keep the zoom fixed so the
+        // view no longer pulses forward-and-back between panorama hops.
         p.animateTo(
             StreetViewPanoramaCamera.Builder()
                 .bearing(Math.toDegrees(point.heading).toFloat())
                 .tilt(0f)
-                .zoom((progress * 0.6).toFloat())
+                .zoom(0f)
                 .build(),
-            260L,
+            if (smoothTransitions) 600L else 0L,
         )
     }
 }

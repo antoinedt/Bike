@@ -47,11 +47,21 @@ class VirtualGears(
      * A display ratio so the HUD can show something cassette-like. Lowest gear
      * is the easiest (smallest ratio), highest is the hardest.
      */
-    fun displayRatio(): Double {
+    fun displayRatio(): Double = ratioFor(current)
+
+    private fun ratioFor(gear: Int): Double {
         val min = 0.75
         val max = 3.5
         if (gearCount <= 1) return max
-        val t = (current - 1).toDouble() / (gearCount - 1).toDouble()
+        val t = (gear - 1).toDouble() / (gearCount - 1).toDouble()
         return min + t * (max - min)
     }
+
+    /**
+     * Demo-mode speed multiplier relative to the neutral gear. With no trainer
+     * to measure power, we model a rider spinning at a roughly constant cadence,
+     * so a harder (higher) gear covers more ground per stroke and goes faster,
+     * an easier gear slower. 1.0 at the neutral gear.
+     */
+    fun speedFactor(): Double = ratioFor(current) / ratioFor(neutralGear)
 }
