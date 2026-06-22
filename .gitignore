@@ -14,3 +14,12 @@ local.properties
 tools/preview.png
 tools/variants/
 tools/variants_sheet.png
+
+# Sprite-sheet processing artifacts (source + intermediate)
+tools/sheet_src
+tools/keyed/
+tools/keyed_preview.png
+tools/keyed_overlay.png
+tools/variants/
+tools/variants_sheet.png
+tools/cyclist_final.png
