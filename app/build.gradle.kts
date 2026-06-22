@@ -35,6 +35,8 @@ android {
             ?: "AIzaSyDvo9I5f-bq7Rd6WRA_Il5C-Mbi5Nk7ID0"
         manifestPlaceholders["mapsApiKey"] = mapsApiKey
         buildConfigField("boolean", "HAS_MAPS_KEY", "${mapsApiKey.isNotBlank()}")
+        // Same key, exposed to code for the Street View *Static* API (route prefetch).
+        buildConfigField("String", "MAPS_API_KEY", "\"$mapsApiKey\"")
         // Redirect scheme used by the OAuth callback (bike://strava-auth).
         manifestPlaceholders["stravaRedirectScheme"] = "bike"
         manifestPlaceholders["stravaRedirectHost"] = "strava-auth"

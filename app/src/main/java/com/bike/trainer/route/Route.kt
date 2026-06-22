@@ -34,6 +34,8 @@ class Route(
     val seed: Long,
     val points: List<RoutePoint>,
     val stepMeters: Double,
+    /** Stable id for caches tied to this route (e.g. the GPX file name); null for generated routes. */
+    val id: String? = null,
 ) {
     val totalDistance: Double = points.lastOrNull()?.distance ?: 0.0
 
