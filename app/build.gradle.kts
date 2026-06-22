@@ -28,7 +28,11 @@ android {
         buildConfigField("String", "MAPTILES_API_KEY", "\"$mapTilesKey\"")
         // Google Maps key (build-time) powers the interactive Street View panorama.
         // The Maps SDK reads it from the manifest, so it can't be entered in-app.
-        val mapsApiKey = (project.findProperty("MAPS_API_KEY") as String?) ?: ""
+        // An Android Maps key is shipped inside every APK (extractable), so it's
+        // protected by app/API restrictions in the Google console, not by secrecy.
+        // A MAPS_API_KEY gradle property / CI secret overrides this default.
+        val mapsApiKey = (project.findProperty("MAPS_API_KEY") as String?)?.ifBlank { null }
+            ?: "AIzaSyDvo9I5f-bq7Rd6WRA_Il5C-Mbi5Nk7ID0"
         manifestPlaceholders["mapsApiKey"] = mapsApiKey
         buildConfigField("boolean", "HAS_MAPS_KEY", "${mapsApiKey.isNotBlank()}")
         // Redirect scheme used by the OAuth callback (bike://strava-auth).
