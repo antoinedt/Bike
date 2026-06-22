@@ -8,7 +8,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.lifecycleScope
 import com.bike.trainer.di.ServiceLocator
-import com.bike.trainer.strava.StravaConfig
 import com.bike.trainer.ui.BikeNavHost
 import com.bike.trainer.ui.theme.BikeTheme
 import kotlinx.coroutines.launch
@@ -43,10 +42,6 @@ class MainActivity : ComponentActivity() {
             return
         }
         val code = data.getQueryParameter("code") ?: return
-        if (!StravaConfig.isConfigured) {
-            Toast.makeText(this, "Strava credentials not configured in this build", Toast.LENGTH_LONG).show()
-            return
-        }
         lifecycleScope.launch {
             val ok = ServiceLocator.stravaRepository.exchangeAuthorizationCode(code)
             Toast.makeText(

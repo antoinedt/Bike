@@ -1,7 +1,10 @@
 package com.bike.trainer.di
 
 import android.content.Context
+import com.bike.trainer.ble.HeartRateManager
 import com.bike.trainer.ble.TrainerConnectionManager
+import com.bike.trainer.ble.ZwiftClickManager
+import com.bike.trainer.data.AppConfigRepository
 import com.bike.trainer.data.SettingsRepository
 import com.bike.trainer.data.appDataStore
 import com.bike.trainer.session.RideEngine
@@ -16,8 +19,14 @@ object ServiceLocator {
     private lateinit var appContext: Context
 
     val trainerConnection: TrainerConnectionManager by lazy { TrainerConnectionManager(appContext) }
+    val heartRateManager: HeartRateManager by lazy { HeartRateManager(appContext) }
+    val zwiftClickManager: ZwiftClickManager by lazy { ZwiftClickManager(appContext) }
+
     val settingsRepository: SettingsRepository by lazy { SettingsRepository(appContext.appDataStore) }
-    val stravaRepository: StravaRepository by lazy { StravaRepository(appContext.appDataStore) }
+    val appConfigRepository: AppConfigRepository by lazy { AppConfigRepository(appContext.appDataStore) }
+    val stravaRepository: StravaRepository by lazy {
+        StravaRepository(appContext.appDataStore, appConfigRepository)
+    }
 
     /** The ride currently in progress / just finished, shared across screens. */
     @Volatile

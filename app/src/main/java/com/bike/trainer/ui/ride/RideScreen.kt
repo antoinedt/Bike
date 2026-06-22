@@ -54,12 +54,23 @@ fun RideScreen(
 
     val scope = rememberCoroutineScope()
     val state by engine.state.collectAsStateWithLifecycle()
+    val appConfig by ServiceLocator.appConfigRepository.config
+        .collectAsStateWithLifecycle(initialValue = null)
 
     LaunchedEffect(Unit) {
         if (state.status == RideStatus.NotStarted) engine.start(scope)
     }
     LaunchedEffect(state.status) {
         if (state.status == RideStatus.Finished) onFinished()
+    }
+    // Apply shifts from a connected physical Zwift controller.
+    LaunchedEffect(Unit) {
+        ServiceLocator.zwiftClickManager.gearEvents.collect { shift ->
+            when (shift) {
+                com.bike.trainer.ble.GearShift.UP -> engine.shiftUp()
+                com.bike.trainer.ble.GearShift.DOWN -> engine.shiftDown()
+            }
+        }
     }
 
     Column(
@@ -76,6 +87,7 @@ fun RideScreen(
             MapSceneView(
                 route = engine.route,
                 distanceMeters = state.distanceMeters,
+                mapTilesKey = appConfig?.mapTilesKey.orEmpty(),
                 modifier = Modifier.fillMaxSize(),
             )
             // Grade badge.
@@ -125,6 +137,7 @@ fun RideScreen(
             StatTile("Distance", String.format(Locale.US, "%.2f km", state.distanceMeters / 1000.0))
             StatTile("Time", formatTime(state.elapsedSeconds))
             StatTile("Elev", "${state.elevationMeters.toInt()} m")
+            StatTile("HR", if (state.heartRate > 0) "${state.heartRate} bpm" else "—")
         }
 
         // ---- Elevation profile ----

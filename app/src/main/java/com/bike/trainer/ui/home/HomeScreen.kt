@@ -19,22 +19,32 @@ import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bluetooth
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.DirectionsBike
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Gamepad
+import androidx.compose.material.icons.filled.Map
+import androidx.compose.material.icons.filled.Route
+import androidx.compose.material.icons.filled.UploadFile
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bluetooth
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.DirectionsBike
-import androidx.compose.material.icons.filled.Route
-import androidx.compose.material.icons.filled.UploadFile
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -43,13 +53,14 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bike.trainer.ble.TrainerConnectionState
 import com.bike.trainer.ble.TrainerControlMode
+import com.bike.trainer.data.AppConfig
+import com.bike.trainer.data.RiderSettings
 import com.bike.trainer.di.ServiceLocator
 import com.bike.trainer.physics.VirtualGears
 import com.bike.trainer.route.GpxImporter
 import com.bike.trainer.route.Route
 import com.bike.trainer.route.RouteGenerator
 import com.bike.trainer.session.RideEngine
-import com.bike.trainer.strava.StravaConfig
 import com.bike.trainer.ui.components.SectionCard
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -58,32 +69,54 @@ import kotlinx.coroutines.withContext
 @Composable
 fun HomeScreen(
     onConnectTrainer: () -> Unit,
+    onConnectHeartRate: () -> Unit,
+    onConnectController: () -> Unit,
     onStartRide: () -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val trainer = ServiceLocator.trainerConnection
+    val hrm = ServiceLocator.heartRateManager
+    val controller = ServiceLocator.zwiftClickManager
     val settingsRepo = ServiceLocator.settingsRepository
+    val configRepo = ServiceLocator.appConfigRepository
     val stravaRepo = ServiceLocator.stravaRepository
 
-    val connectionState by trainer.connectionState.collectAsStateWithLifecycle()
+    val trainerState by trainer.connectionState.collectAsStateWithLifecycle()
     val controlMode by trainer.controlMode.collectAsStateWithLifecycle()
-    val deviceName by trainer.connectedDeviceName.collectAsStateWithLifecycle()
-    val settings by settingsRepo.settings.collectAsStateWithLifecycle(initialValue = com.bike.trainer.data.RiderSettings())
+    val trainerName by trainer.connectedDeviceName.collectAsStateWithLifecycle()
+    val hrState by hrm.connectionState.collectAsStateWithLifecycle()
+    val hrName by hrm.connectedDeviceName.collectAsStateWithLifecycle()
+    val controllerState by controller.connectionState.collectAsStateWithLifecycle()
+    val controllerName by controller.connectedDeviceName.collectAsStateWithLifecycle()
+    val settings by settingsRepo.settings.collectAsStateWithLifecycle(initialValue = RiderSettings())
+    val config by configRepo.config.collectAsStateWithLifecycle(initialValue = null)
     val stravaConnected by stravaRepo.isConnected.collectAsStateWithLifecycle(initialValue = false)
 
-    // Builds the engine for a chosen route and opens the ride screen.
+    var showStravaDialog by remember { mutableStateOf(false) }
+    var showMapDialog by remember { mutableStateOf(false) }
+    var promptedForMap by remember { mutableStateOf(false) }
+
+    // Ask for a MapTiler key once if none has been provided yet.
+    LaunchedEffect(config) {
+        val cfg = config
+        if (cfg != null && !cfg.mapConfigured && !promptedForMap) {
+            promptedForMap = true
+            showMapDialog = true
+        }
+    }
+
     val startRide: (Route) -> Unit = { route ->
         ServiceLocator.activeRide = RideEngine(
             route = route,
             trainer = trainer,
             riderMassKg = settings.riderMassKg,
             gears = VirtualGears(gearCount = settings.gearCount),
+            heartRateManager = hrm,
         )
         onStartRide()
     }
 
-    // Loads a route on a background thread, then starts it (or reports an error).
     fun loadAndStart(name: String, open: () -> java.io.InputStream?) {
         scope.launch {
             val route = withContext(Dispatchers.IO) {
@@ -113,56 +146,42 @@ fun HomeScreen(
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                Icons.Filled.DirectionsBike,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-            )
+            Icon(Icons.Filled.DirectionsBike, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.width(8.dp))
-            Text(
-                "Bike",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-            )
+            Text("Bike", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         }
-        Text(
-            "Virtual indoor rides with real resistance.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
 
-        // ---- Trainer connection ----
+        // ---- Devices ----
         SectionCard {
-            Text("Trainer", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(6.dp))
-            val statusText = when (connectionState) {
+            Text("Devices", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(8.dp))
+
+            val trainerStatus = when (trainerState) {
                 TrainerConnectionState.Connected -> {
-                    val mode = if (controlMode == TrainerControlMode.Simulation) "resistance control" else "power only"
-                    "Connected: ${deviceName ?: "trainer"} ($mode)"
+                    val mode = if (controlMode == TrainerControlMode.Simulation) "resistance" else "power only"
+                    "${trainerName ?: "trainer"} · $mode"
                 }
                 TrainerConnectionState.Connecting -> "Connecting…"
                 TrainerConnectionState.Scanning -> "Scanning…"
-                TrainerConnectionState.Failed -> "Connection failed"
                 else -> "Not connected"
             }
-            Text(statusText, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.height(10.dp))
-            OutlinedButton(onClick = onConnectTrainer) {
-                Icon(Icons.Filled.Bluetooth, contentDescription = null)
-                Text(
-                    if (connectionState == TrainerConnectionState.Connected) "  Manage trainer" else "  Connect trainer",
-                )
-            }
+            DeviceRow(Icons.Filled.Bluetooth, "Trainer", trainerStatus,
+                connected = trainerState == TrainerConnectionState.Connected, onClick = onConnectTrainer)
+
+            DeviceRow(Icons.Filled.Favorite, "Heart rate",
+                if (hrState == TrainerConnectionState.Connected) (hrName ?: "connected") else "Not connected",
+                connected = hrState == TrainerConnectionState.Connected, onClick = onConnectHeartRate)
+
+            DeviceRow(Icons.Filled.Gamepad, "Gear controller",
+                if (controllerState == TrainerConnectionState.Connected) (controllerName ?: "connected") else "Not connected",
+                connected = controllerState == TrainerConnectionState.Connected, onClick = onConnectController)
         }
 
-        // ---- Route options ----
+        // ---- Route ----
         SectionCard {
             Text("Route", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text(
-                "Random corridor difficulty",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Text("Random corridor difficulty", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 RouteGenerator.Difficulty.entries.forEach { diff ->
@@ -173,87 +192,100 @@ fun HomeScreen(
                     )
                 }
             }
-
             Spacer(Modifier.height(14.dp))
-            Text(
-                "Or ride a real route",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Text("Or ride a real route", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = { gpxPicker.launch(arrayOf("*/*")) }) {
                     Icon(Icons.Filled.UploadFile, contentDescription = null)
                     Text("  Import GPX")
                 }
-                OutlinedButton(
-                    onClick = {
-                        loadAndStart("Paris–Roubaix (example)") {
-                            context.assets.open("routes/paris_roubaix.gpx")
-                        }
-                    },
-                ) {
+                OutlinedButton(onClick = {
+                    loadAndStart("Paris–Roubaix (example)") {
+                        context.assets.open("routes/paris_roubaix.gpx")
+                    }
+                }) {
                     Icon(Icons.Filled.Route, contentDescription = null)
                     Text("  Paris–Roubaix")
                 }
             }
         }
 
-        // ---- Rider profile ----
+        // ---- Rider weight ----
         SectionCard {
             Text("Rider weight", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text(
-                "${settings.riderMassKg.toInt()} kg",
-                style = MaterialTheme.typography.headlineSmall,
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.Bold,
-            )
+            Text("${settings.riderMassKg.toInt()} kg", style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
             Slider(
                 value = settings.riderMassKg.toFloat(),
                 onValueChange = { scope.launch { settingsRepo.setRiderMass(it.toDouble()) } },
                 valueRange = 40f..130f,
             )
+        }
+
+        // ---- 3D map (MapTiler key) ----
+        SectionCard {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.Map, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(8.dp))
+                Text("3D map", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            }
+            Spacer(Modifier.height(6.dp))
+            val mapReady = config?.mapConfigured == true
             Text(
-                "Used to model how fast you climb for a given power.",
-                style = MaterialTheme.typography.bodySmall,
+                if (mapReady) "MapTiler key set — full 3D terrain, satellite & buildings."
+                else "No MapTiler key — riding on the flat demo map. Add a free key for 3D scenery.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(onClick = { showMapDialog = true }) {
+                Text(if (mapReady) "Change MapTiler key" else "Add MapTiler key")
+            }
         }
 
         // ---- Strava ----
         SectionCard {
             Text("Strava", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(6.dp))
-            if (stravaConnected) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
-                    Text("  Connected — rides can be uploaded", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            val stravaConfigured = config?.stravaConfigured == true
+            when {
+                stravaConnected -> {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
+                        Text("  Connected — rides can be uploaded", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { scope.launch { stravaRepo.disconnect() } }) { Text("Disconnect") }
+                        OutlinedButton(onClick = { showStravaDialog = true }) { Text("Edit keys") }
+                    }
                 }
-                Spacer(Modifier.height(8.dp))
-                OutlinedButton(onClick = { scope.launch { stravaRepo.disconnect() } }) {
-                    Text("Disconnect")
+                stravaConfigured -> {
+                    Text("Connect your account to upload finished rides.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = {
+                            scope.launch {
+                                stravaRepo.authorizeUrl()?.let {
+                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(it)))
+                                }
+                            }
+                        }) { Text("Connect Strava") }
+                        OutlinedButton(onClick = { showStravaDialog = true }) { Text("Edit keys") }
+                    }
                 }
-            } else {
-                Text(
-                    if (StravaConfig.isConfigured) "Connect to upload finished rides." else
-                        "Add STRAVA_CLIENT_ID/SECRET at build time to enable uploads.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.height(8.dp))
-                OutlinedButton(
-                    enabled = StravaConfig.isConfigured,
-                    onClick = {
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(StravaConfig.authorizeUrl()))
-                        context.startActivity(intent)
-                    },
-                ) {
-                    Text("Connect Strava")
+                else -> {
+                    Text("Add your Strava API keys to enable uploads.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(onClick = { showStravaDialog = true }) { Text("Add Strava keys") }
                 }
             }
         }
 
         Spacer(Modifier.height(4.dp))
-
         Button(
             modifier = Modifier.fillMaxWidth(),
             onClick = { startRide(RouteGenerator.generate(difficulty = settings.difficulty)) },
@@ -263,6 +295,113 @@ fun HomeScreen(
         }
         Spacer(Modifier.height(24.dp))
     }
+
+    if (showMapDialog) {
+        KeyDialog(
+            title = "MapTiler key",
+            label = "MapTiler API key",
+            hint = "Create a free key at maptiler.com → Account → Keys.",
+            initial = config?.mapTilesKey.orEmpty(),
+            onDismiss = { showMapDialog = false },
+            onSave = { key ->
+                scope.launch { configRepo.setMapTilesKey(key) }
+                showMapDialog = false
+            },
+        )
+    }
+    if (showStravaDialog) {
+        StravaKeysDialog(
+            initial = config ?: AppConfig("", "", ""),
+            onDismiss = { showStravaDialog = false },
+            onSave = { id, secret ->
+                scope.launch { configRepo.setStravaCredentials(id, secret) }
+                showStravaDialog = false
+            },
+        )
+    }
+}
+
+@Composable
+private fun DeviceRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    name: String,
+    status: String,
+    connected: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                icon, contentDescription = null,
+                tint = if (connected) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.width(10.dp))
+            Column {
+                Text(name, fontWeight = FontWeight.Medium)
+                Text(status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        TextButton(onClick = onClick) { Text(if (connected) "Manage" else "Connect") }
+    }
+}
+
+@Composable
+private fun KeyDialog(
+    title: String,
+    label: String,
+    hint: String,
+    initial: String,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit,
+) {
+    var value by remember { mutableStateOf(initial) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column {
+                Text(hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(value = value, onValueChange = { value = it }, label = { Text(label) }, singleLine = true)
+            }
+        },
+        confirmButton = { TextButton(onClick = { onSave(value) }) { Text("Save") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun StravaKeysDialog(
+    initial: AppConfig,
+    onDismiss: () -> Unit,
+    onSave: (String, String) -> Unit,
+) {
+    var id by remember { mutableStateOf(initial.stravaClientId) }
+    var secret by remember { mutableStateOf(initial.stravaClientSecret) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Strava API keys") },
+        text = {
+            Column {
+                Text(
+                    "Create an app at strava.com/settings/api and set the Authorization " +
+                        "Callback Domain to: strava-auth",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(value = id, onValueChange = { id = it }, label = { Text("Client ID") }, singleLine = true)
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(value = secret, onValueChange = { secret = it }, label = { Text("Client Secret") }, singleLine = true)
+            }
+        },
+        confirmButton = { TextButton(onClick = { onSave(id, secret) }) { Text("Save") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 /** Resolve a content Uri's display name (without extension) for the route title. */
