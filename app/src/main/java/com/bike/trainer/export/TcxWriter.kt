@@ -83,7 +83,7 @@ object TcxWriter {
         sb.append("        </Extensions>\n")
         sb.append("      </Lap>\n")
         sb.append("      <Creator xsi:type=\"Device_t\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">\n")
-        sb.append("        <Name>Bike Virtual Trainer</Name>\n")
+        sb.append("        <Name>VibeBike Virtual Trainer</Name>\n")
         sb.append("      </Creator>\n")
         sb.append("    </Activity>\n")
         sb.append("  </Activities>\n")

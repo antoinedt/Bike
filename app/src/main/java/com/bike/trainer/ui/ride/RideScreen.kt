@@ -84,8 +84,19 @@ fun RideScreen(
     // is present, otherwise the near-ground map view).
     var streetLevel by remember { mutableStateOf(true) }
     var smoothTransitions by remember { mutableStateOf(true) }
-    var svMotion by remember { mutableStateOf(SvMotion.DOLLY) }
+    var svMotion by remember { mutableStateOf(SvMotion.PARALLAX) }
     var motionMenu by remember { mutableStateOf(false) }
+    // Advanced Street View motion tuning (Settings). Pick up the saved default mode
+    // and knobs; the in-ride dropdown can still override the mode live.
+    val svMotionMode = appConfig?.svMotionMode
+    LaunchedEffect(svMotionMode) {
+        svMotionMode?.let { name ->
+            runCatching { SvMotion.valueOf(name) }.getOrNull()?.let { svMotion = it }
+        }
+    }
+    val svParams = appConfig?.let {
+        SvMotionParams(strength = it.svStrength, horizon = it.svHorizon, groundRush = it.svGroundRush)
+    } ?: SvMotionParams()
     var sceneBounds by remember { mutableStateOf<android.graphics.Rect?>(null) }
     // Prefetched Street View frames for this route, if a valid cache exists.
     val svManifest = remember(engine.route.id) {
@@ -146,6 +157,7 @@ fun RideScreen(
                     speedKmh = state.speedKmh,
                     mode = svMotion,
                     modifier = Modifier.fillMaxSize(),
+                    params = svParams,
                 )
             } else if (googleStreet) {
                 StreetViewScene(

@@ -224,7 +224,7 @@ fun SummaryScreen(onDone: () -> Unit) {
                                 val tcx = TcxWriter.write(engine.route.name, engine.recorder.snapshot())
                                 val result = ServiceLocator.stravaRepository.uploadTcx(
                                     name = engine.route.name,
-                                    description = "Virtual ride on Bike",
+                                    description = "Virtual ride on VibeBike",
                                     tcx = tcx.toByteArray(Charsets.UTF_8),
                                 )
                                 uploadState = UploadUiState.Done(result)

@@ -46,13 +46,13 @@ jobs:
           ORG_GRADLE_PROJECT_MAPS_API_KEY: ${{ secrets.MAPS_API_KEY }}
 
       - name: Stage APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk bike-debug.apk
+        run: cp app/build/outputs/apk/debug/VibeBike-debug.apk VibeBike-debug.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: bike-debug-apk
-          path: bike-debug.apk
+          name: VibeBike-debug-apk
+          path: VibeBike-debug.apk
           if-no-files-found: error
 
       - name: Publish Release
@@ -60,13 +60,13 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
-          name: Bike debug build ${{ github.run_number }}
+          name: VibeBike debug build ${{ github.run_number }}
           body: |
-            Automated debug build of the Bike app.
+            Automated debug build of the VibeBike app.
 
-            `bike-debug.apk` is signed with the standard Android debug key, so it
+            `VibeBike-debug.apk` is signed with the standard Android debug key, so it
             installs directly on a device with "install unknown apps" enabled.
             This is a debug build for testing, not a Play Store release.
           prerelease: true
           target_commitish: ${{ github.sha }}
-          files: bike-debug.apk
+          files: VibeBike-debug.apk

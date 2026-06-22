@@ -6,10 +6,12 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBarsPadding
@@ -19,9 +21,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Map
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -41,6 +46,8 @@ import com.bike.trainer.di.ServiceLocator
 import com.bike.trainer.ui.components.KeyDialog
 import com.bike.trainer.ui.components.SectionCard
 import com.bike.trainer.ui.components.StravaKeysDialog
+import com.bike.trainer.ui.ride.SvMotion
+import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -128,6 +135,62 @@ fun SettingsScreen(onBack: () -> Unit) {
             )
         }
 
+        // ---- Street View motion (advanced) ----
+        SectionCard {
+            Text("Street View motion", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "How prefetched Street View frames fake forward motion. Parallax — the " +
+                    "ground-plane illusion where the near road rushes faster than the " +
+                    "horizon — is the default. You can still switch styles live while riding.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(10.dp))
+
+            val currentMode = remember(config?.svMotionMode) {
+                runCatching { SvMotion.valueOf(config?.svMotionMode ?: "PARALLAX") }
+                    .getOrNull() ?: SvMotion.PARALLAX
+            }
+            var modeMenu by remember { mutableStateOf(false) }
+            Text("Default style", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(4.dp))
+            Box {
+                OutlinedButton(onClick = { modeMenu = true }) { Text(currentMode.label) }
+                DropdownMenu(expanded = modeMenu, onDismissRequest = { modeMenu = false }) {
+                    SvMotion.entries.forEach { m ->
+                        DropdownMenuItem(
+                            text = { Text(m.label) },
+                            onClick = {
+                                scope.launch { configRepo.setSvMotionMode(m.name) }
+                                modeMenu = false
+                            },
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+            MotionSlider("Strength", config?.svStrength ?: 0.16f, 0f, 0.5f) {
+                scope.launch { configRepo.setSvStrength(it) }
+            }
+            MotionSlider("Horizon height", config?.svHorizon ?: 0.45f, 0.25f, 0.65f) {
+                scope.launch { configRepo.setSvHorizon(it) }
+            }
+            MotionSlider("Ground rush (Parallax)", config?.svGroundRush ?: 1.5f, 0f, 3f) {
+                scope.launch { configRepo.setSvGroundRush(it) }
+            }
+            Spacer(Modifier.height(4.dp))
+            TextButton(onClick = {
+                scope.launch {
+                    configRepo.setSvMotionMode("PARALLAX")
+                    configRepo.setSvStrength(0.16f)
+                    configRepo.setSvHorizon(0.45f)
+                    configRepo.setSvGroundRush(1.5f)
+                }
+            }) { Text("Reset to defaults") }
+        }
+
         // ---- Strava (per rider) ----
         SectionCard {
             Text(
@@ -211,6 +274,38 @@ fun SettingsScreen(onBack: () -> Unit) {
                 scope.launch { profileRepo.setActiveStravaCredentials(id, secret) }
                 showStravaDialog = false
             },
+        )
+    }
+}
+
+/**
+ * Labelled slider whose live value is shown on the right. Drags update a local
+ * copy; [onCommit] persists only when the drag ends (so we don't spam DataStore).
+ * Re-seeds from [value] whenever the stored value changes.
+ */
+@Composable
+private fun MotionSlider(
+    label: String,
+    value: Float,
+    min: Float,
+    max: Float,
+    onCommit: (Float) -> Unit,
+) {
+    var v by remember(value) { mutableStateOf(value) }
+    Column {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(label, style = MaterialTheme.typography.labelMedium)
+            Text(
+                String.format(Locale.US, "%.2f", v),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Slider(
+            value = v,
+            onValueChange = { v = it },
+            valueRange = min..max,
+            onValueChangeFinished = { onCommit(v) },
         )
     }
 }

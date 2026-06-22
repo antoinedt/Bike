@@ -5,6 +5,11 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
+base {
+    // Output APKs as VibeBike-debug.apk / VibeBike-release.apk.
+    archivesName = "VibeBike"
+}
+
 android {
     namespace = "com.bike.trainer"
     compileSdk = 35
