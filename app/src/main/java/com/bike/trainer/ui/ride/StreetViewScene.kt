@@ -31,6 +31,7 @@ import com.google.android.gms.maps.StreetViewPanorama
 import com.google.android.gms.maps.StreetViewPanoramaView
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.StreetViewPanoramaCamera
+import com.google.android.gms.maps.model.StreetViewSource
 import kotlin.math.abs
 
 /**
@@ -132,7 +133,9 @@ fun StreetViewScene(
         if (abs(distanceMeters - lastPositionedAt) > HOP_METERS) {
             lastPositionedAt = distanceMeters
             hops += 1
-            p.setPosition(LatLng(point.lat, point.lon), 120)
+            // OUTDOOR restricts to official road-level Street View and drops
+            // indoor panoramas and most user-contributed photo spheres.
+            p.setPosition(LatLng(point.lat, point.lon), 120, StreetViewSource.OUTDOOR)
         }
         // Forward zoom builds across the segment to fake moving into the scene.
         val progress = ((distanceMeters - lastPositionedAt) / HOP_METERS).coerceIn(0.0, 1.0)
