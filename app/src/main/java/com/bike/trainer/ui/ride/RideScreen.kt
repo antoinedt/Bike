@@ -403,7 +403,9 @@ fun RideScreen(
                 .fillMaxSize()
                 .systemBarsPadding(),
         ) {
-            Scene(Modifier.weight(1.4f).fillMaxHeight())
+            // Give the course most of the width; the controls get a slim,
+            // scrollable column on the side.
+            Scene(Modifier.weight(2.4f).fillMaxHeight())
             Controls(
                 Modifier
                     .weight(1f)
@@ -417,8 +419,15 @@ fun RideScreen(
                 .fillMaxSize()
                 .systemBarsPadding(),
         ) {
-            Scene(Modifier.fillMaxWidth().height(280.dp))
-            Controls(Modifier.fillMaxWidth())
+            // Course takes the lion's share of the height; controls take a smaller,
+            // scrollable strip below so the essentials stay reachable.
+            Scene(Modifier.fillMaxWidth().weight(1.9f))
+            Controls(
+                Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState()),
+            )
         }
     }
 }
