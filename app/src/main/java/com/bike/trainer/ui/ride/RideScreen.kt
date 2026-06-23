@@ -284,8 +284,6 @@ fun RideScreen(
             state.workout?.let { wo ->
                 WorkoutStepsPanel(
                     workout = wo,
-                    currentPower = state.powerWatts,
-                    tolerance = workoutTol,
                     modifier = Modifier
                         .align(Alignment.CenterStart)
                         .padding(start = 6.dp, top = 4.dp, bottom = 4.dp)
@@ -546,12 +544,7 @@ private fun ControlChip(icon: ImageVector, label: String, onClick: () -> Unit) {
 
 /** Scrollable list of a workout's steps, shown down the left edge during a ride. */
 @Composable
-private fun WorkoutStepsPanel(
-    workout: WorkoutLive,
-    currentPower: Int,
-    tolerance: Double,
-    modifier: Modifier,
-) {
+private fun WorkoutStepsPanel(workout: WorkoutLive, modifier: Modifier) {
     val listState = rememberLazyListState()
     LaunchedEffect(workout.activeIndex) {
         if (workout.activeIndex >= 0) {
@@ -560,8 +553,9 @@ private fun WorkoutStepsPanel(
     }
     Column(
         modifier = modifier
+            // Light scrim so the section colours (and the scene behind) show through.
             .clip(RoundedCornerShape(10.dp))
-            .background(Color.Black.copy(alpha = 0.45f))
+            .background(Color.Black.copy(alpha = 0.22f))
             .padding(4.dp),
     ) {
         // Header: workout name + live overall score.
@@ -585,23 +579,29 @@ private fun WorkoutStepsPanel(
             state = listState,
             verticalArrangement = Arrangement.spacedBy(3.dp),
         ) {
-            items(workout.steps) { s -> WorkoutStepRow(s, currentPower, tolerance) }
+            items(workout.steps) { s -> WorkoutStepRow(s) }
         }
     }
 }
 
-/** One workout step: target/avg watts over its duration (counts down when active). */
+/** Light gray used to highlight the step currently in progress. */
+private val ActiveStepGray = Color(0xFFC9CED6)
+
+/**
+ * One workout step. Coloured by its power zone (translucent so the scene shows
+ * through); the step that's currently in progress goes gray temporarily. Shows
+ * target watts + duration, switching to average watts + score once done.
+ */
 @Composable
-private fun WorkoutStepRow(s: WorkoutStepLive, currentPower: Int, tolerance: Double) {
+private fun WorkoutStepRow(s: WorkoutStepLive) {
     val active = s.status == StepStatus.ACTIVE
     val done = s.status == StepStatus.DONE
-    // Active step: colour by how close the current power is to target.
     val bg = when {
-        active -> adherenceColor(currentPower, s.targetWatts, tolerance)
-        done -> Color.White.copy(alpha = 0.14f)
-        else -> workoutZoneColor(s.ftpFraction).copy(alpha = 0.30f)
+        active -> ActiveStepGray.copy(alpha = 0.80f)
+        done -> workoutZoneColor(s.ftpFraction).copy(alpha = 0.38f)
+        else -> workoutZoneColor(s.ftpFraction).copy(alpha = 0.62f)
     }
-    val fg = if (active) Color.Black else Color.White.copy(alpha = if (done) 0.65f else 0.92f)
+    val fg = if (active) Color.Black else Color.White.copy(alpha = if (done) 0.7f else 0.95f)
     val seconds = if (active) s.remainingSeconds else s.seconds
     val watts = if (done) s.avgWatts else s.targetWatts
     Column(
