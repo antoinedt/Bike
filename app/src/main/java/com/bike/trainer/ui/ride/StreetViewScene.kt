@@ -101,9 +101,10 @@ fun StreetViewScene(
                         hasCoverage = location != null
                         // A new panorama just loaded — snap it to face forward so it
                         // doesn't briefly show the Street View car's heading and then
-                        // rotate toward our target.
+                        // rotate toward our target. Guarded: the native SDK can throw
+                        // when a route wanders off Street View coverage.
                         if (location != null) {
-                            p.animateTo(forwardCamera(desiredBearing.floatValue), 0L)
+                            runCatching { p.animateTo(forwardCamera(desiredBearing.floatValue), 0L) }
                         }
                     }
                     panorama = p
@@ -141,14 +142,15 @@ fun StreetViewScene(
         if (abs(distanceMeters - lastPositionedAt) > hopMeters) {
             lastPositionedAt = distanceMeters
             // OUTDOOR restricts to official road-level Street View and drops
-            // indoor panoramas and most user-contributed photo spheres.
-            p.setPosition(LatLng(point.lat, point.lon), 120, StreetViewSource.OUTDOOR)
+            // indoor panoramas and most user-contributed photo spheres. Guarded:
+            // remote/off-road routes can make the native SDK throw.
+            runCatching { p.setPosition(LatLng(point.lat, point.lon), 120, StreetViewSource.OUTDOOR) }
         }
-        // Only re-aim when the forward bearing actually moves (> 2°), so the view
-        // holds steady forward instead of micro-rotating every tick.
-        if (lastAppliedBearing.isNaN() || abs(angleDelta(bearing, lastAppliedBearing)) > 2f) {
+        // Only re-aim when the forward bearing actually moves (> 2°) AND we actually
+        // have a panorama loaded — animating an empty panorama can crash the SDK.
+        if (hasCoverage && (lastAppliedBearing.isNaN() || abs(angleDelta(bearing, lastAppliedBearing)) > 2f)) {
             lastAppliedBearing = bearing
-            p.animateTo(forwardCamera(bearing), if (smoothTransitions) 300L else 0L)
+            runCatching { p.animateTo(forwardCamera(bearing), if (smoothTransitions) 300L else 0L) }
         }
     }
 }
