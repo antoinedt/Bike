@@ -15,7 +15,19 @@ import java.io.File
  */
 object RouteLibrary {
 
-    private val SEED_ASSETS = listOf("paris_roubaix.gpx")
+    private val SEED_ASSETS = listOf(
+        "paris_roubaix.gpx",
+        "alpe_dhuez.gpx",
+        "mont_ventoux.gpx",
+        "col_du_tourmalet.gpx",
+        "col_du_galibier.gpx",
+        "passo_stelvio.gpx",
+        "passo_mortirolo.gpx",
+        "sa_calobra.gpx",
+        "haleakala.gpx",
+        "grossglockner.gpx",
+        "trollstigen.gpx",
+    )
 
     fun folder(context: Context): File {
         val base = context.getExternalFilesDir(null) ?: context.filesDir
