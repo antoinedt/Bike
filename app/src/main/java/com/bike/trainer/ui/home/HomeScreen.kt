@@ -23,7 +23,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.DirectionsBike
-import androidx.compose.material.icons.filled.Route
 import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -34,7 +33,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
@@ -88,7 +86,7 @@ fun HomeScreen(
     val settings by settingsRepo.settings.collectAsStateWithLifecycle(initialValue = RiderSettings())
     val activeEntry by profileRepo.active.collectAsStateWithLifecycle(initialValue = null)
 
-    val startRide: (Route, Double) -> Unit = { route, startMeters ->
+    val startRide: (Route, Double, Boolean) -> Unit = { route, startMeters, ignoreHills ->
         ServiceLocator.activeRide = RideEngine(
             route = route,
             trainer = trainer,
@@ -96,25 +94,29 @@ fun HomeScreen(
             gears = VirtualGears(gearCount = settings.gearCount),
             heartRateManager = hrm,
             startDistanceMeters = startMeters,
+            ignoreHills = ignoreHills,
         )
         onStartRide()
     }
 
-    fun loadAndStart(name: String, id: String?, startMeters: Double, open: () -> java.io.InputStream?) {
+    fun loadAndStart(name: String, id: String?, startMeters: Double, ignoreHills: Boolean, open: () -> java.io.InputStream?) {
         scope.launch {
             val route = withContext(Dispatchers.IO) {
                 runCatching { open()?.use { GpxImporter.import(name, it, id) } }.getOrNull()
             }
-            if (route != null) startRide(route, startMeters)
+            if (route != null) startRide(route, startMeters, ignoreHills)
             else Toast.makeText(context, "Couldn't read that GPX route", Toast.LENGTH_LONG).show()
         }
     }
 
     var gpxFiles by remember { mutableStateOf<List<java.io.File>>(emptyList()) }
     var selectedGpx by remember { mutableStateOf<java.io.File?>(null) }
+    // "Random route" is the synthetic last dropdown entry (no GPX file).
+    var randomSelected by remember { mutableStateOf(false) }
     var menuExpanded by remember { mutableStateOf(false) }
     var prefetchFor by remember { mutableStateOf<java.io.File?>(null) }
     var startKm by remember { mutableStateOf("") }
+    var ignoreHills by remember { mutableStateOf(false) }
 
     fun refreshGpx(select: java.io.File? = null) {
         scope.launch {
@@ -171,61 +173,56 @@ fun HomeScreen(
 
         // ---- Route ----
         SectionCard {
-            Text("Random corridor", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                RouteGenerator.Difficulty.entries.forEach { diff ->
-                    FilterChip(
-                        selected = settings.difficulty == diff,
-                        onClick = { scope.launch { settingsRepo.setDifficulty(diff) } },
-                        label = { Text(diff.label) },
-                    )
-                }
-            }
-            Spacer(Modifier.height(14.dp))
-            Text("Or ride a GPX route", style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Route", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(8.dp))
 
-            if (gpxFiles.isEmpty()) {
-                Text(
-                    "No GPX files yet. Add one below, or drop .gpx files into the app's routes folder.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+            val selectionLabel = when {
+                randomSelected -> "🎲 Random route"
+                selectedGpx != null -> RouteLibrary.prettyName(selectedGpx!!)
+                else -> "Select a route"
+            }
+            ExposedDropdownMenuBox(
+                expanded = menuExpanded,
+                onExpandedChange = { menuExpanded = !menuExpanded },
+            ) {
+                OutlinedTextField(
+                    value = selectionLabel,
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Route") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = menuExpanded) },
+                    modifier = Modifier
+                        .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                        .fillMaxWidth(),
                 )
-            } else {
-                ExposedDropdownMenuBox(
+                ExposedDropdownMenu(
                     expanded = menuExpanded,
-                    onExpandedChange = { menuExpanded = !menuExpanded },
+                    onDismissRequest = { menuExpanded = false },
                 ) {
-                    OutlinedTextField(
-                        value = selectedGpx?.let { RouteLibrary.prettyName(it) } ?: "Select a route",
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Saved route") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = menuExpanded) },
-                        modifier = Modifier
-                            .menuAnchor(MenuAnchorType.PrimaryNotEditable)
-                            .fillMaxWidth(),
-                    )
-                    ExposedDropdownMenu(
-                        expanded = menuExpanded,
-                        onDismissRequest = { menuExpanded = false },
-                    ) {
-                        gpxFiles.forEach { file ->
-                            DropdownMenuItem(
-                                text = { Text(RouteLibrary.prettyName(file)) },
-                                onClick = {
-                                    selectedGpx = file
-                                    menuExpanded = false
-                                },
-                            )
-                        }
+                    gpxFiles.forEach { file ->
+                        DropdownMenuItem(
+                            text = { Text(RouteLibrary.prettyName(file)) },
+                            onClick = {
+                                selectedGpx = file
+                                randomSelected = false
+                                menuExpanded = false
+                            },
+                        )
                     }
+                    // Random generated corridor — always the last option.
+                    DropdownMenuItem(
+                        text = { Text("🎲 Random route") },
+                        onClick = {
+                            randomSelected = true
+                            selectedGpx = null
+                            menuExpanded = false
+                        },
+                    )
                 }
             }
 
-            if (selectedGpx != null) {
+            // Start-at-km only applies to a real GPX route.
+            if (selectedGpx != null && !randomSelected) {
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
                     value = startKm,
@@ -237,28 +234,13 @@ fun HomeScreen(
                 )
             }
             Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
-                    enabled = selectedGpx != null,
-                    onClick = {
-                        val file = selectedGpx ?: return@Button
-                        val startMeters = (startKm.toDoubleOrNull() ?: 0.0).coerceAtLeast(0.0) * 1000.0
-                        loadAndStart(RouteLibrary.prettyName(file), file.nameWithoutExtension, startMeters) {
-                            java.io.FileInputStream(file)
-                        }
-                    },
-                ) {
-                    Icon(Icons.Filled.Route, contentDescription = null)
-                    Text("  Ride route")
-                }
-                OutlinedButton(onClick = { gpxPicker.launch(arrayOf("*/*")) }) {
-                    Icon(Icons.Filled.UploadFile, contentDescription = null)
-                    Text("  Add GPX")
-                }
+            OutlinedButton(onClick = { gpxPicker.launch(arrayOf("*/*")) }) {
+                Icon(Icons.Filled.UploadFile, contentDescription = null)
+                Text("  Add GPX")
             }
             // Prefetch Google Street View frames along the selected route so the
             // ride plays them smoothly and offline (needs a Google Maps key).
-            if (selectedGpx != null && com.bike.trainer.BuildConfig.HAS_MAPS_KEY) {
+            if (selectedGpx != null && !randomSelected && com.bike.trainer.BuildConfig.HAS_MAPS_KEY) {
                 TextButton(onClick = { prefetchFor = selectedGpx }) {
                     Icon(Icons.Filled.CloudDownload, contentDescription = null)
                     Text("  Prefetch Street View…")
@@ -266,13 +248,34 @@ fun HomeScreen(
             }
         }
 
-        Spacer(Modifier.height(8.dp))
+        // Hills affect the simulated speed and the trainer's resistance. Tick this
+        // to ride the route as flat (no climb resistance, no downhill free speed).
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(checked = ignoreHills, onCheckedChange = { ignoreHills = it })
+            Text(
+                "Ignore hills (flat resistance)",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+
+        Spacer(Modifier.height(4.dp))
         Button(
             modifier = Modifier.fillMaxWidth(),
-            onClick = { startRide(RouteGenerator.generate(difficulty = settings.difficulty), 0.0) },
+            enabled = randomSelected || selectedGpx != null,
+            onClick = {
+                if (randomSelected) {
+                    startRide(RouteGenerator.generate(difficulty = settings.difficulty), 0.0, ignoreHills)
+                } else {
+                    val file = selectedGpx ?: return@Button
+                    val startMeters = (startKm.toDoubleOrNull() ?: 0.0).coerceAtLeast(0.0) * 1000.0
+                    loadAndStart(RouteLibrary.prettyName(file), file.nameWithoutExtension, startMeters, ignoreHills) {
+                        java.io.FileInputStream(file)
+                    }
+                }
+            },
         ) {
             Icon(Icons.Filled.DirectionsBike, contentDescription = null)
-            Text("  Start Random Ride", fontWeight = FontWeight.Bold)
+            Text("  Start ride", fontWeight = FontWeight.Bold)
         }
         Spacer(Modifier.height(24.dp))
     }

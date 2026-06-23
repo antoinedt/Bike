@@ -31,6 +31,8 @@ class RideEngine(
     private val heartRateManager: HeartRateManager? = null,
     /** Where on the route to begin (metres); the route loops, so this just offsets the start. */
     startDistanceMeters: Double = 0.0,
+    /** When true the route's gradient is ignored: flat physics, flat trainer resistance. */
+    private val ignoreHills: Boolean = false,
 ) {
     /** Absolute travelled distance (monotonic, includes the start offset). */
     private var distance = startDistanceMeters.coerceAtLeast(0.0)
@@ -53,6 +55,9 @@ class RideEngine(
         return if (total > 0) distance.mod(total) else distance
     }
 
+    /** Road gradient the simulation should feel — zeroed when hills are ignored. */
+    private fun terrainGrade(): Double = if (ignoreHills) 0.0 else route.gradeAt(lapPos())
+
     /** Distance ridden this session (for the HUD / recording). */
     private fun ridden(): Double = distance - startDistance
 
@@ -65,7 +70,7 @@ class RideEngine(
         gear = gears.current,
         gearCount = gears.gearCount,
         gearRatio = gears.displayRatio(),
-        gradePercent = CyclingPhysics.gradeToPercent(route.gradeAt(lapPos())),
+        gradePercent = CyclingPhysics.gradeToPercent(terrainGrade()),
     )
 
     fun start(scope: CoroutineScope) {
@@ -87,7 +92,7 @@ class RideEngine(
     private fun tick(dt: Double) {
         val data = trainer.trainerData.value
         val totalMass = riderMassKg + bikeMassKg
-        val terrainGrade = route.gradeAt(lapPos())
+        val terrainGrade = terrainGrade()
         val connected = trainer.connectionState.value == TrainerConnectionState.Connected
         // Prefer a dedicated HR strap if connected; otherwise use the trainer's.
         val heartRate = heartRateManager?.heartRate?.value?.takeIf { it > 0 } ?: data.heartRate
@@ -170,8 +175,7 @@ class RideEngine(
     }
 
     private fun pushGradeToTrainer() {
-        val terrainGrade = route.gradeAt(lapPos())
-        val effective = CyclingPhysics.gradeToPercent(terrainGrade + gears.gradeOffset())
+        val effective = CyclingPhysics.gradeToPercent(terrainGrade() + gears.gradeOffset())
         trainer.setSimulationGrade(effective)
     }
 

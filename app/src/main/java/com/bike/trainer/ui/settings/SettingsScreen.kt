@@ -27,6 +27,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -191,6 +192,27 @@ fun SettingsScreen(onBack: () -> Unit) {
             }) { Text("Reset to defaults") }
         }
 
+        // ---- In-ride control buttons ----
+        SectionCard {
+            Text("Ride controls", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Show or hide the on-screen buttons in the bottom panel while riding.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(8.dp))
+            ToggleRow("Motion / smooth control", config?.showMotionControl ?: true) {
+                scope.launch { configRepo.setShowMotionControl(it) }
+            }
+            ToggleRow("Camera view toggle", config?.showViewToggle ?: true) {
+                scope.launch { configRepo.setShowViewToggle(it) }
+            }
+            ToggleRow("Photo capture button", config?.showCaptureButton ?: true) {
+                scope.launch { configRepo.setShowCaptureButton(it) }
+            }
+        }
+
         // ---- Strava (per rider) ----
         SectionCard {
             Text(
@@ -283,6 +305,19 @@ fun SettingsScreen(onBack: () -> Unit) {
  * copy; [onCommit] persists only when the drag ends (so we don't spam DataStore).
  * Re-seeds from [value] whenever the stored value changes.
  */
+/** A label with a trailing on/off switch. */
+@Composable
+private fun ToggleRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 2.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+    ) {
+        Text(label, style = MaterialTheme.typography.bodyMedium)
+        Switch(checked = checked, onCheckedChange = onChange)
+    }
+}
+
 @Composable
 private fun MotionSlider(
     label: String,

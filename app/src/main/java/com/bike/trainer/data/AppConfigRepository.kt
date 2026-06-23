@@ -2,6 +2,7 @@ package com.bike.trainer.data
 
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -26,6 +27,10 @@ data class AppConfig(
     val svHorizon: Float = 0.45f,
     /** Parallax-only: how much faster the near road rushes vs the horizon. 0..3 */
     val svGroundRush: Float = 1.5f,
+    // ---- In-ride control button visibility ----
+    val showMotionControl: Boolean = true,
+    val showViewToggle: Boolean = true,
+    val showCaptureButton: Boolean = true,
 ) {
     val mapConfigured: Boolean get() = mapTilesKey.isNotBlank()
 }
@@ -39,6 +44,9 @@ class AppConfigRepository(private val dataStore: DataStore<Preferences>) {
             svStrength = prefs[SV_STRENGTH] ?: 0.16f,
             svHorizon = prefs[SV_HORIZON] ?: 0.45f,
             svGroundRush = prefs[SV_GROUND_RUSH] ?: 1.5f,
+            showMotionControl = prefs[SHOW_MOTION] ?: true,
+            showViewToggle = prefs[SHOW_VIEW_TOGGLE] ?: true,
+            showCaptureButton = prefs[SHOW_CAPTURE] ?: true,
         )
     }
 
@@ -64,11 +72,26 @@ class AppConfigRepository(private val dataStore: DataStore<Preferences>) {
         dataStore.edit { it[SV_GROUND_RUSH] = value.coerceIn(0f, 3f) }
     }
 
+    suspend fun setShowMotionControl(show: Boolean) {
+        dataStore.edit { it[SHOW_MOTION] = show }
+    }
+
+    suspend fun setShowViewToggle(show: Boolean) {
+        dataStore.edit { it[SHOW_VIEW_TOGGLE] = show }
+    }
+
+    suspend fun setShowCaptureButton(show: Boolean) {
+        dataStore.edit { it[SHOW_CAPTURE] = show }
+    }
+
     private companion object {
         val MAP_TILES_KEY = stringPreferencesKey("cfg_map_tiles_key")
         val SV_MODE = stringPreferencesKey("cfg_sv_mode")
         val SV_STRENGTH = floatPreferencesKey("cfg_sv_strength")
         val SV_HORIZON = floatPreferencesKey("cfg_sv_horizon")
         val SV_GROUND_RUSH = floatPreferencesKey("cfg_sv_ground_rush")
+        val SHOW_MOTION = booleanPreferencesKey("cfg_show_motion")
+        val SHOW_VIEW_TOGGLE = booleanPreferencesKey("cfg_show_view_toggle")
+        val SHOW_CAPTURE = booleanPreferencesKey("cfg_show_capture")
     }
 }

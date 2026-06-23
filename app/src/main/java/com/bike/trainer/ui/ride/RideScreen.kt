@@ -50,6 +50,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
@@ -97,11 +98,16 @@ fun RideScreen(
     val svParams = appConfig?.let {
         SvMotionParams(strength = it.svStrength, horizon = it.svHorizon, groundRush = it.svGroundRush)
     } ?: SvMotionParams()
+    // Which ride-control buttons to show (Settings → Ride controls).
+    val showMotion = appConfig?.showMotionControl ?: true
+    val showView = appConfig?.showViewToggle ?: true
+    val showCapture = appConfig?.showCaptureButton ?: true
     var sceneBounds by remember { mutableStateOf<android.graphics.Rect?>(null) }
     // Prefetched Street View frames for this route, if a valid cache exists.
     val svManifest = remember(engine.route.id) {
         com.bike.trainer.route.StreetViewCache.loadFor(context, engine.route)
     }
+    val googleStreet = streetLevel && com.bike.trainer.BuildConfig.HAS_MAPS_KEY
 
     suspend fun captureScene(): Boolean {
         val window = ScreenCapture.findActivity(context)?.window ?: return false
@@ -148,7 +154,6 @@ fun RideScreen(
                     )
                 },
         ) {
-            val googleStreet = streetLevel && com.bike.trainer.BuildConfig.HAS_MAPS_KEY
             if (googleStreet && svManifest != null) {
                 // Prefetched frames: smooth, offline, no live panorama reloads.
                 CachedStreetView(
@@ -225,41 +230,26 @@ fun RideScreen(
                         .height(115.dp),
                 )
             }
-            // Camera view toggle: chase <-> street.
-            val toggleLabel = when {
-                !streetLevel -> "  Chase"
-                com.bike.trainer.BuildConfig.HAS_MAPS_KEY -> "  Street View"
-                else -> "  Ground"
-            }
-            Column(
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+        }
+    }
+
+    // ---- Progress chart, gears, pause/finish (the bottom panel) ----
+    @Composable
+    fun Controls(modifier: Modifier) {
+      Column(modifier) {
+        Spacer(Modifier.height(10.dp))
+
+        // ---- Scene controls: motion / smooth, view toggle, capture ----
+        val showMotionChip = showMotion && googleStreet
+        if (showMotionChip || showView || showCapture) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                // Motion-style picker, only when playing prefetched frames.
-                if (googleStreet && svManifest != null) {
+                if (showMotionChip && svManifest != null) {
                     Box {
-                        Row(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f))
-                                .clickable { motionMenu = true }
-                                .padding(horizontal = 10.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(
-                                Icons.Filled.Animation,
-                                contentDescription = "Motion style",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(18.dp),
-                            )
-                            Text(
-                                "  Motion: ${svMotion.label}",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
-                        }
+                        ControlChip(Icons.Filled.Animation, "Motion: ${svMotion.label}") { motionMenu = true }
                         DropdownMenu(expanded = motionMenu, onDismissRequest = { motionMenu = false }) {
                             SvMotion.entries.forEach { m ->
                                 DropdownMenuItem(
@@ -270,84 +260,51 @@ fun RideScreen(
                         }
                     }
                 }
-                // Smooth-transition on/off, only for the live (non-cached) panorama.
-                if (googleStreet && svManifest == null) {
-                    Row(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f))
-                            .clickable { smoothTransitions = !smoothTransitions }
-                            .padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+                if (showMotionChip && svManifest == null) {
+                    ControlChip(
+                        if (smoothTransitions) Icons.Filled.BlurOn else Icons.Filled.BlurOff,
+                        if (smoothTransitions) "Smooth: On" else "Smooth: Off",
+                    ) { smoothTransitions = !smoothTransitions }
+                }
+                if (showView) {
+                    val toggleLabel = when {
+                        !streetLevel -> "Chase"
+                        com.bike.trainer.BuildConfig.HAS_MAPS_KEY -> "Street View"
+                        else -> "Ground"
+                    }
+                    ControlChip(Icons.Filled.Layers, toggleLabel) { streetLevel = !streetLevel }
+                }
+                if (showCapture) {
+                    Spacer(Modifier.weight(1f))
+                    FilledIconButton(
+                        onClick = {
+                            scope.launch {
+                                val ok = captureScene()
+                                Toast.makeText(
+                                    context,
+                                    if (ok) "Captured" else "Couldn't capture the view",
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            }
+                        },
+                        modifier = Modifier.size(44.dp),
+                        shape = CircleShape,
+                        colors = IconButtonDefaults.filledIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        ),
                     ) {
                         Icon(
-                            if (smoothTransitions) Icons.Filled.BlurOn else Icons.Filled.BlurOff,
-                            contentDescription = "Toggle smooth transitions",
+                            Icons.Filled.PhotoCamera,
+                            contentDescription = "Capture photo",
                             tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(18.dp),
-                        )
-                        Text(
-                            if (smoothTransitions) "  Smooth: On" else "  Smooth: Off",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(22.dp),
                         )
                     }
                 }
-                Row(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f))
-                        .clickable { streetLevel = !streetLevel }
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        Icons.Filled.Layers,
-                        contentDescription = "Toggle view",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Text(
-                        toggleLabel,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                }
             }
-            // Manual capture button for the recap photo.
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(12.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f))
-                    .clickable {
-                        scope.launch {
-                            val ok = captureScene()
-                            Toast.makeText(
-                                context,
-                                if (ok) "Captured" else "Couldn't capture the view",
-                                Toast.LENGTH_SHORT,
-                            ).show()
-                        }
-                    }
-                    .padding(10.dp),
-            ) {
-                Icon(
-                    Icons.Filled.PhotoCamera,
-                    contentDescription = "Capture photo",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(22.dp),
-                )
-            }
+            Spacer(Modifier.height(10.dp))
         }
-    }
 
-    // ---- Progress chart, gears, pause/finish (the bottom panel) ----
-    @Composable
-    fun Controls(modifier: Modifier) {
-      Column(modifier) {
-        Spacer(Modifier.height(10.dp))
         // ---- Elevation profile ----
         ElevationProfileView(
             route = engine.route,
@@ -463,6 +420,31 @@ fun RideScreen(
             Scene(Modifier.fillMaxWidth().height(280.dp))
             Controls(Modifier.fillMaxWidth())
         }
+    }
+}
+
+/** A compact labelled chip used for the in-ride scene controls. */
+@Composable
+private fun ControlChip(icon: ImageVector, label: String, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            icon,
+            contentDescription = label,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(18.dp),
+        )
+        Text(
+            "  $label",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
     }
 }
 
