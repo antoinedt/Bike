@@ -118,6 +118,10 @@ fun HomeScreen(
     var prefetchFor by remember { mutableStateOf<java.io.File?>(null) }
     var startKm by remember { mutableStateOf("") }
     var ignoreHills by remember { mutableStateOf(false) }
+    // Workout selection. Only "Freeride" for now; structured workouts to come.
+    val workouts = remember { listOf("Freeride") }
+    var selectedWorkout by remember { mutableStateOf(workouts.first()) }
+    var workoutMenuExpanded by remember { mutableStateOf(false) }
     // (km, total ascent m) of the selected GPX, shown on the Start button.
     var selectedStats by remember { mutableStateOf<Pair<Double, Double>?>(null) }
 
@@ -262,6 +266,41 @@ fun HomeScreen(
                 TextButton(onClick = { prefetchFor = selectedGpx }) {
                     Icon(Icons.Filled.CloudDownload, contentDescription = null)
                     Text("  Prefetch Street View…")
+                }
+            }
+        }
+
+        // ---- Workout ----
+        SectionCard {
+            Text("Workout", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(8.dp))
+            ExposedDropdownMenuBox(
+                expanded = workoutMenuExpanded,
+                onExpandedChange = { workoutMenuExpanded = !workoutMenuExpanded },
+            ) {
+                OutlinedTextField(
+                    value = selectedWorkout,
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Workout") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = workoutMenuExpanded) },
+                    modifier = Modifier
+                        .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                        .fillMaxWidth(),
+                )
+                ExposedDropdownMenu(
+                    expanded = workoutMenuExpanded,
+                    onDismissRequest = { workoutMenuExpanded = false },
+                ) {
+                    workouts.forEach { w ->
+                        DropdownMenuItem(
+                            text = { Text(w) },
+                            onClick = {
+                                selectedWorkout = w
+                                workoutMenuExpanded = false
+                            },
+                        )
+                    }
                 }
             }
         }
