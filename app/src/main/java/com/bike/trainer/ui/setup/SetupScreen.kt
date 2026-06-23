@@ -67,14 +67,17 @@ fun SetupScreen(
     val hrName by hrm.connectedDeviceName.collectAsStateWithLifecycle()
     val controllerState by controller.connectionState.collectAsStateWithLifecycle()
     val controllerName by controller.connectedDeviceName.collectAsStateWithLifecycle()
-    val profiles by profileRepo.state.collectAsStateWithLifecycle(initialValue = ProfilesState())
+    // null = not loaded yet (don't confuse the loading placeholder with "no riders").
+    val profilesState by profileRepo.state.collectAsStateWithLifecycle(initialValue = null)
+    val profiles = profilesState ?: ProfilesState()
     val activeProfile = profiles.active
 
     var showProfileDialog by remember { mutableStateOf(false) }
 
-    // Prompt to create a rider if there are none yet.
-    LaunchedEffect(profiles.entries.isEmpty()) {
-        if (profiles.entries.isEmpty()) showProfileDialog = true
+    // Auto-open the rider picker only once profiles have actually loaded and there
+    // are genuinely none (e.g. a fresh launch) — not on every return to this screen.
+    LaunchedEffect(profilesState) {
+        if (profilesState?.entries?.isEmpty() == true) showProfileDialog = true
     }
 
     Column(

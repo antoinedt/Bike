@@ -27,7 +27,6 @@ import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -404,16 +403,20 @@ fun RideScreen(
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            OutlinedButton(
+            FilledIconButton(
                 onClick = { if (paused) engine.resume() else engine.pause() },
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.size(56.dp),
+                shape = CircleShape,
+                colors = IconButtonDefaults.filledIconButtonColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                ),
             ) {
                 Icon(
                     if (paused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
-                    contentDescription = null,
+                    contentDescription = if (paused) "Resume" else "Pause",
                 )
-                Text(if (paused) "  Resume" else "  Pause", fontWeight = FontWeight.Bold)
             }
             Button(
                 onClick = { engine.finish() },
