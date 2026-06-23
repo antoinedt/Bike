@@ -11,6 +11,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -29,6 +30,9 @@ import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.StreetViewPanoramaCamera
 import com.google.android.gms.maps.model.StreetViewSource
 import kotlin.math.abs
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.sin
 
 /**
  * Interactive Google Street View panorama that follows the ride. Requires a
@@ -54,6 +58,12 @@ fun StreetViewScene(
     var panorama by remember { mutableStateOf<StreetViewPanorama?>(null) }
     var hasCoverage by remember { mutableStateOf(true) }
     var lastPositionedAt by remember { mutableDoubleStateOf(-1000.0) }
+    // The forward bearing (degrees from north) we want the camera to hold. Kept in
+    // a state holder so the panorama-change listener can re-apply it the moment a
+    // new pano loads — otherwise the SDK shows the camera-car's orientation and the
+    // view appears to spin.
+    val desiredBearing = remember { mutableFloatStateOf(0f) }
+    var lastAppliedBearing by remember { mutableFloatStateOf(Float.NaN) }
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -89,6 +99,12 @@ fun StreetViewScene(
                     p.isZoomGesturesEnabled = false
                     p.setOnStreetViewPanoramaChangeListener { location ->
                         hasCoverage = location != null
+                        // A new panorama just loaded — snap it to face forward so it
+                        // doesn't briefly show the Street View car's heading and then
+                        // rotate toward our target.
+                        if (location != null) {
+                            p.animateTo(forwardCamera(desiredBearing.floatValue), 0L)
+                        }
                     }
                     panorama = p
                 }
@@ -116,6 +132,11 @@ fun StreetViewScene(
     LaunchedEffect(panorama, distanceMeters, smoothTransitions) {
         val p = panorama ?: return@LaunchedEffect
         val point = route.pointAt(distanceMeters)
+        // Forward bearing from a look-ahead point, not the jittery per-segment
+        // heading — this keeps the camera pointing steadily down the road instead
+        // of swinging with every bend/switchback.
+        val bearing = forwardBearing(route, distanceMeters)
+        desiredBearing.floatValue = bearing
         val hopMeters = if (smoothTransitions) SMOOTH_HOP_METERS else STEP_HOP_METERS
         if (abs(distanceMeters - lastPositionedAt) > hopMeters) {
             lastPositionedAt = distanceMeters
@@ -123,18 +144,54 @@ fun StreetViewScene(
             // indoor panoramas and most user-contributed photo spheres.
             p.setPosition(LatLng(point.lat, point.lon), 120, StreetViewSource.OUTDOOR)
         }
-        // Turn toward the route heading — keep the zoom fixed so the view doesn't
-        // pulse forward-and-back between panorama hops.
-        p.animateTo(
-            StreetViewPanoramaCamera.Builder()
-                .bearing(Math.toDegrees(point.heading).toFloat())
-                .tilt(0f)
-                .zoom(0f)
-                .build(),
-            if (smoothTransitions) 500L else 0L,
-        )
+        // Only re-aim when the forward bearing actually moves (> 2°), so the view
+        // holds steady forward instead of micro-rotating every tick.
+        if (lastAppliedBearing.isNaN() || abs(angleDelta(bearing, lastAppliedBearing)) > 2f) {
+            lastAppliedBearing = bearing
+            p.animateTo(forwardCamera(bearing), if (smoothTransitions) 300L else 0L)
+        }
     }
 }
+
+/** A forward-facing, flat, fixed-zoom camera at [bearing] (degrees from north). */
+private fun forwardCamera(bearing: Float): StreetViewPanoramaCamera =
+    StreetViewPanoramaCamera.Builder()
+        .bearing(bearing)
+        .tilt(0f)
+        .zoom(0f)
+        .build()
+
+/**
+ * Stable "down the road" bearing in degrees from north, taken from the geographic
+ * direction to a point [LOOKAHEAD_METERS] further along the route. Averaging over a
+ * short distance smooths out the wiggle that made the panorama spin.
+ */
+private fun forwardBearing(route: Route, distance: Double): Float {
+    val a = route.pointAt(distance)
+    val b = route.pointAt((distance + LOOKAHEAD_METERS).coerceAtMost(route.totalDistance))
+    val deg = if (a.lat == b.lat && a.lon == b.lon) {
+        Math.toDegrees(a.heading)
+    } else {
+        val phi1 = Math.toRadians(a.lat)
+        val phi2 = Math.toRadians(b.lat)
+        val dLon = Math.toRadians(b.lon - a.lon)
+        val y = sin(dLon) * cos(phi2)
+        val x = cos(phi1) * sin(phi2) - sin(phi1) * cos(phi2) * cos(dLon)
+        Math.toDegrees(atan2(y, x))
+    }
+    return (((deg % 360.0) + 360.0) % 360.0).toFloat()
+}
+
+/** Smallest signed difference between two bearings (degrees), in (-180, 180]. */
+private fun angleDelta(a: Float, b: Float): Float {
+    var d = (a - b) % 360f
+    if (d > 180f) d -= 360f
+    if (d < -180f) d += 360f
+    return d
+}
+
+/** How far ahead to look when deriving the steady forward bearing. */
+private const val LOOKAHEAD_METERS = 30.0
 
 /** Frequent hops chain the SDK's own transitions into continuous forward motion. */
 private const val SMOOTH_HOP_METERS = 9.0
