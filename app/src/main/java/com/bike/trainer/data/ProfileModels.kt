@@ -30,6 +30,8 @@ data class RiderProfile(
     val id: String,
     val name: String,
     val weightKg: Double = 75.0,
+    /** Functional Threshold Power (watts); workout targets scale from this. */
+    val ftpWatts: Int = 200,
 )
 
 /** A single ride's peak-power efforts, dated so we can roll a 90-day window. */

@@ -64,7 +64,7 @@ fun StatsScreen(onBack: () -> Unit) {
         Text("Progression", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Text(entry?.profile?.name ?: "Rider", color = MaterialTheme.colorScheme.onSurfaceVariant)
 
-        // ---- Rider weight ----
+        // ---- Rider: weight + FTP ----
         SectionCard {
             var weight by remember(entry?.profile?.weightKg) {
                 mutableStateOf((entry?.profile?.weightKg ?: 75.0).toFloat())
@@ -85,6 +85,30 @@ fun StatsScreen(onBack: () -> Unit) {
             )
             Text(
                 "Used to model how fast you climb for a given power.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            Spacer(Modifier.height(12.dp))
+            var ftp by remember(entry?.profile?.ftpWatts) {
+                mutableStateOf((entry?.profile?.ftpWatts ?: 200).toFloat())
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("FTP", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text("${ftp.toInt()} W", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+            }
+            Slider(
+                value = ftp,
+                onValueChange = { ftp = it },
+                valueRange = 80f..400f,
+                onValueChangeFinished = {
+                    scope.launch {
+                        ServiceLocator.profileRepository.updateActiveProfile { it.copy(ftpWatts = ftp.toInt()) }
+                    }
+                },
+            )
+            Text(
+                "Functional Threshold Power — workout power targets scale from this.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

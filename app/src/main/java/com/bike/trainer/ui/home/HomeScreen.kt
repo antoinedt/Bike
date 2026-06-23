@@ -7,6 +7,7 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -50,6 +51,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -65,6 +69,8 @@ import com.bike.trainer.route.RouteLibrary
 import com.bike.trainer.route.StreetViewCache
 import com.bike.trainer.route.StreetViewPrefetcher
 import com.bike.trainer.session.RideEngine
+import com.bike.trainer.session.Workout
+import com.bike.trainer.session.WorkoutLibrary
 import com.bike.trainer.ui.components.SectionCard
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -87,6 +93,9 @@ fun HomeScreen(
     val settings by settingsRepo.settings.collectAsStateWithLifecycle(initialValue = RiderSettings())
     val activeEntry by profileRepo.active.collectAsStateWithLifecycle(initialValue = null)
 
+    // Selected workout (null = Freeride). Declared before startRide so it captures it.
+    var selectedWorkout by remember { mutableStateOf<Workout?>(null) }
+
     val startRide: (Route, Double, Boolean) -> Unit = { route, startMeters, ignoreHills ->
         ServiceLocator.activeRide = RideEngine(
             route = route,
@@ -96,6 +105,8 @@ fun HomeScreen(
             heartRateManager = hrm,
             startDistanceMeters = startMeters,
             ignoreHills = ignoreHills,
+            workout = selectedWorkout,
+            ftp = activeEntry?.profile?.ftpWatts ?: 200,
         )
         onStartRide()
     }
@@ -118,10 +129,8 @@ fun HomeScreen(
     var prefetchFor by remember { mutableStateOf<java.io.File?>(null) }
     var startKm by remember { mutableStateOf("") }
     var ignoreHills by remember { mutableStateOf(false) }
-    // Workout selection. Only "Freeride" for now; structured workouts to come.
-    val workouts = remember { listOf("Freeride") }
-    var selectedWorkout by remember { mutableStateOf(workouts.first()) }
     var workoutMenuExpanded by remember { mutableStateOf(false) }
+    val ftp = activeEntry?.profile?.ftpWatts ?: 200
     // (km, total ascent m) of the selected GPX, shown on the Start button.
     var selectedStats by remember { mutableStateOf<Pair<Double, Double>?>(null) }
 
@@ -279,7 +288,7 @@ fun HomeScreen(
                 onExpandedChange = { workoutMenuExpanded = !workoutMenuExpanded },
             ) {
                 OutlinedTextField(
-                    value = selectedWorkout,
+                    value = workoutLabel(selectedWorkout),
                     onValueChange = {},
                     readOnly = true,
                     label = { Text("Workout") },
@@ -292,16 +301,21 @@ fun HomeScreen(
                     expanded = workoutMenuExpanded,
                     onDismissRequest = { workoutMenuExpanded = false },
                 ) {
-                    workouts.forEach { w ->
+                    DropdownMenuItem(
+                        text = { Text("Freeride") },
+                        onClick = { selectedWorkout = null; workoutMenuExpanded = false },
+                    )
+                    WorkoutLibrary.all.forEach { w ->
                         DropdownMenuItem(
-                            text = { Text(w) },
-                            onClick = {
-                                selectedWorkout = w
-                                workoutMenuExpanded = false
-                            },
+                            text = { Text(workoutLabel(w)) },
+                            onClick = { selectedWorkout = w; workoutMenuExpanded = false },
                         )
                     }
                 }
+            }
+            selectedWorkout?.let { w ->
+                Spacer(Modifier.height(12.dp))
+                WorkoutPreview(workout = w, ftp = ftp)
             }
         }
 
@@ -498,4 +512,45 @@ private fun displayName(context: Context, uri: Uri): String? {
         if (index >= 0 && cursor.moveToFirst()) cursor.getString(index) else null
     }
     return name?.substringBeforeLast('.')?.ifBlank { null }
+}
+
+/** Dropdown label: "Freeride" or "Name (45 min · 3/5)". */
+private fun workoutLabel(w: Workout?): String =
+    if (w == null) "Freeride"
+    else "${w.name} (${(w.totalSeconds + 30) / 60} min · ${w.difficulty}/5)"
+
+/** A small power-profile preview of a workout, with a watts summary for this FTP. */
+@Composable
+private fun WorkoutPreview(workout: Workout, ftp: Int) {
+    val primary = MaterialTheme.colorScheme.primary
+    val maxFrac = (workout.steps.maxOfOrNull { it.ftpFraction } ?: 1.0).coerceAtLeast(1.0)
+    val total = workout.totalSeconds.toFloat().coerceAtLeast(1f)
+    Column {
+        Canvas(modifier = Modifier.fillMaxWidth().height(64.dp)) {
+            var x = 0f
+            workout.steps.forEach { s ->
+                val bw = (s.seconds / total) * size.width
+                val bh = (s.ftpFraction / maxFrac).toFloat() * size.height
+                val color = when {
+                    s.ftpFraction >= 1.05 -> Color(0xFFE5484D)
+                    s.ftpFraction >= 0.88 -> Color(0xFFF2C20E)
+                    else -> primary
+                }
+                drawRect(
+                    color = color,
+                    topLeft = Offset(x, size.height - bh),
+                    size = Size(bw.coerceAtLeast(1f), bh),
+                )
+                x += bw
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        val lo = (workout.steps.minOf { it.ftpFraction } * ftp).toInt()
+        val hi = (workout.steps.maxOf { it.ftpFraction } * ftp).toInt()
+        Text(
+            "${(workout.totalSeconds + 30) / 60} min · difficulty ${workout.difficulty}/5 · $lo–$hi W (at ${ftp}W FTP)",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
 }

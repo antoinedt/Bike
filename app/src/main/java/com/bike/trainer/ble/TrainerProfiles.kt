@@ -33,9 +33,19 @@ object TrainerProfiles {
     object ControlPoint {
         const val REQUEST_CONTROL: Byte = 0x00
         const val RESET: Byte = 0x01
+        const val SET_TARGET_POWER: Byte = 0x05
         const val SET_INDOOR_BIKE_SIMULATION: Byte = 0x11.toByte()
         const val START_OR_RESUME: Byte = 0x07
         const val STOP_OR_PAUSE: Byte = 0x08
+    }
+
+    /** Build a "Set Target Power" (0x05) ERG payload; power is uint16 watts. */
+    fun buildTargetPower(watts: Int): ByteArray {
+        val w = watts.coerceIn(0, 4000)
+        return byteArrayOf(
+            ControlPoint.SET_TARGET_POWER,
+            (w and 0xFF).toByte(), ((w shr 8) and 0xFF).toByte(),
+        )
     }
 
     /**

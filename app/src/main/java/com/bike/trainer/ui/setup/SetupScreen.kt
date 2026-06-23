@@ -164,8 +164,8 @@ fun SetupScreen(
                 scope.launch { profileRepo.setActive(id) }
                 showProfileDialog = false
             },
-            onAdd = { name, weight ->
-                scope.launch { profileRepo.addProfile(name, weight) }
+            onAdd = { name, weight, ftp ->
+                scope.launch { profileRepo.addProfile(name, weight, ftp) }
                 showProfileDialog = false
             },
             onRemove = { id ->

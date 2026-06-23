@@ -66,7 +66,7 @@ fun ProfileDialog(
     profiles: ProfilesState,
     onDismiss: () -> Unit,
     onSelect: (String) -> Unit,
-    onAdd: (String, Double) -> Unit,
+    onAdd: (String, Double, Int) -> Unit,
     onRemove: (String) -> Unit,
 ) {
     var showAdd by remember { mutableStateOf(false) }
@@ -118,9 +118,9 @@ fun ProfileDialog(
     if (showAdd) {
         AddRiderDialog(
             onDismiss = { showAdd = false },
-            onAdd = { name, weight ->
+            onAdd = { name, weight, ftp ->
                 showAdd = false
-                onAdd(name, weight)
+                onAdd(name, weight, ftp)
             },
         )
     }
@@ -141,14 +141,15 @@ fun ProfileDialog(
     }
 }
 
-/** Add-a-rider page: name + weight, with Add / Cancel. */
+/** Add-a-rider page: name + weight + FTP, with Add / Cancel. */
 @Composable
 private fun AddRiderDialog(
     onDismiss: () -> Unit,
-    onAdd: (String, Double) -> Unit,
+    onAdd: (String, Double, Int) -> Unit,
 ) {
     var name by remember { mutableStateOf("") }
     var weight by remember { mutableStateOf("75") }
+    var ftp by remember { mutableStateOf("200") }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Add rider") },
@@ -167,11 +168,24 @@ private fun AddRiderDialog(
                     label = { Text("Weight (kg)") },
                     singleLine = true,
                 )
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = ftp,
+                    onValueChange = { ftp = it.filter { c -> c.isDigit() } },
+                    label = { Text("FTP (watts)") },
+                    singleLine = true,
+                )
             }
         },
         confirmButton = {
             TextButton(
-                onClick = { onAdd(name.trim(), weight.toDoubleOrNull() ?: 75.0) },
+                onClick = {
+                    onAdd(
+                        name.trim(),
+                        weight.toDoubleOrNull() ?: 75.0,
+                        ftp.toIntOrNull() ?: 200,
+                    )
+                },
                 enabled = name.isNotBlank(),
             ) { Text("Add") }
         },

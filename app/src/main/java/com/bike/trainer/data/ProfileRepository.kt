@@ -30,9 +30,9 @@ class ProfileRepository(private val dataStore: DataStore<Preferences>) {
 
     suspend fun setActive(id: String) = mutate { it.copy(activeId = id) }
 
-    suspend fun addProfile(name: String, weightKg: Double): String {
+    suspend fun addProfile(name: String, weightKg: Double, ftpWatts: Int = 200): String {
         val id = UUID.randomUUID().toString()
-        val entry = ProfileEntry(RiderProfile(id, name.ifBlank { "Rider" }, weightKg))
+        val entry = ProfileEntry(RiderProfile(id, name.ifBlank { "Rider" }, weightKg, ftpWatts))
         mutate { it.copy(entries = it.entries + entry, activeId = id) }
         return id
     }

@@ -1,5 +1,26 @@
 package com.bike.trainer.session
 
+/** Per-step live state shown in the in-ride workout list. */
+enum class StepStatus { PENDING, ACTIVE, DONE }
+
+data class WorkoutStepLive(
+    val seconds: Int,
+    val targetWatts: Int,
+    val status: StepStatus,
+    /** Seconds left in this step (only meaningful while ACTIVE). */
+    val remainingSeconds: Int,
+    /** Average power achieved (only meaningful once DONE). */
+    val avgWatts: Int,
+)
+
+/** Snapshot of the active structured workout, if any. */
+data class WorkoutLive(
+    val name: String,
+    val activeIndex: Int,
+    val targetWatts: Int,
+    val steps: List<WorkoutStepLive>,
+)
+
 /** Snapshot of a ride, rendered by the HUD. */
 data class RideState(
     val status: RideStatus = RideStatus.NotStarted,
@@ -21,6 +42,7 @@ data class RideState(
     val gearRatio: Double = 1.0,
     val avgPowerWatts: Int = 0,
     val energyKilojoules: Double = 0.0,
+    val workout: WorkoutLive? = null,
 ) {
     val progressFraction: Float
         get() = if (totalDistanceMeters > 0) {

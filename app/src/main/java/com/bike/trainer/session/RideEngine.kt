@@ -33,10 +33,23 @@ class RideEngine(
     startDistanceMeters: Double = 0.0,
     /** When true the route's gradient is ignored: flat physics, flat trainer resistance. */
     private val ignoreHills: Boolean = false,
+    /** Optional structured workout; null = freeride. */
+    private val workout: Workout? = null,
+    /** Rider FTP (watts) the workout's power targets scale from. */
+    private val ftp: Int = 200,
 ) {
     /** Absolute travelled distance (monotonic, includes the start offset). */
     private var distance = startDistanceMeters.coerceAtLeast(0.0)
     private val startDistance = distance
+
+    // Per-step accumulated energy (J) and elapsed (s) for the workout averages.
+    private val stepEnergy = DoubleArray(workout?.steps?.size ?: 0)
+    private val stepTime = DoubleArray(workout?.steps?.size ?: 0)
+    /** Cumulative step end-times (s) for fast active-step lookup. */
+    private val stepEnds: IntArray = run {
+        var acc = 0
+        IntArray(workout?.steps?.size ?: 0) { i -> acc += workout!!.steps[i].seconds; acc }
+    }
 
     private val _state = MutableStateFlow(initialState())
     val state: StateFlow<RideState> = _state.asStateFlow()
@@ -75,6 +88,7 @@ class RideEngine(
         gearCount = gears.gearCount,
         gearRatio = gears.displayRatio(),
         gradePercent = CyclingPhysics.gradeToPercent(terrainGrade()),
+        workout = buildWorkoutLive(0.0),
     )
 
     fun start(scope: CoroutineScope) {
@@ -93,6 +107,36 @@ class RideEngine(
         }
     }
 
+    /** Active workout step for [workoutSec] elapsed, or -1 (freeride / finished). */
+    private fun activeStep(workoutSec: Double): Int {
+        if (workout == null || stepEnds.isEmpty()) return -1
+        val t = workoutSec.toInt()
+        if (t >= stepEnds.last()) return -1
+        for (i in stepEnds.indices) if (t < stepEnds[i]) return i
+        return -1
+    }
+
+    /** Build the live workout list (per-step status / countdown / averages). */
+    private fun buildWorkoutLive(workoutSec: Double): WorkoutLive? {
+        val w = workout ?: return null
+        val active = activeStep(workoutSec)
+        val nowSec = workoutSec.toInt()
+        val steps = w.steps.mapIndexed { i, s ->
+            val target = w.targetWatts(i, ftp)
+            val status = when {
+                active < 0 -> StepStatus.DONE          // whole workout finished
+                i < active -> StepStatus.DONE
+                i == active -> StepStatus.ACTIVE
+                else -> StepStatus.PENDING
+            }
+            val remaining = if (i == active) (stepEnds[i] - nowSec).coerceAtLeast(0) else s.seconds
+            val avg = if (stepTime[i] > 0) (stepEnergy[i] / stepTime[i]).roundToInt() else 0
+            WorkoutStepLive(s.seconds, target, status, remaining, avg)
+        }
+        val targetWatts = if (active >= 0) w.targetWatts(active, ftp) else 0
+        return WorkoutLive(w.name, active, targetWatts, steps)
+    }
+
     private fun tick(dt: Double) {
         val data = trainer.trainerData.value
         val totalMass = riderMassKg + bikeMassKg
@@ -101,6 +145,11 @@ class RideEngine(
         if (connected) trainerEverConnected = true
         // Prefer a dedicated HR strap if connected; otherwise use the trainer's.
         val heartRate = heartRateManager?.heartRate?.value?.takeIf { it > 0 } ?: data.heartRate
+
+        // Workout step this tick belongs to, and its target power.
+        val stepIdx = activeStep(elapsedMs / 1000.0)
+        val inWorkout = workout != null && stepIdx >= 0
+        val targetWatts = if (inWorkout) workout!!.targetWatts(stepIdx, ftp) else 0
 
         val power: Int
         val cadence: Int
@@ -115,6 +164,17 @@ class RideEngine(
                 totalMassKg = totalMass,
                 dtSeconds = dt,
             )
+        } else if (inWorkout) {
+            // Demo follows the workout's target power so the steps actually play.
+            speedMs = CyclingPhysics.stepSpeed(
+                speed = speedMs,
+                powerWatts = targetWatts.toDouble(),
+                gradeFraction = terrainGrade,
+                totalMassKg = totalMass,
+                dtSeconds = dt,
+            )
+            power = targetWatts
+            cadence = if (speedMs > 0.5) 85 else 0
         } else {
             // Demo mode (no trainer): cruise ~20 km/h, then +10 km/h per gear up
             // from neutral (and -10 per gear down), easier on climbs and faster
@@ -128,14 +188,25 @@ class RideEngine(
             cadence = if (speedMs > 0.5) 82 else 0
         }
 
+        // Per-step average power bookkeeping.
+        if (inWorkout) {
+            stepEnergy[stepIdx] += power * dt
+            stepTime[stepIdx] += dt
+        }
+
         distance += CyclingPhysics.distanceStep(speedMs, dt)
         elapsedMs += (dt * 1000).toLong()
         energyJoules += power * dt
         // The route loops: on reaching the end we wrap back to the start and keep
         // going (the rider ends a ride with the Finish button, not by distance).
 
-        // Resistance the trainer should apply = terrain plus the gear offset.
-        pushGradeToTrainer()
+        // During a workout the trainer holds the target power (ERG); otherwise it
+        // simulates the road grade (terrain + gear offset).
+        if (inWorkout) {
+            trainer.setTargetPower(targetWatts)
+        } else {
+            pushGradeToTrainer()
+        }
 
         val elapsedSeconds = elapsedMs / 1000
         val avgPower = if (elapsedSeconds > 0) (energyJoules / elapsedSeconds).toInt() else 0
@@ -158,6 +229,7 @@ class RideEngine(
             gearRatio = gears.displayRatio(),
             avgPowerWatts = avgPower,
             energyKilojoules = energyJoules / 1000.0,
+            workout = buildWorkoutLive(elapsedMs / 1000.0),
         )
 
         // Record one point per elapsed second.

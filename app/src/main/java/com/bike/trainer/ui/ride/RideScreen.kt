@@ -15,6 +15,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
@@ -60,6 +64,10 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bike.trainer.di.ServiceLocator
 import com.bike.trainer.session.RideStatus
+import com.bike.trainer.session.StepStatus
+import com.bike.trainer.session.WorkoutLive
+import com.bike.trainer.session.WorkoutStepLive
+import androidx.compose.ui.graphics.Color
 import kotlinx.coroutines.launch
 import java.util.Locale
 
@@ -260,6 +268,17 @@ fun RideScreen(
                         .padding(bottom = 10.dp)
                         .fillMaxWidth(0.4f)
                         .height(115.dp),
+                )
+            }
+            // Structured-workout step list, down the left edge (scrollable).
+            state.workout?.let { wo ->
+                WorkoutStepsPanel(
+                    workout = wo,
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .padding(start = 6.dp, top = 4.dp, bottom = 4.dp)
+                        .fillMaxHeight(0.74f)
+                        .width(92.dp),
                 )
             }
         }
@@ -485,6 +504,63 @@ private fun ControlChip(icon: ImageVector, label: String, onClick: () -> Unit) {
             "  $label",
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurface,
+        )
+    }
+}
+
+/** Scrollable list of a workout's steps, shown down the left edge during a ride. */
+@Composable
+private fun WorkoutStepsPanel(workout: WorkoutLive, modifier: Modifier) {
+    val listState = rememberLazyListState()
+    LaunchedEffect(workout.activeIndex) {
+        if (workout.activeIndex >= 0) {
+            runCatching { listState.animateScrollToItem(workout.activeIndex) }
+        }
+    }
+    LazyColumn(
+        state = listState,
+        modifier = modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color.Black.copy(alpha = 0.45f))
+            .padding(4.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        items(workout.steps) { s -> WorkoutStepRow(s) }
+    }
+}
+
+/** One workout step: target/avg watts over its duration (counts down when active). */
+@Composable
+private fun WorkoutStepRow(s: WorkoutStepLive) {
+    val active = s.status == StepStatus.ACTIVE
+    val done = s.status == StepStatus.DONE
+    val bg = when {
+        active -> BikeYellow
+        done -> Color.White.copy(alpha = 0.14f)
+        else -> Color.White.copy(alpha = 0.06f)
+    }
+    val fg = if (active) Color.Black else Color.White.copy(alpha = if (done) 0.6f else 0.9f)
+    val seconds = if (active) s.remainingSeconds else s.seconds
+    val watts = if (done) s.avgWatts else s.targetWatts
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(6.dp))
+            .background(bg)
+            .padding(horizontal = 5.dp, vertical = 4.dp),
+    ) {
+        Text(
+            "$watts W",
+            color = fg,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+        )
+        Text(
+            formatTime(seconds.toLong()),
+            color = fg,
+            style = MaterialTheme.typography.labelSmall,
+            maxLines = 1,
         )
     }
 }

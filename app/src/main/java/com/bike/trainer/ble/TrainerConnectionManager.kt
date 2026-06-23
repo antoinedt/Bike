@@ -61,6 +61,7 @@ class TrainerConnectionManager(private val appContext: Context) : BleSensor {
     // Latest grade requested while a write was busy, so we always send the newest.
     private var pendingGradePercent: Double? = null
     private var lastSentGradePercent: Double = Double.NaN
+    private var lastSentTargetWatts: Int = -1
 
     val isBluetoothReady: Boolean get() = adapter?.isEnabled == true
 
@@ -139,6 +140,7 @@ class TrainerConnectionManager(private val appContext: Context) : BleSensor {
         controlPoint = null
         pendingGradePercent = null
         lastSentGradePercent = Double.NaN
+        lastSentTargetWatts = -1
     }
 
     private val gattCallback = object : BluetoothGattCallback() {
@@ -269,6 +271,18 @@ class TrainerConnectionManager(private val appContext: Context) : BleSensor {
         pendingGradePercent = null
         lastSentGradePercent = grade
         enqueue { writeControlPoint(TrainerProfiles.buildSimulationParameters(grade)) }
+        runQueue()
+    }
+
+    /**
+     * Push an ERG target power (watts) to the trainer for a structured workout.
+     * Only changes-of-value are sent; no-ops without an FTMS control point.
+     */
+    fun setTargetPower(watts: Int) {
+        if (controlPoint == null) return
+        if (watts == lastSentTargetWatts) return
+        lastSentTargetWatts = watts
+        enqueue { writeControlPoint(TrainerProfiles.buildTargetPower(watts)) }
         runQueue()
     }
 
