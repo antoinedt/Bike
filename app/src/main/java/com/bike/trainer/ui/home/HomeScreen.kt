@@ -250,12 +250,23 @@ fun HomeScreen(
 
         // Hills affect the simulated speed and the trainer's resistance. Tick this
         // to ride the route as flat (no climb resistance, no downhill free speed).
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(verticalAlignment = Alignment.Top) {
             Checkbox(checked = ignoreHills, onCheckedChange = { ignoreHills = it })
-            Text(
-                "Ignore hills (flat resistance)",
-                style = MaterialTheme.typography.bodyMedium,
-            )
+            Column(Modifier.padding(top = 12.dp)) {
+                Text(
+                    "Ignore hills (flat resistance)",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    "Ride the route as if it were flat: the climbs and descents still " +
+                        "show on the map and elevation chart, but they won't change your " +
+                        "speed or the smart trainer's resistance. Leave it off to feel the " +
+                        "hills.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
 
         Spacer(Modifier.height(4.dp))
