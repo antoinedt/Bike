@@ -107,7 +107,40 @@ fun RideScreen(
     val svManifest = remember(engine.route.id) {
         com.bike.trainer.route.StreetViewCache.loadFor(context, engine.route)
     }
-    val googleStreet = streetLevel && com.bike.trainer.BuildConfig.HAS_MAPS_KEY
+    // Whether the live Google panorama is safe to show: cached frames are always
+    // fine; for the live panorama we must confirm real coverage first, because the
+    // Street View SDK can crash when driven to a point it has no imagery for.
+    // null = still checking → show the map until we know.
+    var svLiveAvailable by remember(engine.route.id) { mutableStateOf<Boolean?>(null) }
+    LaunchedEffect(engine.route.id) {
+        svLiveAvailable = when {
+            svManifest != null -> true
+            !com.bike.trainer.BuildConfig.HAS_MAPS_KEY -> false
+            else -> {
+                val p = engine.route.pointAt(engine.state.value.lapPositionMeters)
+                com.bike.trainer.route.StreetViewCoverage.hasCoverage(
+                    p.lat, p.lon, com.bike.trainer.BuildConfig.MAPS_API_KEY,
+                )
+            }
+        }
+    }
+    // Let the rider know once why a route is on the map rather than Street View.
+    LaunchedEffect(svLiveAvailable) {
+        if (svLiveAvailable == false && svManifest == null &&
+            com.bike.trainer.BuildConfig.HAS_MAPS_KEY
+        ) {
+            Toast.makeText(
+                context,
+                "No Street View along this route — showing the map instead.",
+                Toast.LENGTH_LONG,
+            ).show()
+        }
+    }
+    // "Google street view is on screen": street toggle + key + (cached OR confirmed
+    // live coverage). Until the coverage check resolves we keep this false so the
+    // map shows and the crash-prone panorama is never created.
+    val googleStreet = streetLevel && com.bike.trainer.BuildConfig.HAS_MAPS_KEY &&
+        (svManifest != null || svLiveAvailable == true)
 
     suspend fun captureScene(): Boolean {
         val window = ScreenCapture.findActivity(context)?.window ?: return false
