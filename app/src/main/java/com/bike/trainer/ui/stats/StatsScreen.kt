@@ -17,6 +17,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -62,6 +63,32 @@ fun StatsScreen(onBack: () -> Unit) {
         }
         Text("Progression", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Text(entry?.profile?.name ?: "Rider", color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+        // ---- Rider weight ----
+        SectionCard {
+            var weight by remember(entry?.profile?.weightKg) {
+                mutableStateOf((entry?.profile?.weightKg ?: 75.0).toFloat())
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("Weight", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text("${weight.toInt()} kg", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+            }
+            Slider(
+                value = weight,
+                onValueChange = { weight = it },
+                valueRange = 40f..130f,
+                onValueChangeFinished = {
+                    scope.launch {
+                        ServiceLocator.profileRepository.updateActiveProfile { it.copy(weightKg = weight.toDouble()) }
+                    }
+                },
+            )
+            Text(
+                "Used to model how fast you climb for a given power.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
 
         SectionCard {
             Text("Lifetime", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)

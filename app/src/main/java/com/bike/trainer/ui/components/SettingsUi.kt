@@ -8,8 +8,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -56,16 +59,19 @@ fun DeviceRow(
     }
 }
 
-/** Pick the active rider or add a new one (name + weight). */
+/** Pick the active rider, add a new one (name + weight), or remove one. */
 @Composable
 fun ProfileDialog(
     profiles: ProfilesState,
     onDismiss: () -> Unit,
     onSelect: (String) -> Unit,
     onAdd: (String, Double) -> Unit,
+    onRemove: (String) -> Unit,
 ) {
     var newName by remember { mutableStateOf("") }
     var newWeight by remember { mutableStateOf("75") }
+    // The rider (id to name) awaiting a delete confirmation, if any.
+    var confirmRemove by remember { mutableStateOf<Pair<String, String>?>(null) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Riders") },
@@ -77,9 +83,19 @@ fun ProfileDialog(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text("${entry.profile.name} · ${entry.profile.weightKg.toInt()} kg")
+                        Text(
+                            entry.profile.name,
+                            modifier = Modifier.weight(1f),
+                        )
                         TextButton(onClick = { onSelect(entry.profile.id) }) {
                             Text("Select")
+                        }
+                        IconButton(onClick = { confirmRemove = entry.profile.id to entry.profile.name }) {
+                            Icon(
+                                Icons.Filled.Delete,
+                                contentDescription = "Remove ${entry.profile.name}",
+                                tint = MaterialTheme.colorScheme.error,
+                            )
                         }
                     }
                 }
@@ -103,6 +119,21 @@ fun ProfileDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } },
     )
+
+    confirmRemove?.let { (id, name) ->
+        AlertDialog(
+            onDismissRequest = { confirmRemove = null },
+            title = { Text("Remove $name?") },
+            text = { Text("This deletes $name and their stats. It can't be undone.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    onRemove(id)
+                    confirmRemove = null
+                }) { Text("Remove", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { confirmRemove = null }) { Text("Cancel") } },
+        )
+    }
 }
 
 /** Single-field key entry dialog (e.g. MapTiler key). */

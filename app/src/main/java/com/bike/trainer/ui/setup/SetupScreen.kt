@@ -22,7 +22,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -52,6 +51,7 @@ fun SetupScreen(
     onConnectHeartRate: () -> Unit,
     onConnectController: () -> Unit,
     onOpenSettings: () -> Unit,
+    onViewStats: () -> Unit,
     onConfirm: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -104,29 +104,26 @@ fun SetupScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text("Rider", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                TextButton(onClick = { showProfileDialog = true }) {
-                    Text(if (activeProfile == null) "Create" else "Switch / add")
+                Row {
+                    if (activeProfile != null) {
+                        TextButton(onClick = onViewStats) { Text("Stats") }
+                    }
+                    TextButton(onClick = { showProfileDialog = true }) {
+                        Text(if (activeProfile == null) "Create" else "Switch / add")
+                    }
                 }
             }
             if (activeProfile == null) {
                 Text("No rider yet — create one to continue.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
-                val weight = activeProfile.profile.weightKg
                 Text(
-                    "${activeProfile.profile.name} · ${weight.toInt()} kg",
+                    "${activeProfile.profile.name} · ${activeProfile.profile.weightKg.toInt()} kg",
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.Bold,
                 )
-                Slider(
-                    value = weight.toFloat(),
-                    onValueChange = { v ->
-                        scope.launch { profileRepo.updateActiveProfile { it.copy(weightKg = v.toDouble()) } }
-                    },
-                    valueRange = 40f..130f,
-                )
                 Text(
-                    "Weight is used to model how fast you climb for a given power.",
+                    "Change weight in Stats. It models how fast you climb for a given power.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -180,6 +177,9 @@ fun SetupScreen(
             onAdd = { name, weight ->
                 scope.launch { profileRepo.addProfile(name, weight) }
                 showProfileDialog = false
+            },
+            onRemove = { id ->
+                scope.launch { profileRepo.removeProfile(id) }
             },
         )
     }

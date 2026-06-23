@@ -41,6 +41,17 @@ class ProfileRepository(private val dataStore: DataStore<Preferences>) {
         entry.copy(profile = transform(entry.profile))
     }
 
+    /** Remove a rider; if it was active, fall back to the first remaining one. */
+    suspend fun removeProfile(id: String) = mutate { state ->
+        val remaining = state.entries.filterNot { it.profile.id == id }
+        val newActive = if (state.activeId == id) {
+            remaining.firstOrNull()?.profile?.id ?: ""
+        } else {
+            state.activeId
+        }
+        state.copy(entries = remaining, activeId = newActive)
+    }
+
     suspend fun applyRideToActive(summary: RideStatsSummary) = mutateActive { entry ->
         entry.copy(stats = entry.stats.merged(summary))
     }

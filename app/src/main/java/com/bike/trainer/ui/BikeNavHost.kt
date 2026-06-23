@@ -36,6 +36,7 @@ fun BikeNavHost() {
                 onConnectHeartRate = { navController.navigate(Routes.CONNECT_HR) },
                 onConnectController = { navController.navigate(Routes.CONNECT_CONTROLLER) },
                 onOpenSettings = { navController.navigate(Routes.SETTINGS) },
+                onViewStats = { navController.navigate(Routes.STATS) },
                 onConfirm = { navController.navigate(Routes.HOME) },
             )
         }
