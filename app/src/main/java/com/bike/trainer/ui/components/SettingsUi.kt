@@ -59,7 +59,7 @@ fun DeviceRow(
     }
 }
 
-/** Pick the active rider, add a new one (name + weight), or remove one. */
+/** Pick the active rider, open the add-rider page, or remove a rider. */
 @Composable
 fun ProfileDialog(
     profiles: ProfilesState,
@@ -68,8 +68,7 @@ fun ProfileDialog(
     onAdd: (String, Double) -> Unit,
     onRemove: (String) -> Unit,
 ) {
-    var newName by remember { mutableStateOf("") }
-    var newWeight by remember { mutableStateOf("75") }
+    var showAdd by remember { mutableStateOf(false) }
     // The rider (id to name) awaiting a delete confirmation, if any.
     var confirmRemove by remember { mutableStateOf<Pair<String, String>?>(null) }
     AlertDialog(
@@ -77,16 +76,20 @@ fun ProfileDialog(
         title = { Text("Riders") },
         text = {
             Column {
+                if (profiles.entries.isEmpty()) {
+                    Text(
+                        "No riders yet — add one to get started.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 profiles.entries.forEach { entry ->
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(
-                            entry.profile.name,
-                            modifier = Modifier.weight(1f),
-                        )
+                        Text(entry.profile.name, modifier = Modifier.weight(1f))
                         TextButton(onClick = { onSelect(entry.profile.id) }) {
                             Text("Select")
                         }
@@ -99,26 +102,23 @@ fun ProfileDialog(
                         }
                     }
                 }
-                Spacer(Modifier.height(8.dp))
-                Text("Add a rider", style = MaterialTheme.typography.labelLarge)
-                OutlinedTextField(value = newName, onValueChange = { newName = it }, label = { Text("Name") }, singleLine = true)
-                Spacer(Modifier.height(6.dp))
-                OutlinedTextField(
-                    value = newWeight,
-                    onValueChange = { newWeight = it.filter { c -> c.isDigit() } },
-                    label = { Text("Weight (kg)") },
-                    singleLine = true,
-                )
             }
         },
         confirmButton = {
-            TextButton(
-                onClick = { onAdd(newName, newWeight.toDoubleOrNull() ?: 75.0) },
-                enabled = newName.isNotBlank(),
-            ) { Text("Add rider") }
+            TextButton(onClick = { showAdd = true }) { Text("Add rider") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } },
     )
+
+    if (showAdd) {
+        AddRiderDialog(
+            onDismiss = { showAdd = false },
+            onAdd = { name, weight ->
+                showAdd = false
+                onAdd(name, weight)
+            },
+        )
+    }
 
     confirmRemove?.let { (id, name) ->
         AlertDialog(
@@ -134,6 +134,44 @@ fun ProfileDialog(
             dismissButton = { TextButton(onClick = { confirmRemove = null }) { Text("Cancel") } },
         )
     }
+}
+
+/** Add-a-rider page: name + weight, with Add / Cancel. */
+@Composable
+private fun AddRiderDialog(
+    onDismiss: () -> Unit,
+    onAdd: (String, Double) -> Unit,
+) {
+    var name by remember { mutableStateOf("") }
+    var weight by remember { mutableStateOf("75") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add rider") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Name") },
+                    singleLine = true,
+                )
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = weight,
+                    onValueChange = { weight = it.filter { c -> c.isDigit() } },
+                    label = { Text("Weight (kg)") },
+                    singleLine = true,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onAdd(name.trim(), weight.toDoubleOrNull() ?: 75.0) },
+                enabled = name.isNotBlank(),
+            ) { Text("Add") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 /** Single-field key entry dialog (e.g. MapTiler key). */
