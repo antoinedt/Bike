@@ -270,7 +270,7 @@ fun RideScreen(
     @Composable
     fun Controls(modifier: Modifier) {
       Column(modifier) {
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(6.dp))
 
         // ---- Scene controls: motion / smooth, view toggle, capture ----
         val showMotionChip = showMotion && googleStreet
@@ -344,11 +344,11 @@ fun RideScreen(
             distanceMeters = state.lapPositionMeters,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(90.dp)
+                .height(64.dp)
                 .padding(horizontal = 12.dp),
         )
 
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(6.dp))
 
         // ---- Gears ----
         Row(
@@ -360,7 +360,7 @@ fun RideScreen(
         ) {
             FilledIconButton(
                 onClick = { engine.shiftDown() },
-                modifier = Modifier.size(64.dp),
+                modifier = Modifier.size(56.dp),
                 shape = CircleShape,
                 colors = IconButtonDefaults.filledIconButtonColors(
                     containerColor = MaterialTheme.colorScheme.surfaceVariant,
@@ -373,7 +373,7 @@ fun RideScreen(
                 Text("GEAR", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(
                     "${state.gear}",
-                    fontSize = 40.sp,
+                    fontSize = 32.sp,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary,
                 )
@@ -386,7 +386,7 @@ fun RideScreen(
 
             FilledIconButton(
                 onClick = { engine.shiftUp() },
-                modifier = Modifier.size(64.dp),
+                modifier = Modifier.size(56.dp),
                 shape = CircleShape,
                 colors = IconButtonDefaults.filledIconButtonColors(
                     containerColor = MaterialTheme.colorScheme.surfaceVariant,
@@ -396,7 +396,7 @@ fun RideScreen(
             }
         }
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(8.dp))
 
         val paused = state.status == RideStatus.Paused
         Row(
@@ -423,7 +423,7 @@ fun RideScreen(
                 Text("Finish", fontWeight = FontWeight.Bold)
             }
         }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(6.dp))
       }
     }
 
@@ -452,15 +452,11 @@ fun RideScreen(
                 .fillMaxSize()
                 .systemBarsPadding(),
         ) {
-            // Course takes the lion's share of the height; controls take a smaller,
-            // scrollable strip below so the essentials stay reachable.
-            Scene(Modifier.fillMaxWidth().weight(1.9f))
-            Controls(
-                Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .verticalScroll(rememberScrollState()),
-            )
+            // Scene fills all the space the controls don't need, so the course gets
+            // the majority while the controls stay fully on-screen (above the nav
+            // bar) at their natural, compact height — no scrolling, nothing hidden.
+            Scene(Modifier.fillMaxWidth().weight(1f))
+            Controls(Modifier.fillMaxWidth())
         }
     }
 }
