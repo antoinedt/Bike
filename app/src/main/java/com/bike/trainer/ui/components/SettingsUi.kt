@@ -1,5 +1,6 @@
 package com.bike.trainer.ui.components
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -85,14 +86,18 @@ fun ProfileDialog(
                 }
                 profiles.entries.forEach { entry ->
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(entry.profile.name, modifier = Modifier.weight(1f))
-                        TextButton(onClick = { onSelect(entry.profile.id) }) {
-                            Text("Select")
-                        }
+                        // Tap the name to select this rider.
+                        Text(
+                            entry.profile.name,
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { onSelect(entry.profile.id) }
+                                .padding(vertical = 12.dp),
+                        )
                         IconButton(onClick = { confirmRemove = entry.profile.id to entry.profile.name }) {
                             Icon(
                                 Icons.Filled.Delete,
