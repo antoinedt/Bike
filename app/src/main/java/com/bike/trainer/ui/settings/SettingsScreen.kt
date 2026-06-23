@@ -213,6 +213,30 @@ fun SettingsScreen(onBack: () -> Unit) {
             }
         }
 
+        // ---- Workout ----
+        SectionCard {
+            Text("Workout", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(6.dp))
+            val tol = config?.workoutTolerance ?: 0.10f
+            var tolLocal by remember(tol) { mutableStateOf(tol) }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("Power target tolerance", style = MaterialTheme.typography.labelMedium)
+                Text("± ${(tolLocal * 100).toInt()}%", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Slider(
+                value = tolLocal,
+                onValueChange = { tolLocal = it },
+                valueRange = 0.02f..0.30f,
+                onValueChangeFinished = { scope.launch { configRepo.setWorkoutTolerance(tolLocal) } },
+            )
+            Text(
+                "How far from a workout's target power still counts as on-target " +
+                    "(green). Below the band shows red, above shows purple.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
         // ---- Strava (per rider) ----
         SectionCard {
             Text(

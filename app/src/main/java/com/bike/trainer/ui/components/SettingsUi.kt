@@ -1,6 +1,5 @@
 package com.bike.trainer.ui.components
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,6 +14,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -86,18 +86,17 @@ fun ProfileDialog(
                 }
                 profiles.entries.forEach { entry ->
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        // Tap the name to select this rider.
-                        Text(
-                            entry.profile.name,
-                            modifier = Modifier
-                                .weight(1f)
-                                .clickable { onSelect(entry.profile.id) }
-                                .padding(vertical = 12.dp),
-                        )
+                        // The name is a button so it's obviously tappable to select.
+                        OutlinedButton(
+                            onClick = { onSelect(entry.profile.id) },
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text(entry.profile.name, maxLines = 1)
+                        }
                         IconButton(onClick = { confirmRemove = entry.profile.id to entry.profile.name }) {
                             Icon(
                                 Icons.Filled.Delete,

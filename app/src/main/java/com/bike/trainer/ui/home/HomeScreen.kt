@@ -9,6 +9,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -54,6 +55,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -71,6 +74,7 @@ import com.bike.trainer.route.StreetViewPrefetcher
 import com.bike.trainer.session.RideEngine
 import com.bike.trainer.session.Workout
 import com.bike.trainer.session.WorkoutLibrary
+import com.bike.trainer.ui.theme.workoutZoneColor
 import com.bike.trainer.ui.components.SectionCard
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -519,38 +523,74 @@ private fun workoutLabel(w: Workout?): String =
     if (w == null) "Freeride"
     else "${w.name} (${(w.totalSeconds + 30) / 60} min · ${w.difficulty}/5)"
 
-/** A small power-profile preview of a workout, with a watts summary for this FTP. */
+/** A power-profile preview; tap a bar to see that step's exact power + duration. */
 @Composable
 private fun WorkoutPreview(workout: Workout, ftp: Int) {
-    val primary = MaterialTheme.colorScheme.primary
+    var selected by remember(workout) { mutableStateOf<Int?>(null) }
     val maxFrac = (workout.steps.maxOfOrNull { it.ftpFraction } ?: 1.0).coerceAtLeast(1.0)
     val total = workout.totalSeconds.toFloat().coerceAtLeast(1f)
     Column {
-        Canvas(modifier = Modifier.fillMaxWidth().height(64.dp)) {
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(64.dp)
+                .pointerInput(workout) {
+                    detectTapGestures { off ->
+                        val frac = (off.x / size.width).coerceIn(0f, 1f)
+                        var acc = 0
+                        var idx = workout.steps.lastIndex
+                        for (i in workout.steps.indices) {
+                            acc += workout.steps[i].seconds
+                            if (frac <= acc / total) { idx = i; break }
+                        }
+                        selected = if (selected == idx) null else idx
+                    }
+                },
+        ) {
             var x = 0f
-            workout.steps.forEach { s ->
+            workout.steps.forEachIndexed { i, s ->
                 val bw = (s.seconds / total) * size.width
                 val bh = (s.ftpFraction / maxFrac).toFloat() * size.height
-                val color = when {
-                    s.ftpFraction >= 1.05 -> Color(0xFFE5484D)
-                    s.ftpFraction >= 0.88 -> Color(0xFFF2C20E)
-                    else -> primary
-                }
+                val base = workoutZoneColor(s.ftpFraction)
                 drawRect(
-                    color = color,
+                    color = if (selected == null || selected == i) base else base.copy(alpha = 0.55f),
                     topLeft = Offset(x, size.height - bh),
                     size = Size(bw.coerceAtLeast(1f), bh),
                 )
+                if (selected == i) {
+                    drawRect(
+                        color = Color.White,
+                        topLeft = Offset(x, size.height - bh),
+                        size = Size(bw.coerceAtLeast(1f), bh),
+                        style = Stroke(width = 2f),
+                    )
+                }
                 x += bw
             }
         }
         Spacer(Modifier.height(6.dp))
-        val lo = (workout.steps.minOf { it.ftpFraction } * ftp).toInt()
-        val hi = (workout.steps.maxOf { it.ftpFraction } * ftp).toInt()
-        Text(
-            "${(workout.totalSeconds + 30) / 60} min · difficulty ${workout.difficulty}/5 · $lo–$hi W (at ${ftp}W FTP)",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        val sel = selected?.let { workout.steps[it] }
+        if (sel != null) {
+            Text(
+                "Step ${selected!! + 1}: ${(sel.ftpFraction * ftp).toInt()} W " +
+                    "(${(sel.ftpFraction * 100).toInt()}% FTP) for ${fmtDur(sel.seconds)}",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        } else {
+            val lo = (workout.steps.minOf { it.ftpFraction } * ftp).toInt()
+            val hi = (workout.steps.maxOf { it.ftpFraction } * ftp).toInt()
+            Text(
+                "${(workout.totalSeconds + 30) / 60} min · difficulty ${workout.difficulty}/5 · " +
+                    "$lo–$hi W (at ${ftp}W FTP) · tap a bar for details",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
+
+/** mm:ss for a step duration. */
+private fun fmtDur(seconds: Int): String =
+    "%d:%02d".format(seconds / 60, seconds % 60)

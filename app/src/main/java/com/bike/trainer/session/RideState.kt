@@ -6,11 +6,15 @@ enum class StepStatus { PENDING, ACTIVE, DONE }
 data class WorkoutStepLive(
     val seconds: Int,
     val targetWatts: Int,
+    /** Power-target fraction of FTP for this step (drives the zone colour). */
+    val ftpFraction: Double,
     val status: StepStatus,
     /** Seconds left in this step (only meaningful while ACTIVE). */
     val remainingSeconds: Int,
     /** Average power achieved (only meaningful once DONE). */
     val avgWatts: Int,
+    /** How well this step matched its target, 0..100 (only meaningful once DONE). */
+    val scorePct: Int,
 )
 
 /** Snapshot of the active structured workout, if any. */
@@ -19,6 +23,10 @@ data class WorkoutLive(
     val activeIndex: Int,
     val targetWatts: Int,
     val steps: List<WorkoutStepLive>,
+    /** Overall score so far, 0..100 (duration-weighted over finished steps). */
+    val overallScore: Int,
+    /** True once every step is done (the ride then continues as a free ride). */
+    val completed: Boolean,
 )
 
 /** Snapshot of a ride, rendered by the HUD. */

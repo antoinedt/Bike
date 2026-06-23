@@ -20,15 +20,36 @@ import java.io.FileOutputStream
  */
 object RecapImage {
 
-    /** Draw [title] + [stats] (label → value) onto a copy of [base]. */
+    /**
+     * Draw [stats] (label → value) onto a copy of [base], in a compact 2-row,
+     * right-aligned block. The route name is intentionally NOT drawn — the
+     * captured frame already shows it in the top HUD. [title] is kept for API
+     * compatibility but unused.
+     */
+    @Suppress("UNUSED_PARAMETER")
     fun compose(base: Bitmap, title: String, stats: List<Pair<String, String>>): Bitmap {
         val out = base.copy(Bitmap.Config.ARGB_8888, true)
         val c = Canvas(out)
         val w = out.width.toFloat()
         val h = out.height.toFloat()
-        val barH = h * 0.32f
         val pad = w * 0.045f
 
+        val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(205, 180, 190, 200)
+            textSize = w * 0.024f
+            textAlign = Paint.Align.RIGHT
+        }
+        val valuePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            textSize = w * 0.044f
+            isFakeBoldText = true
+            textAlign = Paint.Align.RIGHT
+        }
+
+        // Two rows of two stats, anchored to the bottom-right.
+        val cellH = valuePaint.textSize + labelPaint.textSize * 1.7f
+        val colW = w * 0.34f
+        val barH = cellH * 2f + pad * 1.6f
         val gradient = Paint().apply {
             shader = LinearGradient(
                 0f, h - barH, 0f, h,
@@ -37,30 +58,16 @@ object RecapImage {
         }
         c.drawRect(0f, h - barH, w, h, gradient)
 
-        val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.WHITE
-            textSize = w * 0.052f
-            isFakeBoldText = true
-        }
-        c.drawText(ellipsize(title, titlePaint, w - 2 * pad), pad, h - barH + titlePaint.textSize * 1.2f, titlePaint)
-
-        val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.argb(205, 180, 190, 200)
-            textSize = w * 0.026f
-        }
-        val valuePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.WHITE
-            textSize = w * 0.05f
-            isFakeBoldText = true
-        }
-        val n = stats.size.coerceAtLeast(1)
-        val colW = (w - 2 * pad) / n
-        val valueY = h - pad
-        val labelY = valueY - valuePaint.textSize - labelPaint.textSize * 0.5f
-        stats.forEachIndexed { i, (label, value) ->
-            val x = pad + i * colW
-            c.drawText(label.uppercase(), x, labelY, labelPaint)
-            c.drawText(value, x, valueY, valuePaint)
+        val rightX = w - pad
+        val bottomValueY = h - pad
+        stats.take(4).forEachIndexed { i, (label, value) ->
+            val col = i % 2          // 0 = left column, 1 = right column
+            val row = i / 2          // 0 = top row, 1 = bottom row
+            val cellRightX = rightX - (1 - col) * colW
+            val valueY = bottomValueY - (1 - row) * cellH
+            val labelY = valueY - valuePaint.textSize
+            c.drawText(label.uppercase(), cellRightX, labelY, labelPaint)
+            c.drawText(value, cellRightX, valueY, valuePaint)
         }
 
         val watermark = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -68,7 +75,7 @@ object RecapImage {
             textSize = w * 0.038f
             isFakeBoldText = true
         }
-        c.drawText("BIKE", w - pad - watermark.measureText("BIKE"), h - barH + watermark.textSize * 1.2f, watermark)
+        c.drawText("VibeBike", pad, h - pad, watermark)
         return out
     }
 

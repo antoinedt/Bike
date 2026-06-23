@@ -31,6 +31,8 @@ data class AppConfig(
     val showMotionControl: Boolean = true,
     val showViewToggle: Boolean = true,
     val showCaptureButton: Boolean = true,
+    /** Workout power tolerance: ± this fraction of target counts as "on target". */
+    val workoutTolerance: Float = 0.10f,
 ) {
     val mapConfigured: Boolean get() = mapTilesKey.isNotBlank()
 }
@@ -47,6 +49,7 @@ class AppConfigRepository(private val dataStore: DataStore<Preferences>) {
             showMotionControl = prefs[SHOW_MOTION] ?: true,
             showViewToggle = prefs[SHOW_VIEW_TOGGLE] ?: true,
             showCaptureButton = prefs[SHOW_CAPTURE] ?: true,
+            workoutTolerance = prefs[WORKOUT_TOLERANCE] ?: 0.10f,
         )
     }
 
@@ -84,6 +87,10 @@ class AppConfigRepository(private val dataStore: DataStore<Preferences>) {
         dataStore.edit { it[SHOW_CAPTURE] = show }
     }
 
+    suspend fun setWorkoutTolerance(value: Float) {
+        dataStore.edit { it[WORKOUT_TOLERANCE] = value.coerceIn(0.02f, 0.30f) }
+    }
+
     private companion object {
         val MAP_TILES_KEY = stringPreferencesKey("cfg_map_tiles_key")
         val SV_MODE = stringPreferencesKey("cfg_sv_mode")
@@ -93,5 +100,6 @@ class AppConfigRepository(private val dataStore: DataStore<Preferences>) {
         val SHOW_MOTION = booleanPreferencesKey("cfg_show_motion")
         val SHOW_VIEW_TOGGLE = booleanPreferencesKey("cfg_show_view_toggle")
         val SHOW_CAPTURE = booleanPreferencesKey("cfg_show_capture")
+        val WORKOUT_TOLERANCE = floatPreferencesKey("cfg_workout_tolerance")
     }
 }

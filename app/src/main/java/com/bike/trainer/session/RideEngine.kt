@@ -116,11 +116,20 @@ class RideEngine(
         return -1
     }
 
-    /** Build the live workout list (per-step status / countdown / averages). */
+    /** Score (0..100) for how close [avg] held to [target]. */
+    private fun stepScore(avg: Int, target: Int): Int {
+        if (target <= 0) return 100
+        val err = kotlin.math.abs(avg - target).toDouble() / target
+        return (100.0 * (1.0 - err)).coerceIn(0.0, 100.0).roundToInt()
+    }
+
+    /** Build the live workout list (per-step status / countdown / averages / scores). */
     private fun buildWorkoutLive(workoutSec: Double): WorkoutLive? {
         val w = workout ?: return null
         val active = activeStep(workoutSec)
         val nowSec = workoutSec.toInt()
+        var scoreWeighted = 0.0
+        var scoreSeconds = 0.0
         val steps = w.steps.mapIndexed { i, s ->
             val target = w.targetWatts(i, ftp)
             val status = when {
@@ -131,10 +140,16 @@ class RideEngine(
             }
             val remaining = if (i == active) (stepEnds[i] - nowSec).coerceAtLeast(0) else s.seconds
             val avg = if (stepTime[i] > 0) (stepEnergy[i] / stepTime[i]).roundToInt() else 0
-            WorkoutStepLive(s.seconds, target, status, remaining, avg)
+            val score = if (status == StepStatus.DONE) stepScore(avg, target) else 0
+            if (status == StepStatus.DONE) {
+                scoreWeighted += score * s.seconds
+                scoreSeconds += s.seconds
+            }
+            WorkoutStepLive(s.seconds, target, s.ftpFraction, status, remaining, avg, score)
         }
         val targetWatts = if (active >= 0) w.targetWatts(active, ftp) else 0
-        return WorkoutLive(w.name, active, targetWatts, steps)
+        val overall = if (scoreSeconds > 0) (scoreWeighted / scoreSeconds).roundToInt() else 0
+        return WorkoutLive(w.name, active, targetWatts, steps, overall, completed = active < 0)
     }
 
     private fun tick(dt: Double) {
@@ -176,15 +191,18 @@ class RideEngine(
             power = targetWatts
             cadence = if (speedMs > 0.5) 85 else 0
         } else {
-            // Demo mode (no trainer): cruise ~20 km/h, then +10 km/h per gear up
-            // from neutral (and -10 per gear down), easier on climbs and faster
-            // downhill, with synthesized power/cadence so the HUD and rider move.
-            val targetKmh = (DEMO_SPEED_KMH + gears.demoSpeedBonusKmh() -
-                CyclingPhysics.gradeToPercent(terrainGrade) * 1.5)
-                .coerceIn(5.0, 99.0)
-            val targetMs = targetKmh / 3.6
-            speedMs += (targetMs - speedMs) * (dt * 0.7).coerceAtMost(1.0)
-            power = CyclingPhysics.powerForSteadySpeed(speedMs, terrainGrade, totalMass).roundToInt()
+            // Demo mode (no trainer): the gear sets the power output; the physics
+            // turns that power into speed over the current grade (so climbs slow you
+            // down for the same gear). Shifting up/down changes watts directly.
+            val demoWatts = (DEMO_BASE_WATTS + gears.demoPowerBonusWatts()).coerceAtLeast(0.0)
+            speedMs = CyclingPhysics.stepSpeed(
+                speed = speedMs,
+                powerWatts = demoWatts,
+                gradeFraction = terrainGrade,
+                totalMassKg = totalMass,
+                dtSeconds = dt,
+            )
+            power = demoWatts.roundToInt()
             cadence = if (speedMs > 0.5) 82 else 0
         }
 
@@ -293,7 +311,7 @@ class RideEngine(
 
     companion object {
         private const val TICK_MS = 250L
-        /** Flat-ground cruising speed used in demo mode (no trainer connected). */
-        private const val DEMO_SPEED_KMH = 20.0
+        /** Neutral-gear power output used in demo mode (no trainer connected). */
+        private const val DEMO_BASE_WATTS = 150.0
     }
 }

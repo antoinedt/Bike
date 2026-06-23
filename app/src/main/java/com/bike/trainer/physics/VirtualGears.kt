@@ -64,4 +64,11 @@ class VirtualGears(
      * makes an obvious difference to how fast you go.
      */
     fun demoSpeedBonusKmh(perGear: Double = 10.0): Double = (current - neutralGear) * perGear
+
+    /**
+     * Demo-mode power offset (watts) for the selected gear, relative to neutral.
+     * With no trainer to measure power, shifting up adds [perGear] W and shifting
+     * down removes it — so the gear directly drives the synthesized power output.
+     */
+    fun demoPowerBonusWatts(perGear: Double = 20.0): Double = (current - neutralGear) * perGear
 }

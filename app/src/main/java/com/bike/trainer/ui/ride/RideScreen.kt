@@ -67,7 +67,10 @@ import com.bike.trainer.session.RideStatus
 import com.bike.trainer.session.StepStatus
 import com.bike.trainer.session.WorkoutLive
 import com.bike.trainer.session.WorkoutStepLive
+import com.bike.trainer.ui.theme.adherenceColor
+import com.bike.trainer.ui.theme.workoutZoneColor
 import androidx.compose.ui.graphics.Color
+import androidx.compose.material3.AlertDialog
 import kotlinx.coroutines.launch
 import java.util.Locale
 
@@ -109,6 +112,7 @@ fun RideScreen(
     val showMotion = appConfig?.showMotionControl ?: true
     val showView = appConfig?.showViewToggle ?: true
     val showCapture = appConfig?.showCaptureButton ?: true
+    val workoutTol = (appConfig?.workoutTolerance ?: 0.10f).toDouble()
     var sceneBounds by remember { mutableStateOf<android.graphics.Rect?>(null) }
     // Prefetched Street View frames for this route, if a valid cache exists.
     val svManifest = remember(engine.route.id) {
@@ -243,9 +247,15 @@ fun RideScreen(
                     color = androidx.compose.ui.graphics.Color.White,
                     maxLines = 1,
                 )
+                val wo = state.workout
+                val powerColor = if (wo != null && wo.activeIndex >= 0) {
+                    adherenceColor(state.powerWatts, wo.targetWatts, workoutTol)
+                } else {
+                    androidx.compose.ui.graphics.Color.White
+                }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     HudStat("GRADE", String.format(Locale.US, "%+.1f%%", state.gradePercent), gradeColor(state.gradePercent))
-                    HudStat("W", "${state.powerWatts}")
+                    HudStat(if (wo != null && wo.activeIndex >= 0) "W → ${wo.targetWatts}" else "W", "${state.powerWatts}", powerColor)
                     HudStat("KM/H", String.format(Locale.US, "%.1f", state.speedKmh))
                     HudStat("RPM", "${state.cadenceRpm}")
                 }
@@ -274,11 +284,13 @@ fun RideScreen(
             state.workout?.let { wo ->
                 WorkoutStepsPanel(
                     workout = wo,
+                    currentPower = state.powerWatts,
+                    tolerance = workoutTol,
                     modifier = Modifier
                         .align(Alignment.CenterStart)
                         .padding(start = 6.dp, top = 4.dp, bottom = 4.dp)
                         .fillMaxHeight(0.74f)
-                        .width(92.dp),
+                        .width(96.dp),
                 )
             }
         }
@@ -481,6 +493,30 @@ fun RideScreen(
             Controls(Modifier.fillMaxWidth())
         }
     }
+
+    // One-time "workout complete" popup; the ride then carries on as a free ride.
+    var workoutDoneHandled by remember { mutableStateOf(false) }
+    var showWorkoutDone by remember { mutableStateOf(false) }
+    val completed = state.workout?.completed == true
+    LaunchedEffect(completed) {
+        if (completed && !workoutDoneHandled) {
+            workoutDoneHandled = true
+            showWorkoutDone = true
+        }
+    }
+    if (showWorkoutDone) {
+        val score = state.workout?.overallScore ?: 0
+        AlertDialog(
+            onDismissRequest = { showWorkoutDone = false },
+            title = { Text("Workout complete!") },
+            text = {
+                Text("You scored $score / 100.\n\nRiding on as a free ride — finish whenever you're ready.")
+            },
+            confirmButton = {
+                Button(onClick = { showWorkoutDone = false }) { Text("Keep riding") }
+            },
+        )
+    }
 }
 
 /** A compact labelled chip used for the in-ride scene controls. */
@@ -510,36 +546,62 @@ private fun ControlChip(icon: ImageVector, label: String, onClick: () -> Unit) {
 
 /** Scrollable list of a workout's steps, shown down the left edge during a ride. */
 @Composable
-private fun WorkoutStepsPanel(workout: WorkoutLive, modifier: Modifier) {
+private fun WorkoutStepsPanel(
+    workout: WorkoutLive,
+    currentPower: Int,
+    tolerance: Double,
+    modifier: Modifier,
+) {
     val listState = rememberLazyListState()
     LaunchedEffect(workout.activeIndex) {
         if (workout.activeIndex >= 0) {
             runCatching { listState.animateScrollToItem(workout.activeIndex) }
         }
     }
-    LazyColumn(
-        state = listState,
+    Column(
         modifier = modifier
             .clip(RoundedCornerShape(10.dp))
             .background(Color.Black.copy(alpha = 0.45f))
             .padding(4.dp),
-        verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
-        items(workout.steps) { s -> WorkoutStepRow(s) }
+        // Header: workout name + live overall score.
+        Text(
+            workout.name,
+            color = Color.White,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+        )
+        if (workout.completed) {
+            Text(
+                "Done · ${workout.overallScore}/100",
+                color = BikeYellow,
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = 1,
+            )
+        }
+        Spacer(Modifier.height(3.dp))
+        LazyColumn(
+            state = listState,
+            verticalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+            items(workout.steps) { s -> WorkoutStepRow(s, currentPower, tolerance) }
+        }
     }
 }
 
 /** One workout step: target/avg watts over its duration (counts down when active). */
 @Composable
-private fun WorkoutStepRow(s: WorkoutStepLive) {
+private fun WorkoutStepRow(s: WorkoutStepLive, currentPower: Int, tolerance: Double) {
     val active = s.status == StepStatus.ACTIVE
     val done = s.status == StepStatus.DONE
+    // Active step: colour by how close the current power is to target.
     val bg = when {
-        active -> BikeYellow
+        active -> adherenceColor(currentPower, s.targetWatts, tolerance)
         done -> Color.White.copy(alpha = 0.14f)
-        else -> Color.White.copy(alpha = 0.06f)
+        else -> workoutZoneColor(s.ftpFraction).copy(alpha = 0.30f)
     }
-    val fg = if (active) Color.Black else Color.White.copy(alpha = if (done) 0.6f else 0.9f)
+    val fg = if (active) Color.Black else Color.White.copy(alpha = if (done) 0.65f else 0.92f)
     val seconds = if (active) s.remainingSeconds else s.seconds
     val watts = if (done) s.avgWatts else s.targetWatts
     Column(
@@ -557,7 +619,7 @@ private fun WorkoutStepRow(s: WorkoutStepLive) {
             maxLines = 1,
         )
         Text(
-            formatTime(seconds.toLong()),
+            if (done) "${formatTime(seconds.toLong())} · ${s.scorePct}" else formatTime(seconds.toLong()),
             color = fg,
             style = MaterialTheme.typography.labelSmall,
             maxLines = 1,
