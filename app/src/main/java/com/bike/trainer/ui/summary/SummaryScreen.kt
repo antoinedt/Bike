@@ -82,8 +82,12 @@ fun SummaryScreen(onDone: () -> Unit) {
                 LocalRideStore.save(context, engine.route.name, TcxWriter.write(engine.route.name, points))
             }.getOrNull()
         }
-        val summary = RideStatsCalculator.compute(points)
-        runCatching { ServiceLocator.profileRepository.applyRideToActive(summary) }
+        // Only fold into the rider's lifetime stats/bests when a real trainer was
+        // connected — demo rides (synthesized power) shouldn't pollute progression.
+        if (engine.recordedWithTrainer) {
+            val summary = RideStatsCalculator.compute(points)
+            runCatching { ServiceLocator.profileRepository.applyRideToActive(summary) }
+        }
     }
 
     val exporter = rememberLauncherForActivityResult(
@@ -111,6 +115,13 @@ fun SummaryScreen(onDone: () -> Unit) {
     ) {
         Text("Ride complete", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Text(engine.route.name, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (!engine.recordedWithTrainer) {
+            Text(
+                "Demo ride — no trainer was connected, so it wasn't saved to your stats.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
 
         // ---- Recap photo (captured during the ride) with stats overlay ----
         val captured = ServiceLocator.capturedRideImage

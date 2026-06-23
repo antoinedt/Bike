@@ -72,19 +72,14 @@ fun ProfileDialog(
         text = {
             Column {
                 profiles.entries.forEach { entry ->
-                    val isActive = entry.profile.id == profiles.activeId
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(
-                            "${entry.profile.name} · ${entry.profile.weightKg.toInt()} kg",
-                            color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                            fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
-                        )
+                        Text("${entry.profile.name} · ${entry.profile.weightKg.toInt()} kg")
                         TextButton(onClick = { onSelect(entry.profile.id) }) {
-                            Text(if (isActive) "Active" else "Select")
+                            Text("Select")
                         }
                     }
                 }

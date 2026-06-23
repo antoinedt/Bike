@@ -48,6 +48,10 @@ class RideEngine(
     private var elapsedMs = 0L
     private var energyJoules = 0.0
     private var lastRecordedSecond = -1L
+    private var trainerEverConnected = false
+
+    /** True if a real trainer was connected at any point — gates saving to stats. */
+    val recordedWithTrainer: Boolean get() = trainerEverConnected
 
     /** Position along the route, wrapped into [0, totalDistance). */
     private fun lapPos(): Double {
@@ -94,6 +98,7 @@ class RideEngine(
         val totalMass = riderMassKg + bikeMassKg
         val terrainGrade = terrainGrade()
         val connected = trainer.connectionState.value == TrainerConnectionState.Connected
+        if (connected) trainerEverConnected = true
         // Prefer a dedicated HR strap if connected; otherwise use the trainer's.
         val heartRate = heartRateManager?.heartRate?.value?.takeIf { it > 0 } ?: data.heartRate
 

@@ -7,6 +7,7 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -117,6 +118,23 @@ fun HomeScreen(
     var prefetchFor by remember { mutableStateOf<java.io.File?>(null) }
     var startKm by remember { mutableStateOf("") }
     var ignoreHills by remember { mutableStateOf(false) }
+    // (km, total ascent m) of the selected GPX, shown on the Start button.
+    var selectedStats by remember { mutableStateOf<Pair<Double, Double>?>(null) }
+
+    LaunchedEffect(selectedGpx, randomSelected) {
+        selectedStats = null
+        val file = selectedGpx
+        if (file != null && !randomSelected) {
+            val route = withContext(Dispatchers.IO) {
+                runCatching {
+                    file.inputStream().use { GpxImporter.import(file.nameWithoutExtension, it, file.nameWithoutExtension) }
+                }.getOrNull()
+            }
+            if (route != null && file == selectedGpx) {
+                selectedStats = route.totalDistance / 1000.0 to route.totalAscent
+            }
+        }
+    }
 
     fun refreshGpx(select: java.io.File? = null) {
         scope.launch {
@@ -248,28 +266,25 @@ fun HomeScreen(
             }
         }
 
-        // Hills affect the simulated speed and the trainer's resistance. Tick this
-        // to ride the route as flat (no climb resistance, no downhill free speed).
-        Row(verticalAlignment = Alignment.Top) {
+        // Ride the route with its gradient flattened (no climb resistance / no
+        // downhill free speed). Whole row toggles, text centred on the checkbox.
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.clickable { ignoreHills = !ignoreHills },
+        ) {
             Checkbox(checked = ignoreHills, onCheckedChange = { ignoreHills = it })
-            Column(Modifier.padding(top = 12.dp)) {
-                Text(
-                    "Ignore hills (flat resistance)",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    "Ride the route as if it were flat: the climbs and descents still " +
-                        "show on the map and elevation chart, but they won't change your " +
-                        "speed or the smart trainer's resistance. Leave it off to feel the " +
-                        "hills.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            Text("Ride as flat", style = MaterialTheme.typography.bodyMedium)
         }
 
         Spacer(Modifier.height(4.dp))
+        val rideLabel = when {
+            randomSelected -> "  Start ride"
+            selectedStats != null -> {
+                val (km, gain) = selectedStats!!
+                "  Start ride (${String.format(java.util.Locale.US, "%.1f", km)} km · +${gain.toInt()} m)"
+            }
+            else -> "  Start ride"
+        }
         Button(
             modifier = Modifier.fillMaxWidth(),
             enabled = randomSelected || selectedGpx != null,
@@ -286,7 +301,7 @@ fun HomeScreen(
             },
         ) {
             Icon(Icons.Filled.DirectionsBike, contentDescription = null)
-            Text("  Start ride", fontWeight = FontWeight.Bold)
+            Text(rideLabel, fontWeight = FontWeight.Bold)
         }
         Spacer(Modifier.height(24.dp))
     }
