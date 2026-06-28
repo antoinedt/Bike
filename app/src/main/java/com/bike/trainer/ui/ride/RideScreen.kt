@@ -41,9 +41,9 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Remove
-import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -71,7 +71,10 @@ import com.bike.trainer.ui.theme.adherenceColor
 import com.bike.trainer.ui.theme.workoutZoneColor
 import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.AlertDialog
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import com.bike.trainer.export.RecapImage
 import java.util.Locale
 
 @Composable
@@ -158,6 +161,13 @@ fun RideScreen(
         val bmp = ScreenCapture.captureScene(window, ServiceLocator.sceneView, sceneBounds) ?: return false
         ServiceLocator.capturedRideImage = bmp
         return true
+    }
+
+    // Keep the screen awake for the whole ride so it doesn't sleep mid-workout.
+    DisposableEffect(Unit) {
+        val window = ScreenCapture.findActivity(context)?.window
+        window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        onDispose { window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
     }
 
     LaunchedEffect(Unit) {
@@ -310,7 +320,7 @@ fun RideScreen(
             ) {
                 if (showMotionChip && svManifest != null) {
                     Box {
-                        ControlChip(Icons.Filled.Animation, "Motion: ${svMotion.label}") { motionMenu = true }
+                        SceneIconButton(Icons.Filled.Animation, "Motion: ${svMotion.label}") { motionMenu = true }
                         DropdownMenu(expanded = motionMenu, onDismissRequest = { motionMenu = false }) {
                             SvMotion.entries.forEach { m ->
                                 DropdownMenuItem(
@@ -322,44 +332,41 @@ fun RideScreen(
                     }
                 }
                 if (showMotionChip && svManifest == null) {
-                    ControlChip(
+                    SceneIconButton(
                         if (smoothTransitions) Icons.Filled.BlurOn else Icons.Filled.BlurOff,
-                        if (smoothTransitions) "Smooth: On" else "Smooth: Off",
+                        if (smoothTransitions) "Smooth transitions on" else "Smooth transitions off",
                     ) { smoothTransitions = !smoothTransitions }
                 }
                 if (showView) {
-                    val toggleLabel = when {
-                        !streetLevel -> "Chase"
+                    val viewDesc = when {
+                        !streetLevel -> "Chase view"
                         com.bike.trainer.BuildConfig.HAS_MAPS_KEY -> "Street View"
-                        else -> "Ground"
+                        else -> "Ground view"
                     }
-                    ControlChip(Icons.Filled.Layers, toggleLabel) { streetLevel = !streetLevel }
+                    SceneIconButton(Icons.Filled.Layers, viewDesc) { streetLevel = !streetLevel }
                 }
                 if (showCapture) {
                     Spacer(Modifier.weight(1f))
-                    FilledIconButton(
-                        onClick = {
-                            scope.launch {
-                                val ok = captureScene()
-                                Toast.makeText(
-                                    context,
-                                    if (ok) "Captured" else "Couldn't capture the view",
-                                    Toast.LENGTH_SHORT,
-                                ).show()
-                            }
-                        },
-                        modifier = Modifier.size(44.dp),
-                        shape = CircleShape,
-                        colors = IconButtonDefaults.filledIconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        ),
-                    ) {
-                        Icon(
-                            Icons.Filled.PhotoCamera,
-                            contentDescription = "Capture photo",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(22.dp),
-                        )
+                    SceneIconButton(Icons.Filled.PhotoCamera, "Capture photo") {
+                        scope.launch {
+                            val ok = captureScene()
+                            val where = if (ok) {
+                                withContext(Dispatchers.IO) {
+                                    ServiceLocator.capturedRideImage?.let {
+                                        RecapImage.save(context, it, "vibebike-${System.currentTimeMillis()}")
+                                    }
+                                }
+                            } else null
+                            Toast.makeText(
+                                context,
+                                when {
+                                    where != null -> "Saved to $where"
+                                    ok -> "Captured (couldn't save to gallery)"
+                                    else -> "Couldn't capture the view"
+                                },
+                                Toast.LENGTH_LONG,
+                            ).show()
+                        }
                     }
                 }
             }
@@ -517,27 +524,22 @@ fun RideScreen(
     }
 }
 
-/** A compact labelled chip used for the in-ride scene controls. */
+/** An icon-only round button for the in-ride scene controls. */
 @Composable
-private fun ControlChip(icon: ImageVector, label: String, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .clip(RoundedCornerShape(10.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
+private fun SceneIconButton(icon: ImageVector, contentDescription: String, onClick: () -> Unit) {
+    FilledIconButton(
+        onClick = onClick,
+        modifier = Modifier.size(44.dp),
+        shape = CircleShape,
+        colors = IconButtonDefaults.filledIconButtonColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+        ),
     ) {
         Icon(
             icon,
-            contentDescription = label,
+            contentDescription = contentDescription,
             tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(18.dp),
-        )
-        Text(
-            "  $label",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.size(22.dp),
         )
     }
 }

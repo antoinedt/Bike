@@ -85,16 +85,16 @@ object RecapImage {
             val values = ContentValues().apply {
                 put(MediaStore.Images.Media.DISPLAY_NAME, "$displayName.jpg")
                 put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
-                put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/Bike")
+                put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/VibeBike")
             }
             val uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
                 ?: return null
             context.contentResolver.openOutputStream(uri)?.use {
                 bitmap.compress(Bitmap.CompressFormat.JPEG, 92, it)
             }
-            "Pictures/Bike/$displayName.jpg"
+            "Pictures/VibeBike/$displayName.jpg"
         } else {
-            val dir = File(context.getExternalFilesDir(Environment.DIRECTORY_PICTURES), "Bike")
+            val dir = File(context.getExternalFilesDir(Environment.DIRECTORY_PICTURES), "VibeBike")
             if (!dir.exists()) dir.mkdirs()
             val file = File(dir, "$displayName.jpg")
             FileOutputStream(file).use { bitmap.compress(Bitmap.CompressFormat.JPEG, 92, it) }
