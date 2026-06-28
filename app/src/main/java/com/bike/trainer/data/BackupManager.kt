@@ -52,7 +52,11 @@ class BackupManager(
 
     /** Restore settings from a backup JSON string. Returns true on success. */
     suspend fun import(raw: String): Boolean {
-        val bundle = runCatching { json.decodeFromString<BackupBundle>(raw) }.getOrNull() ?: return false
+        val bundle = try {
+            json.decodeFromString<BackupBundle>(raw)
+        } catch (e: Exception) {
+            throw IllegalArgumentException("Backup data couldn't be read (${e.message})", e)
+        }
         profiles.replaceAll(bundle.profiles)
         config.setMapTilesKey(bundle.mapTilesKey)
         settings.setGearCount(bundle.gearCount)
@@ -88,25 +92,37 @@ class BackupManager(
                 if (!entry.isDirectory && !name.contains("..")) {
                     when {
                         name == BACKUP_JSON -> jsonStr = zip.readBytes().decodeToString()
+                        // Route / Street-View files are best-effort: a single bad
+                        // file must not fail the whole restore (the settings JSON is
+                        // what matters most).
                         name.startsWith("routes/") ->
-                            extract(zip, File(routesDir, name.removePrefix("routes/")))
+                            runCatching { extract(zip, File(routesDir, name.removePrefix("routes/"))) }
                         name.startsWith("svcache/") ->
-                            extract(zip, File(svDir, name.removePrefix("svcache/")))
+                            runCatching { extract(zip, File(svDir, name.removePrefix("svcache/"))) }
                     }
                 }
                 zip.closeEntry()
                 entry = zip.nextEntry
             }
         }
-        return jsonStr?.let { import(it) } ?: false
+        return jsonStr?.let { import(it) }
+            ?: throw IllegalArgumentException("No backup.json found in the archive")
     }
 
-    /** Restore from either a ZIP backup or a legacy plain-JSON backup. */
-    suspend fun importAuto(context: Context, bytes: ByteArray): Boolean {
-        val isZip = bytes.size >= 2 && bytes[0] == 'P'.code.toByte() && bytes[1] == 'K'.code.toByte()
-        return if (isZip) importZip(context, bytes.inputStream())
-        else import(bytes.decodeToString())
+    /** Restore from a stream that is either a ZIP backup or a legacy plain JSON. */
+    suspend fun importAuto(context: Context, input: InputStream): Boolean {
+        val buf = input.buffered()
+        buf.mark(2)
+        val b0 = buf.read()
+        val b1 = buf.read()
+        buf.reset()
+        val isZip = b0 == 'P'.code && b1 == 'K'.code
+        return if (isZip) importZip(context, buf) else import(buf.readBytes().decodeToString())
     }
+
+    /** Restore from raw bytes (kept for callers that already hold the bytes). */
+    suspend fun importAuto(context: Context, bytes: ByteArray): Boolean =
+        importAuto(context, bytes.inputStream())
 
     private fun addTree(zip: ZipOutputStream, root: File, prefix: String) {
         if (!root.exists()) return

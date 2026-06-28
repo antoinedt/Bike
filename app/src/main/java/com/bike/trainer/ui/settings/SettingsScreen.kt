@@ -87,13 +87,21 @@ fun SettingsScreen(onBack: () -> Unit) {
         ActivityResultContracts.OpenDocument(),
     ) { uri: Uri? ->
         if (uri != null) scope.launch {
-            val bytes = withContext(Dispatchers.IO) {
-                runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
+            // Stream straight from the file so a large backup doesn't load fully
+            // into memory; surface the real reason if it fails.
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    context.contentResolver.openInputStream(uri)?.use {
+                        ServiceLocator.backupManager.importAuto(context, it)
+                    } ?: throw IllegalStateException("Couldn't open the selected file")
+                }
             }
-            val ok = bytes != null && withContext(Dispatchers.IO) {
-                runCatching { ServiceLocator.backupManager.importAuto(context, bytes) }.getOrDefault(false)
+            val msg = if (result.getOrDefault(false)) {
+                "Restored"
+            } else {
+                "Couldn't restore: ${result.exceptionOrNull()?.message ?: "invalid backup file"}"
             }
-            Toast.makeText(context, if (ok) "Restored" else "Couldn't restore that file", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
         }
     }
 
