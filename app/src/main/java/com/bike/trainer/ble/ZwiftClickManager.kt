@@ -26,10 +26,28 @@ class ZwiftClickManager(appContext: Context) :
     private val _gearEvents = MutableSharedFlow<GearShift>(extraBufferCapacity = 8)
     val gearEvents: SharedFlow<GearShift> = _gearEvents.asSharedFlow()
 
-    // Track button states so we only fire on the press edge (Zwift sends 0 when
-    // a button is held and 1 when released).
-    private var plusPressed = false
-    private var minusPressed = false
+    /**
+     * Emits the protobuf field number of every button just *pressed*. The Settings
+     * "learn buttons" flow listens here so the rider can map their own controller
+     * (the field numbers vary between models / firmware, which is why a fixed
+     * guess didn't work).
+     */
+    private val _buttonPresses = MutableSharedFlow<Int>(extraBufferCapacity = 16)
+    val buttonPresses: SharedFlow<Int> = _buttonPresses.asSharedFlow()
+
+    // Learned mapping of protobuf field number → gear up / down. Defaults match the
+    // common Zwift Click guess but can be overridden by learning in Settings.
+    @Volatile private var upField = 1
+    @Volatile private var downField = 2
+
+    /** Track which fields are currently pressed so we fire on the press edge only. */
+    private val pressed = HashMap<Int, Boolean>()
+
+    /** Set the learned field numbers (persisted in app config). */
+    fun setMapping(up: Int, down: Int) {
+        upField = up
+        downField = down
+    }
 
     override val subscriptions = listOf(
         SimpleBleSensor.Subscription(ZWIFT_SERVICE, ZWIFT_MEASUREMENT, indicate = false),
@@ -44,19 +62,24 @@ class ZwiftClickManager(appContext: Context) :
     override fun onNotification(characteristic: UUID, value: ByteArray) {
         if (characteristic != ZWIFT_MEASUREMENT || value.size < 2) return
 
-        // Skip the leading message-type byte and walk protobuf varint fields.
+        // Skip the leading message-type byte and walk protobuf varint fields. A
+        // button reads 0 while held, non-zero (1) when released; we fire on the
+        // 0-edge. Every pressed field is published for the learn-buttons UI, and
+        // mapped fields emit the matching shift.
         val fields = parseVarintFields(value, startOffset = 1)
-        val plusVal = fields[BUTTON_PLUS_FIELD]
-        val minusVal = fields[BUTTON_MINUS_FIELD]
-        if (plusVal == null && minusVal == null) return
-
-        val plusNow = plusVal == 0L
-        val minusNow = minusVal == 0L
-
-        if (plusNow && !plusPressed) _gearEvents.tryEmit(GearShift.UP)
-        if (minusNow && !minusPressed) _gearEvents.tryEmit(GearShift.DOWN)
-        plusPressed = plusNow
-        minusPressed = minusNow
+        if (fields.isEmpty()) return
+        for ((field, v) in fields) {
+            val now = v == 0L
+            val was = pressed[field] ?: false
+            if (now && !was) {
+                _buttonPresses.tryEmit(field)
+                when (field) {
+                    upField -> _gearEvents.tryEmit(GearShift.UP)
+                    downField -> _gearEvents.tryEmit(GearShift.DOWN)
+                }
+            }
+            pressed[field] = now
+        }
     }
 
     /**
@@ -117,8 +140,5 @@ class ZwiftClickManager(appContext: Context) :
         // "RideOn". (The device replies "RideOn" + 2 status bytes on the response
         // characteristic.)
         val RIDE_ON = byteArrayOf(0x52, 0x69, 0x64, 0x65, 0x4F, 0x6E)
-
-        const val BUTTON_PLUS_FIELD = 1
-        const val BUTTON_MINUS_FIELD = 2
     }
 }

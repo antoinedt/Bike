@@ -31,6 +31,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -42,6 +43,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.bike.trainer.ble.TrainerConnectionState
 import com.bike.trainer.data.StravaAccount
 import com.bike.trainer.di.ServiceLocator
 import com.bike.trainer.ui.components.KeyDialog
@@ -50,6 +52,7 @@ import com.bike.trainer.ui.components.StravaKeysDialog
 import com.bike.trainer.ui.ride.SvMotion
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -65,9 +68,25 @@ fun SettingsScreen(onBack: () -> Unit) {
     val activeEntry by profileRepo.active.collectAsStateWithLifecycle(initialValue = null)
     val stravaConnected by stravaRepo.isConnected.collectAsStateWithLifecycle(initialValue = false)
     val stravaConfigured by stravaRepo.isConfigured.collectAsStateWithLifecycle(initialValue = false)
+    val controllerState by ServiceLocator.zwiftClickManager.connectionState.collectAsStateWithLifecycle()
 
     var showMapDialog by remember { mutableStateOf(false) }
     var showStravaDialog by remember { mutableStateOf(false) }
+    // Gear-controller button learning: which action ("up"/"down") is currently
+    // listening for a press, and the last confirmation message.
+    var learning by remember { mutableStateOf<String?>(null) }
+    var learnMsg by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(learning) {
+        val which = learning ?: return@LaunchedEffect
+        // Suspends until the controller reports the next button press.
+        val field = ServiceLocator.zwiftClickManager.buttonPresses.first()
+        val cfg = configRepo.current()
+        val up = if (which == "up") field else cfg.gearUpField
+        val down = if (which == "down") field else cfg.gearDownField
+        configRepo.setGearButtonMapping(up, down)
+        learnMsg = "Mapped gear ${if (which == "up") "up" else "down"} to button #$field"
+        learning = null
+    }
 
     val backupExport = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/zip"),
@@ -218,6 +237,47 @@ fun SettingsScreen(onBack: () -> Unit) {
             }
             ToggleRow("Photo capture button", config?.showCaptureButton ?: true) {
                 scope.launch { configRepo.setShowCaptureButton(it) }
+            }
+        }
+
+        // ---- Gear controller buttons ----
+        SectionCard {
+            Text("Gear controller buttons", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(6.dp))
+            val connected = controllerState == TrainerConnectionState.Connected
+            if (!connected) {
+                Text(
+                    "Connect your gear controller on the Setup screen first, then come " +
+                        "back here to map its buttons.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                Text(
+                    "Tap a button below, then press the controller button you want to " +
+                        "use for it. We'll remember it for your rides.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(enabled = learning == null, onClick = { learnMsg = null; learning = "up" }) {
+                        Text(if (learning == "up") "Press now…" else "Set gear up")
+                    }
+                    OutlinedButton(enabled = learning == null, onClick = { learnMsg = null; learning = "down" }) {
+                        Text(if (learning == "down") "Press now…" else "Set gear down")
+                    }
+                }
+                learnMsg?.let {
+                    Spacer(Modifier.height(6.dp))
+                    Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Current — up: button #${config?.gearUpField ?: 1}, down: button #${config?.gearDownField ?: 2}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
 

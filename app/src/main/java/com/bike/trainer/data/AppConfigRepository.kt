@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.bike.trainer.BuildConfig
 import kotlinx.coroutines.flow.Flow
@@ -33,6 +34,9 @@ data class AppConfig(
     val showCaptureButton: Boolean = true,
     /** Workout power tolerance: ± this fraction of target counts as "on target". */
     val workoutTolerance: Float = 0.10f,
+    // ---- Learned gear-controller button mapping (protobuf field numbers) ----
+    val gearUpField: Int = 1,
+    val gearDownField: Int = 2,
 ) {
     val mapConfigured: Boolean get() = mapTilesKey.isNotBlank()
 }
@@ -50,6 +54,8 @@ class AppConfigRepository(private val dataStore: DataStore<Preferences>) {
             showViewToggle = prefs[SHOW_VIEW_TOGGLE] ?: true,
             showCaptureButton = prefs[SHOW_CAPTURE] ?: true,
             workoutTolerance = prefs[WORKOUT_TOLERANCE] ?: 0.10f,
+            gearUpField = prefs[GEAR_UP_FIELD] ?: 1,
+            gearDownField = prefs[GEAR_DOWN_FIELD] ?: 2,
         )
     }
 
@@ -91,6 +97,13 @@ class AppConfigRepository(private val dataStore: DataStore<Preferences>) {
         dataStore.edit { it[WORKOUT_TOLERANCE] = value.coerceIn(0.02f, 0.30f) }
     }
 
+    suspend fun setGearButtonMapping(upField: Int, downField: Int) {
+        dataStore.edit {
+            it[GEAR_UP_FIELD] = upField
+            it[GEAR_DOWN_FIELD] = downField
+        }
+    }
+
     private companion object {
         val MAP_TILES_KEY = stringPreferencesKey("cfg_map_tiles_key")
         val SV_MODE = stringPreferencesKey("cfg_sv_mode")
@@ -101,5 +114,7 @@ class AppConfigRepository(private val dataStore: DataStore<Preferences>) {
         val SHOW_VIEW_TOGGLE = booleanPreferencesKey("cfg_show_view_toggle")
         val SHOW_CAPTURE = booleanPreferencesKey("cfg_show_capture")
         val WORKOUT_TOLERANCE = floatPreferencesKey("cfg_workout_tolerance")
+        val GEAR_UP_FIELD = intPreferencesKey("cfg_gear_up_field")
+        val GEAR_DOWN_FIELD = intPreferencesKey("cfg_gear_down_field")
     }
 }
