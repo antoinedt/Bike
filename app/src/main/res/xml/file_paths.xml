@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Recorded rides live in getExternalFilesDir(null)/rides -->
+    <external-files-path name="rides" path="rides/" />
+    <cache-path name="cache" path="." />
+</paths>

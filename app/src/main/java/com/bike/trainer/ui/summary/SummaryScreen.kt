@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBarsPadding
 import android.content.Intent
 import android.widget.Toast
+import androidx.core.content.FileProvider
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -263,27 +264,54 @@ fun SummaryScreen(onDone: () -> Unit) {
             }
             garminMsg?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             Spacer(Modifier.height(8.dp))
-            Button(
-                enabled = garminConnected && !garminBusy,
-                onClick = {
-                    garminBusy = true
-                    garminMsg = "Uploading…"
-                    scope.launch {
-                        val tcx = TcxWriter.write(engine.route.name, engine.recorder.snapshot())
-                        val fileName = "vibebike-${System.currentTimeMillis()}.tcx"
-                        val res = ServiceLocator.garminRepository.upload(fileName, tcx.toByteArray(Charsets.UTF_8))
-                        garminBusy = false
-                        garminMsg = when (res) {
-                            is com.bike.trainer.garmin.GarminUploadResult.Success -> "Uploaded to Garmin ✅"
-                            com.bike.trainer.garmin.GarminUploadResult.Duplicate -> "Already on Garmin (duplicate)"
-                            com.bike.trainer.garmin.GarminUploadResult.NotConnected -> "Connect Garmin in Settings first."
-                            is com.bike.trainer.garmin.GarminUploadResult.Error -> "Failed: ${res.message}"
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Button(
+                    enabled = garminConnected && !garminBusy,
+                    onClick = {
+                        garminBusy = true
+                        garminMsg = "Uploading…"
+                        scope.launch {
+                            val tcx = TcxWriter.write(engine.route.name, engine.recorder.snapshot())
+                            val fileName = "vibebike-${System.currentTimeMillis()}.tcx"
+                            val res = ServiceLocator.garminRepository.upload(fileName, tcx.toByteArray(Charsets.UTF_8))
+                            garminBusy = false
+                            garminMsg = when (res) {
+                                is com.bike.trainer.garmin.GarminUploadResult.Success -> "Uploaded to Garmin ✅"
+                                com.bike.trainer.garmin.GarminUploadResult.Duplicate -> "Already on Garmin (duplicate)"
+                                com.bike.trainer.garmin.GarminUploadResult.NotConnected -> "Connect Garmin in Settings first."
+                                is com.bike.trainer.garmin.GarminUploadResult.Error -> "Failed: ${res.message}"
+                            }
                         }
+                    },
+                ) {
+                    Text(if (garminBusy) "Uploading…" else "Auto-upload")
+                }
+                OutlinedButton(onClick = {
+                    val file = savedFile ?: run {
+                        Toast.makeText(context, "No ride file to share yet", Toast.LENGTH_SHORT).show()
+                        return@OutlinedButton
                     }
-                },
-            ) {
-                Text(if (garminBusy) "Uploading…" else "Upload to Garmin")
+                    runCatching {
+                        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+                        val send = Intent(Intent.ACTION_SEND).apply {
+                            type = "application/octet-stream"
+                            putExtra(Intent.EXTRA_STREAM, uri)
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        context.startActivity(Intent.createChooser(send, "Share ride to…"))
+                    }.onFailure {
+                        Toast.makeText(context, "Couldn't share: ${it.message}", Toast.LENGTH_LONG).show()
+                    }
+                }) {
+                    Text("Share file…")
+                }
             }
+            Text(
+                "Auto-upload uses your connected Garmin login. \"Share file\" hands the .tcx " +
+                    "to the Garmin Connect app (or any app) via the share sheet.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
 
         OutlinedButton(
