@@ -26,6 +26,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -43,8 +44,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.material3.AlertDialog
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import com.bike.trainer.ble.TrainerConnectionState
 import com.bike.trainer.data.StravaAccount
+import com.bike.trainer.garmin.GarminLoginResult
 import com.bike.trainer.di.ServiceLocator
 import com.bike.trainer.ui.components.KeyDialog
 import com.bike.trainer.ui.components.SectionCard
@@ -69,7 +73,9 @@ fun SettingsScreen(onBack: () -> Unit) {
     val stravaConnected by stravaRepo.isConnected.collectAsStateWithLifecycle(initialValue = false)
     val stravaConfigured by stravaRepo.isConfigured.collectAsStateWithLifecycle(initialValue = false)
     val controllerState by ServiceLocator.zwiftClickManager.connectionState.collectAsStateWithLifecycle()
+    val garminConnected by ServiceLocator.garminRepository.isConnected.collectAsStateWithLifecycle(initialValue = false)
 
+    var showGarminDialog by remember { mutableStateOf(false) }
     var showMapDialog by remember { mutableStateOf(false) }
     var showStravaDialog by remember { mutableStateOf(false) }
     // Gear-controller button learning: which action ("up"/"down") is currently
@@ -347,6 +353,34 @@ fun SettingsScreen(onBack: () -> Unit) {
             }
         }
 
+        // ---- Garmin Connect (auto-upload) ----
+        SectionCard {
+            Text("Garmin Connect", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(6.dp))
+            if (garminConnected) {
+                Text(
+                    "Connected — finished rides upload to Garmin Connect (which can then " +
+                        "sync to Strava, avoiding a duplicate).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(onClick = { scope.launch { ServiceLocator.garminRepository.disconnect() } }) {
+                    Text("Disconnect")
+                }
+            } else {
+                Text(
+                    "Auto-upload rides to Garmin. Garmin has no official upload API, so this " +
+                        "uses your Garmin login (stored only on this device as a token). It can " +
+                        "break when Garmin changes their site.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(onClick = { showGarminDialog = true }) { Text("Connect Garmin") }
+            }
+        }
+
         // ---- Backup ----
         SectionCard {
             Text("Backup", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
@@ -390,6 +424,84 @@ fun SettingsScreen(onBack: () -> Unit) {
             },
         )
     }
+    if (showGarminDialog) {
+        GarminLoginDialog(onDismiss = { showGarminDialog = false })
+    }
+}
+
+/** Garmin login (email + password, then a 2FA code if the account requires it). */
+@Composable
+private fun GarminLoginDialog(onDismiss: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var mfa by remember { mutableStateOf("") }
+    var needMfa by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
+    var status by remember { mutableStateOf<String?>(null) }
+    AlertDialog(
+        onDismissRequest = { if (!busy) onDismiss() },
+        title = { Text("Connect Garmin") },
+        text = {
+            Column {
+                Text(
+                    "Your Garmin login is used once to get a token kept only on this device. " +
+                        "Unofficial — may need re-connecting if Garmin changes their site.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = email, onValueChange = { email = it },
+                    label = { Text("Garmin email") }, singleLine = true, enabled = !needMfa && !busy,
+                )
+                Spacer(Modifier.height(6.dp))
+                OutlinedTextField(
+                    value = password, onValueChange = { password = it },
+                    label = { Text("Password") }, singleLine = true, enabled = !needMfa && !busy,
+                    visualTransformation = PasswordVisualTransformation(),
+                )
+                if (needMfa) {
+                    Spacer(Modifier.height(6.dp))
+                    OutlinedTextField(
+                        value = mfa, onValueChange = { mfa = it },
+                        label = { Text("2FA code") }, singleLine = true, enabled = !busy,
+                    )
+                }
+                status?.let {
+                    Spacer(Modifier.height(8.dp))
+                    Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = !busy && (if (needMfa) mfa.isNotBlank() else email.isNotBlank() && password.isNotBlank()),
+                onClick = {
+                    busy = true
+                    status = "Connecting…"
+                    scope.launch {
+                        val res = if (needMfa) ServiceLocator.garminRepository.submitMfa(mfa)
+                            else ServiceLocator.garminRepository.beginLogin(email, password)
+                        busy = false
+                        when (res) {
+                            is GarminLoginResult.Success -> {
+                                Toast.makeText(context, "Connected to Garmin", Toast.LENGTH_SHORT).show()
+                                onDismiss()
+                            }
+                            is GarminLoginResult.MfaRequired -> {
+                                needMfa = true
+                                status = "Enter the 2FA code Garmin just sent you."
+                            }
+                            is GarminLoginResult.Error -> status = res.message
+                        }
+                    }
+                },
+            ) { Text(if (needMfa) "Verify" else "Connect") }
+        },
+        dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 /**

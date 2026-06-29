@@ -70,8 +70,11 @@ fun SummaryScreen(onDone: () -> Unit) {
     val scope = rememberCoroutineScope()
     val state by engine.state.collectAsStateWithLifecycle()
     val stravaConnected by ServiceLocator.stravaRepository.isConnected.collectAsStateWithLifecycle(initialValue = false)
+    val garminConnected by ServiceLocator.garminRepository.isConnected.collectAsStateWithLifecycle(initialValue = false)
 
     var uploadState by remember { mutableStateOf<UploadUiState>(UploadUiState.Idle) }
+    var garminMsg by remember { mutableStateOf<String?>(null) }
+    var garminBusy by remember { mutableStateOf(false) }
     var savedFile by remember { mutableStateOf<File?>(null) }
 
     // On finish: save the TCX locally and fold the ride into the rider's stats.
@@ -245,6 +248,41 @@ fun SummaryScreen(onDone: () -> Unit) {
                         Text("Upload ride")
                     }
                 }
+            }
+        }
+
+        SectionCard {
+            Text("Upload to Garmin", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(8.dp))
+            if (!garminConnected) {
+                Text(
+                    "Connect Garmin in Settings to auto-upload (then let Garmin sync to " +
+                        "Strava, for a single activity).",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            garminMsg?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            Spacer(Modifier.height(8.dp))
+            Button(
+                enabled = garminConnected && !garminBusy,
+                onClick = {
+                    garminBusy = true
+                    garminMsg = "Uploading…"
+                    scope.launch {
+                        val tcx = TcxWriter.write(engine.route.name, engine.recorder.snapshot())
+                        val fileName = "vibebike-${System.currentTimeMillis()}.tcx"
+                        val res = ServiceLocator.garminRepository.upload(fileName, tcx.toByteArray(Charsets.UTF_8))
+                        garminBusy = false
+                        garminMsg = when (res) {
+                            is com.bike.trainer.garmin.GarminUploadResult.Success -> "Uploaded to Garmin ✅"
+                            com.bike.trainer.garmin.GarminUploadResult.Duplicate -> "Already on Garmin (duplicate)"
+                            com.bike.trainer.garmin.GarminUploadResult.NotConnected -> "Connect Garmin in Settings first."
+                            is com.bike.trainer.garmin.GarminUploadResult.Error -> "Failed: ${res.message}"
+                        }
+                    }
+                },
+            ) {
+                Text(if (garminBusy) "Uploading…" else "Upload to Garmin")
             }
         }
 

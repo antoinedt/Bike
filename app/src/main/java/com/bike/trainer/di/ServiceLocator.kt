@@ -9,6 +9,7 @@ import com.bike.trainer.data.BackupManager
 import com.bike.trainer.data.ProfileRepository
 import com.bike.trainer.data.SettingsRepository
 import com.bike.trainer.data.appDataStore
+import com.bike.trainer.garmin.GarminRepository
 import com.bike.trainer.session.RideEngine
 import com.bike.trainer.strava.StravaRepository
 
@@ -28,6 +29,7 @@ object ServiceLocator {
     val appConfigRepository: AppConfigRepository by lazy { AppConfigRepository(appContext.appDataStore) }
     val profileRepository: ProfileRepository by lazy { ProfileRepository(appContext.appDataStore) }
     val stravaRepository: StravaRepository by lazy { StravaRepository(profileRepository) }
+    val garminRepository: GarminRepository by lazy { GarminRepository(appContext.appDataStore) }
     val backupManager: BackupManager by lazy {
         BackupManager(profileRepository, appConfigRepository, settingsRepository)
     }
