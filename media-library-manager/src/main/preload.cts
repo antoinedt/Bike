@@ -18,6 +18,8 @@ const api = {
   getLibraryItems: () => ipcRenderer.invoke("library:getItems"),
   openItem: (item: unknown) => ipcRenderer.invoke("library:openItem", item),
   scanNetwork: () => ipcRenderer.invoke("network:scan"),
+  openNetworkStream: (item: unknown) => ipcRenderer.invoke("network:streamOpen", item),
+  closeNetworkStream: (token: string) => ipcRenderer.invoke("network:streamClose", token),
   runSearch: (query: string, profileIds?: string[]) => ipcRenderer.invoke("search:run", query, profileIds),
   downloadTorrent: (url: string) => ipcRenderer.invoke("torrent:download", url)
 };

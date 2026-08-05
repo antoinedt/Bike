@@ -99,26 +99,8 @@ export async function scanNetworkShare(share: NetworkShare): Promise<MediaItem[]
   }
 }
 
-/** Downloads a network media item to a local temp file and returns its path. */
-export async function downloadNetworkItemToTemp(share: NetworkShare, item: MediaItem): Promise<string> {
-  const os = await import("node:os");
-  const path = await import("node:path");
-  const fs = await import("node:fs/promises");
-
-  const client = createClient(share);
-  const relPath = decodeURIComponent(item.path.replace(`smb://${share.host}/${share.share}/`, "")).replace(
-    /\//g,
-    "\\"
-  );
-  try {
-    const data = await new Promise<Buffer>((resolve, reject) => {
-      client.readFile(relPath, (err, buf) => (err ? reject(err) : resolve(buf)));
-    });
-    const destDir = await fs.mkdtemp(path.join(os.tmpdir(), "media-library-"));
-    const destPath = path.join(destDir, item.name);
-    await fs.writeFile(destPath, data);
-    return destPath;
-  } finally {
-    client.close();
-  }
+/** Recovers the share-relative path (forward-slashed) that a scanned item's `smb://` path encodes. */
+export function relPathFromMediaPath(share: NetworkShare, mediaPath: string): string {
+  const prefix = `smb://${share.host}/${share.share}/`;
+  return mediaPath.startsWith(prefix) ? mediaPath.slice(prefix.length) : mediaPath;
 }

@@ -14,6 +14,8 @@ export const IPC = {
   libraryGetItems: "library:getItems",
   libraryOpenItem: "library:openItem",
   networkScan: "network:scan",
+  networkStreamOpen: "network:streamOpen",
+  networkStreamClose: "network:streamClose",
   searchRun: "search:run",
   torrentDownload: "torrent:download"
 } as const;

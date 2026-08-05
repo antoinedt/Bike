@@ -1,16 +1,32 @@
 import { useEffect, useMemo, useState } from "react";
 import type { AppSettings, MediaItem } from "../../shared/types.js";
 import MediaGrid from "../components/MediaGrid.js";
+import StreamPlayer from "../components/StreamPlayer.js";
+
+interface ActiveStream {
+  item: MediaItem;
+  url: string;
+  token: string;
+}
 
 export default function NetworkPage({ settings }: { settings: AppSettings }) {
   const [items, setItems] = useState<MediaItem[]>([]);
   const [filter, setFilter] = useState("");
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [stream, setStream] = useState<ActiveStream | null>(null);
 
   useEffect(() => {
     void window.api.getLibraryItems().then((all) => setItems(all.filter((i) => i.source.type === "network")));
   }, []);
+
+  // Closes whichever stream was active whenever a new one starts, and on unmount.
+  useEffect(() => {
+    if (!stream) return;
+    return () => {
+      void window.api.closeNetworkStream(stream.token);
+    };
+  }, [stream]);
 
   const filtered = useMemo(
     () => items.filter((i) => i.name.toLowerCase().includes(filter.toLowerCase())),
@@ -30,9 +46,11 @@ export default function NetworkPage({ settings }: { settings: AppSettings }) {
     }
   }
 
-  async function openItem(item: MediaItem) {
+  async function play(item: MediaItem) {
+    setError(null);
     try {
-      await window.api.openItem(item);
+      const { url, token } = await window.api.openNetworkStream(item);
+      setStream({ item, url, token });
     } catch (err) {
       setError((err as Error).message);
     }
@@ -60,11 +78,12 @@ export default function NetworkPage({ settings }: { settings: AppSettings }) {
         </p>
       )}
       <p className="hint">
-        Opening a network file downloads it to a temp folder first, then hands it to your default
-        player — playback isn't streamed directly from the share.
+        Playback streams live from the share (byte-range reads, seekable) — nothing is downloaded
+        to disk first.
       </p>
       {error && <p className="error">{error}</p>}
-      <MediaGrid items={filtered} onOpen={(item) => void openItem(item)} />
+      <MediaGrid items={filtered} onOpen={(item) => void play(item)} />
+      {stream && <StreamPlayer item={stream.item} url={stream.url} onClose={() => setStream(null)} />}
     </div>
   );
 }

@@ -12,7 +12,8 @@ import {
   updateSiteProfile
 } from "./settings.js";
 import { scanLocalFolders } from "./library/scanner.js";
-import { downloadNetworkItemToTemp, scanNetworkShare, testShareConnection } from "./network/smbClient.js";
+import { relPathFromMediaPath, scanNetworkShare, testShareConnection } from "./network/smbClient.js";
+import { ensureStreamServer, registerStream, unregisterStream } from "./network/streamServer.js";
 import { searchSites } from "./search/siteSearch.js";
 import { handOffDownload } from "./torrent/handoff.js";
 import { getAllItems, replaceItemsForSource } from "./db.js";
@@ -47,18 +48,10 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.libraryGetItems, () => getAllItems());
 
   ipcMain.handle(IPC.libraryOpenItem, async (_e, item: MediaItem) => {
-    if (item.source.type === "local") {
-      const openError = await shell.openPath(item.path);
-      if (openError) throw new Error(openError);
-      return;
+    if (item.source.type !== "local") {
+      throw new Error("Network items are streamed, not opened directly — use openNetworkStream.");
     }
-    const { networkShares } = getSettings();
-    const matchedShare = networkShares.find(
-      (s) => item.source.type === "network" && s.id === item.source.shareId
-    );
-    if (!matchedShare) throw new Error("Network share for this item is no longer configured.");
-    const tempPath = await downloadNetworkItemToTemp(matchedShare, item);
-    const openError = await shell.openPath(tempPath);
+    const openError = await shell.openPath(item.path);
     if (openError) throw new Error(openError);
   });
 
@@ -68,6 +61,22 @@ export function registerIpcHandlers(): void {
     const items = results.flat();
     await replaceItemsForSource((item) => item.source.type === "network", items);
     return getAllItems();
+  });
+
+  ipcMain.handle(IPC.networkStreamOpen, async (_e, item: MediaItem) => {
+    const source = item.source;
+    if (source.type !== "network") throw new Error("Not a network item.");
+    const { networkShares } = getSettings();
+    const share = networkShares.find((s) => s.id === source.shareId);
+    if (!share) throw new Error("Network share for this item is no longer configured.");
+    const relPath = relPathFromMediaPath(share, item.path);
+    const port = await ensureStreamServer();
+    const token = registerStream(share, relPath, item.extension);
+    return { url: `http://127.0.0.1:${port}/stream/${token}`, token };
+  });
+
+  ipcMain.handle(IPC.networkStreamClose, (_e, token: string) => {
+    unregisterStream(token);
   });
 
   ipcMain.handle(IPC.searchRun, async (_e, query: string, profileIds?: string[]) => {
