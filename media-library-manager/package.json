@@ -1,0 +1,36 @@
+{
+  "name": "media-library-manager",
+  "version": "0.1.0",
+  "description": "Cross-platform desktop app to manage a media library: local device files, local network shares, and configurable site search with seamless handoff to your default torrent app.",
+  "private": true,
+  "main": "dist-electron/main/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k -n VITE,ELECTRON -c blue,green \"vite\" \"npm:dev:electron\"",
+    "dev:electron": "wait-on tcp:5173 && tsc -p tsconfig.electron.json && cross-env NODE_ENV=development electron .",
+    "build": "tsc -p tsconfig.electron.json && vite build",
+    "typecheck": "tsc -p tsconfig.electron.json --noEmit && tsc -p tsconfig.json --noEmit",
+    "dist": "npm run build && electron-builder"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0",
+    "electron-store": "^10.0.0",
+    "lowdb": "^7.0.1",
+    "smb2": "^0.2.11"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.0",
+    "cross-env": "^7.0.3",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.3",
+    "wait-on": "^8.0.1"
+  }
+}
