@@ -1,0 +1,74 @@
+name: Build Media Library Manager APK
+
+on:
+  push:
+    branches: [ "main", "claude/**" ]
+    paths:
+      - "media-library-manager-android/**"
+      - ".github/workflows/build-media-library-android.yml"
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - "media-library-manager-android/**"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    working-directory: media-library-manager-android
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install SDK packages
+        run: |
+          yes | sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" >/dev/null || true
+
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
+      - name: Build debug APK
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Stage APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk media-library-manager-debug.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: media-library-manager-debug-apk
+          path: media-library-manager-android/media-library-manager-debug.apk
+          if-no-files-found: error
+
+      - name: Publish Release
+        if: github.event_name != 'pull_request'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: mlm-build-${{ github.run_number }}
+          name: Media Library Manager debug build ${{ github.run_number }}
+          body: |
+            Automated debug build of the Media Library Manager Android app.
+
+            `media-library-manager-debug.apk` is signed with the default Android
+            debug key (not the Bike app's committed one — this is a separate,
+            unrelated app), so you'll need to allow "install unknown apps" and
+            install it directly; it won't update-in-place across reinstalls
+            since the debug key is regenerated per CI run.
+          prerelease: true
+          target_commitish: ${{ github.sha }}
+          files: media-library-manager-android/media-library-manager-debug.apk
