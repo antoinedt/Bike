@@ -4,10 +4,10 @@ import android.view.ViewGroup
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.weight
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -33,7 +33,7 @@ import androidx.media3.common.MediaItem as ExoMediaItem
  * equivalent of the desktop app's StreamPlayer.tsx, minus the loopback HTTP hop: ExoPlayer
  * pulls straight from the SMB share through the custom DataSource.
  */
-@OptIn(UnstableApi::class)
+@OptIn(UnstableApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun PlayerOverlay(
     item: MediaItem,
