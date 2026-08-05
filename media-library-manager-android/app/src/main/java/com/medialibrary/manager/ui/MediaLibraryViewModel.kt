@@ -8,6 +8,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.medialibrary.manager.di.ServiceLocator
 import com.medialibrary.manager.model.AppSettings
+import com.medialibrary.manager.model.LocalFolder
 import com.medialibrary.manager.model.MediaItem
 import com.medialibrary.manager.model.MediaKind
 import com.medialibrary.manager.model.NetworkShare
@@ -29,6 +30,8 @@ data class PlaybackRequest(
 class MediaLibraryViewModel : ViewModel() {
     private val settingsRepo = ServiceLocator.settingsRepository
     private val mediaStoreScanner = ServiceLocator.mediaStoreScanner
+    private val localFolderScanner = ServiceLocator.localFolderScanner
+    private val artworkFetcher = ServiceLocator.artworkFetcher
     private val smbBrowser = ServiceLocator.smbShareBrowser
     private val siteSearch = ServiceLocator.siteSearchRepository
     private val torrentHandoff = ServiceLocator.torrentHandoff
@@ -60,6 +63,9 @@ class MediaLibraryViewModel : ViewModel() {
     private val _shareTestResult = MutableStateFlow<String?>(null)
     val shareTestResult: StateFlow<String?> = _shareTestResult.asStateFlow()
 
+    private val _isFetchingArtwork = MutableStateFlow(false)
+    val isFetchingArtwork: StateFlow<Boolean> = _isFetchingArtwork.asStateFlow()
+
     private val _playback = MutableStateFlow<PlaybackRequest?>(null)
     val playback: StateFlow<PlaybackRequest?> = _playback.asStateFlow()
 
@@ -76,15 +82,40 @@ class MediaLibraryViewModel : ViewModel() {
         _errorMessage.value = null
     }
 
+    /** Scoped to the configured folders when there are any; falls back to a whole-device MediaStore scan otherwise. */
     fun scanLocal() {
         viewModelScope.launch {
             _isScanningLocal.value = true
-            runCatching { mediaStoreScanner.scan() }
-                .onSuccess { _localItems.value = it }
+            val folders = _settings.value.localFolders
+            runCatching {
+                if (folders.isEmpty()) {
+                    mediaStoreScanner.scan()
+                } else {
+                    folders.flatMap { localFolderScanner.scan(it) }
+                }
+            }.onSuccess { _localItems.value = it }
                 .onFailure { _errorMessage.value = it.message }
             _isScanningLocal.value = false
         }
     }
+
+    /** Fetches artwork (via the iTunes Search API) for every item missing it, local and network combined. */
+    fun fetchArtwork() {
+        viewModelScope.launch {
+            _isFetchingArtwork.value = true
+            runCatching {
+                val found = artworkFetcher.fetchForLibrary(_localItems.value + _networkItems.value)
+                _localItems.value = _localItems.value.map { item -> found[item.id]?.let { item.copy(artworkUrl = it) } ?: item }
+                _networkItems.value = _networkItems.value.map { item -> found[item.id]?.let { item.copy(artworkUrl = it) } ?: item }
+            }.onFailure { _errorMessage.value = it.message }
+            _isFetchingArtwork.value = false
+        }
+    }
+
+    fun addLocalFolder(treeUri: String, label: String) =
+        viewModelScope.launch { settingsRepo.addLocalFolder(LocalFolder(treeUri = treeUri, label = label)) }
+
+    fun removeLocalFolder(id: String) = viewModelScope.launch { settingsRepo.removeLocalFolder(id) }
 
     fun scanNetwork() {
         viewModelScope.launch {

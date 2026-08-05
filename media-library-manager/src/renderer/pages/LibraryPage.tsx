@@ -6,6 +6,7 @@ export default function LibraryPage({ settings }: { settings: AppSettings }) {
   const [items, setItems] = useState<MediaItem[]>([]);
   const [filter, setFilter] = useState("");
   const [scanning, setScanning] = useState(false);
+  const [fetchingArtwork, setFetchingArtwork] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -27,6 +28,19 @@ export default function LibraryPage({ settings }: { settings: AppSettings }) {
       setError((err as Error).message);
     } finally {
       setScanning(false);
+    }
+  }
+
+  async function fetchArtwork() {
+    setFetchingArtwork(true);
+    setError(null);
+    try {
+      const all = await window.api.fetchArtwork();
+      setItems(all.filter((i) => i.source.type === "local"));
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setFetchingArtwork(false);
     }
   }
 
@@ -52,8 +66,15 @@ export default function LibraryPage({ settings }: { settings: AppSettings }) {
           <button className="btn btn-primary" onClick={() => void scan()} disabled={scanning}>
             {scanning ? "Scanning…" : "Scan folders"}
           </button>
+          <button className="btn" onClick={() => void fetchArtwork()} disabled={fetchingArtwork}>
+            {fetchingArtwork ? "Fetching artwork…" : "Fetch artwork"}
+          </button>
         </div>
       </div>
+      <p className="hint">
+        Fetch artwork looks up covers/posters via the iTunes catalog based on each file's name —
+        best-effort, and covers the whole library (local and network).
+      </p>
       {settings.localFolders.length === 0 && (
         <p className="hint">
           No folders configured yet. Add one in <strong>Settings</strong> to start scanning.

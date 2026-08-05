@@ -14,6 +14,8 @@ export interface MediaItem {
   sizeBytes: number;
   modifiedAt: number;
   source: MediaSource;
+  /** Populated on demand by the artwork fetcher; absent until fetched (or if nothing suitable was found). */
+  artworkUrl?: string;
 }
 
 export interface LocalFolder {

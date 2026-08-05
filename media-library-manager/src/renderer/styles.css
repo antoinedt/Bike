@@ -195,6 +195,13 @@ body {
   font-size: 28px;
 }
 
+.media-card-artwork {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 6px;
+}
+
 .media-card-name {
   font-size: 12px;
   overflow: hidden;

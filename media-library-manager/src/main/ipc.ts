@@ -16,7 +16,8 @@ import { relPathFromMediaPath, scanNetworkShare, testShareConnection } from "./n
 import { ensureStreamServer, registerStream, unregisterStream } from "./network/streamServer.js";
 import { searchSites } from "./search/siteSearch.js";
 import { handOffDownload } from "./torrent/handoff.js";
-import { getAllItems, replaceItemsForSource } from "./db.js";
+import { applyArtwork, getAllItems, replaceItemsForSource } from "./db.js";
+import { fetchArtworkForLibrary } from "./artwork/artworkFetcher.js";
 
 export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.settingsGet, () => getSettings());
@@ -46,6 +47,12 @@ export function registerIpcHandlers(): void {
   });
 
   ipcMain.handle(IPC.libraryGetItems, () => getAllItems());
+
+  ipcMain.handle(IPC.libraryFetchArtwork, async () => {
+    const items = await getAllItems();
+    const found = await fetchArtworkForLibrary(items);
+    return applyArtwork(found);
+  });
 
   ipcMain.handle(IPC.libraryOpenItem, async (_e, item: MediaItem) => {
     if (item.source.type !== "local") {

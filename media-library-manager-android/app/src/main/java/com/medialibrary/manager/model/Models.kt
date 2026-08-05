@@ -41,7 +41,17 @@ data class MediaItem(
     val modifiedAtMillis: Long,
     val sourceType: MediaSourceType,
     /** Only meaningful when [sourceType] is NETWORK. */
-    val shareId: String? = null
+    val shareId: String? = null,
+    /** Populated on demand by ArtworkFetcher; null until fetched (or if nothing suitable was found). */
+    val artworkUrl: String? = null
+)
+
+/** A user-picked device folder (SAF tree URI) to scope the local scan to. */
+@Serializable
+data class LocalFolder(
+    val id: String = UUID.randomUUID().toString(),
+    val treeUri: String,
+    val label: String
 )
 
 @Serializable
@@ -87,6 +97,7 @@ data class SearchResultItem(
 
 @Serializable
 data class AppSettings(
+    val localFolders: List<LocalFolder> = emptyList(),
     val networkShares: List<NetworkShare> = emptyList(),
     val siteProfiles: List<SiteProfile> = emptyList()
 )

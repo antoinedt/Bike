@@ -29,3 +29,14 @@ export async function getAllItems(): Promise<MediaItem[]> {
   const db = await getDb();
   return db.data.items;
 }
+
+/** Patches artworkUrl onto items by id, leaving everything else untouched. */
+export async function applyArtwork(artworkByItemId: Map<string, string>): Promise<MediaItem[]> {
+  const db = await getDb();
+  db.data.items = db.data.items.map((item) => {
+    const artworkUrl = artworkByItemId.get(item.id);
+    return artworkUrl ? { ...item, artworkUrl } : item;
+  });
+  await db.write();
+  return db.data.items;
+}

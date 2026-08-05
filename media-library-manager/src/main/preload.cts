@@ -17,6 +17,7 @@ const api = {
   scanLibrary: () => ipcRenderer.invoke("library:scan"),
   getLibraryItems: () => ipcRenderer.invoke("library:getItems"),
   openItem: (item: unknown) => ipcRenderer.invoke("library:openItem", item),
+  fetchArtwork: () => ipcRenderer.invoke("library:fetchArtwork"),
   scanNetwork: () => ipcRenderer.invoke("network:scan"),
   openNetworkStream: (item: unknown) => ipcRenderer.invoke("network:streamOpen", item),
   closeNetworkStream: (token: string) => ipcRenderer.invoke("network:streamClose", token),

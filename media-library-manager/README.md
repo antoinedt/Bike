@@ -36,6 +36,7 @@ src/
 │   │   ├── smbRawClient.ts   raw offset/length SMB2 READ requests, for streaming
 │   │   └── streamServer.ts   loopback-only HTTP Range server relaying smbRawClient → <video>/<audio>
 │   ├── search/siteSearch.ts cheerio-based generic scraper driven by SiteProfile selectors
+│   ├── artwork/artworkFetcher.ts  title-guessing + iTunes Search API cover/poster lookup
 │   └── torrent/handoff.ts   magnet: → shell.openExternal; .torrent → download + shell.openPath
 ├── renderer/              React UI (Vite)
 │   ├── App.tsx, components/ (incl. StreamPlayer), pages/
@@ -74,6 +75,17 @@ it there:
   page rather than the magnet/`.torrent` link directly, set the "detail-page link selector" too
   and the app does the second fetch for you.
 
+## Artwork
+
+**Fetch artwork** (Library page) looks up a cover/poster for every video/audio item missing one,
+across the whole library (local and network), via the iTunes Search API (Apple's public, keyless
+catalog search) — no scraping, no API key to configure, no user interaction beyond clicking the
+button. The search term is guessed from the filename (strip scene-release noise like
+`1080p`/`x264`/group tags, pull out a year if present) and is best-effort: some filenames won't
+match anything usable, and existing artwork is never overwritten. Found artwork is stored as a
+remote URL on the item (not downloaded/cached locally), so it needs the network to load once
+fetched, same as any `<img src>`.
+
 ## Known limitations (first version)
 
 - The bundled `smb2` package's public API is read-only and whole-file (`readdir`/`readFile`), with
@@ -94,3 +106,8 @@ it there:
   this was built in) — verified via unit-level smoke tests of the request pipeline and HTTP relay
   (module loads, correct 404/500 handling, no hangs/crashes) plus a full Electron launch under
   Xvfb with no runtime errors. Please confirm against your actual NAS/share.
+- The iTunes Search API (`itunes.apple.com`) wasn't reachable from this sandbox's network policy
+  either, so artwork fetching is verified only up through "the request fails gracefully and
+  returns no artwork" (confirmed — the 403 from this sandbox's policy is handled identically to
+  a real "no results" response). The actual lookup returning real artwork is unverified; please
+  confirm on a real network.

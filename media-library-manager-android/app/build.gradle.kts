@@ -72,4 +72,8 @@ dependencies {
     implementation(libs.androidx.media3.ui)
     implementation(libs.androidx.media3.common)
     implementation(libs.androidx.media3.datasource)
+    // SAF folder-tree access for user-picked local folders.
+    implementation(libs.androidx.documentfile)
+    // Artwork loading (fetched cover/poster URLs) in Compose.
+    implementation(libs.coil.compose)
 }

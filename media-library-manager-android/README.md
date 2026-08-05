@@ -72,20 +72,36 @@ Requires the Android SDK (compileSdk 35, JDK 17+) and network access to Google's
 **This was not build-verified in the sandbox that scaffolded it** — same limitation the existing
 Bike app's README already documents (no Android SDK there), *and* this session's outbound network
 policy specifically blocks `dl.google.com`, so even `./gradlew help` fails at the AGP-plugin-fetch
-step before ever reaching a missing-SDK error. I've been as careful as I can be about the Media3
-`DataSource`/jcifs-ng/Jsoup/Compose API shapes (all follow well-established, stable patterns), but
-none of it has compiled or run. Please build and smoke-test on a real machine before relying on
-it, and expect to fix the inevitable small things a real compiler would have caught — most likely
-candidates: exact Media3 1.4.1 API surface, and how Android's `Uri` (re-)encodes special
-characters in `smb://` URLs built from filenames (spaces, non-ASCII) before jcifs-ng parses them.
+step before ever reaching a missing-SDK error. This repo's CI (`.github/workflows/build-media-library-android.yml`,
+mirroring the Bike app's own workflow) runs on GitHub's unrestricted runners and is the actual
+build verification — check its latest run before trusting a given commit compiles. I've been as
+careful as I can be about the Media3 `DataSource`/jcifs-ng/Jsoup/Coil/Compose API shapes (all
+follow well-established, stable patterns), but local edits between CI runs are unverified.
+Likely candidates for a real compiler to catch first: exact Media3 1.4.1 API surface, and how
+Android's `Uri` (re-)encodes special characters in `smb://` URLs built from filenames (spaces,
+non-ASCII) before jcifs-ng parses them.
+
+## Artwork
+
+**Fetch artwork** (Library screen) looks up a cover/poster for every video/audio item missing one,
+via the iTunes Search API (Apple's public, keyless catalog search) — no scraping, no API key, no
+user interaction beyond tapping the button. The search term is guessed from the filename (strip
+scene-release noise like `1080p`/`x264`/group tags, pull out a year if present) and is
+best-effort: some filenames won't match anything, and nothing gets overwritten once an item has
+artwork. Artwork association is in-memory only (not persisted to DataStore), so it needs
+re-fetching after each fresh scan or app restart — consistent with `localItems`/`networkItems`
+themselves not being persisted either.
 
 ## Known limitations (first version)
 
-- No folder-picking UI — Library always scans the device's full MediaStore-indexed media. If you
-  want a specific folder excluded, that's an OS-level "exclude from media scan" setting, not
-  something this app currently offers.
+- Local folders are opt-in scoping: with none added, Library still scans the whole device via
+  MediaStore (same zero-config behavior as before); adding a folder switches that scan to only
+  the folders you've picked (SAF tree URIs), same idea as the desktop app's folder list.
 - Network share credentials are stored via DataStore, unencrypted on disk (same caveat as the
   desktop app's electron-store).
 - Site profiles assume server-rendered HTML; JS-rendered result pages need a headless browser,
   which this build doesn't include (matches the desktop app's same limitation).
 - Not tested against a live SMB server or real device — see the build note above.
+- iTunes Search API access wasn't reachable from this sandbox either (same network-policy class
+  as `dl.google.com`), so the artwork feature is untested beyond title-guessing logic; verify the
+  actual lookup on a real device.

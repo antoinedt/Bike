@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.medialibrary.manager.model.AppSettings
+import com.medialibrary.manager.model.LocalFolder
 import com.medialibrary.manager.model.NetworkShare
 import com.medialibrary.manager.model.SiteProfile
 import kotlinx.coroutines.flow.first
@@ -35,6 +36,10 @@ class SettingsRepository(private val context: Context) {
             prefs[SETTINGS_KEY] = json.encodeToString(transform(existing))
         }
     }
+
+    suspend fun addLocalFolder(folder: LocalFolder) = update { it.copy(localFolders = it.localFolders + folder) }
+
+    suspend fun removeLocalFolder(id: String) = update { it.copy(localFolders = it.localFolders.filterNot { f -> f.id == id }) }
 
     suspend fun addShare(share: NetworkShare) = update { it.copy(networkShares = it.networkShares + share) }
 

@@ -23,12 +23,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import com.medialibrary.manager.model.LocalFolder
 import com.medialibrary.manager.model.NetworkShare
 import com.medialibrary.manager.model.SiteProfile
 import com.medialibrary.manager.ui.MediaLibraryViewModel
 
 @Composable
-fun SettingsScreen(viewModel: MediaLibraryViewModel) {
+fun SettingsScreen(viewModel: MediaLibraryViewModel, onPickFolder: () -> Unit) {
     val settings by viewModel.settings.collectAsState()
     val shareTestResult by viewModel.shareTestResult.collectAsState()
 
@@ -36,9 +37,31 @@ fun SettingsScreen(viewModel: MediaLibraryViewModel) {
         modifier = Modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
+        item { FoldersSection(settings.localFolders, onPickFolder, viewModel) }
+        item { HorizontalDivider() }
         item { SharesSection(settings.networkShares, shareTestResult, viewModel) }
         item { HorizontalDivider() }
         item { ProfilesSection(settings.siteProfiles, viewModel) }
+    }
+}
+
+@Composable
+private fun FoldersSection(folders: List<LocalFolder>, onPickFolder: () -> Unit, viewModel: MediaLibraryViewModel) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Local folders", style = MaterialTheme.typography.titleMedium)
+        Text(
+            "Which folders on this device the Library scan considers. With none added, " +
+                "Library scans the whole device via MediaStore instead.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        folders.forEach { folder ->
+            ListItem(
+                headlineContent = { Text(folder.label) },
+                trailingContent = { TextButton(onClick = { viewModel.removeLocalFolder(folder.id) }) { Text("Remove") } }
+            )
+        }
+        Button(onClick = onPickFolder) { Text("Add folder…") }
     }
 }
 

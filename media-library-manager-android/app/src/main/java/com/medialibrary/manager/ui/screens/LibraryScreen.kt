@@ -37,6 +37,8 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel) {
     val context = LocalContext.current
     val items by viewModel.localItems.collectAsState()
     val scanning by viewModel.isScanningLocal.collectAsState()
+    val fetchingArtwork by viewModel.isFetchingArtwork.collectAsState()
+    val settings by viewModel.settings.collectAsState()
     var filter by remember { mutableStateOf("") }
 
     Column(Modifier.fillMaxSize().padding(16.dp)) {
@@ -58,8 +60,22 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel) {
                 Text(if (scanning) "Scanning…" else "Scan")
             }
         }
+        Row {
+            Button(onClick = { viewModel.fetchArtwork() }, enabled = !fetchingArtwork) {
+                Text(if (fetchingArtwork) "Fetching artwork…" else "Fetch artwork")
+            }
+        }
         Text(
-            "Scans the device's media (video/audio/images) via MediaStore.",
+            "Looks up covers/posters via the iTunes catalog based on each file's name — best-effort, covers the whole library.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            if (settings.localFolders.isEmpty()) {
+                "Scans the whole device's media via MediaStore. Add folders in Settings to scope this."
+            } else {
+                "Scanning ${settings.localFolders.size} configured folder(s)."
+            },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

@@ -34,7 +34,11 @@ export default function MediaGrid({
     <div className="media-grid">
       {items.map((item) => (
         <button key={item.id} className="media-card" onClick={() => onOpen(item)} title={item.path}>
-          <div className="media-card-icon">{KIND_ICON[item.kind]}</div>
+          {item.artworkUrl ? (
+            <img className="media-card-artwork" src={item.artworkUrl} alt="" />
+          ) : (
+            <div className="media-card-icon">{KIND_ICON[item.kind]}</div>
+          )}
           <div className="media-card-name">{item.name}</div>
           <div className="media-card-meta">
             {item.extension.toUpperCase()} · {formatSize(item.sizeBytes)}

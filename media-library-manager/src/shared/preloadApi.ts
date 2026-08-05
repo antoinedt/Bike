@@ -22,6 +22,8 @@ export interface PreloadApi {
   getLibraryItems(): Promise<MediaItem[]>;
   /** Opens a local-device item with the OS's default app. Not valid for network items. */
   openItem(item: MediaItem): Promise<void>;
+  /** Fetches artwork (via the iTunes Search API) for every library item missing it, local or network. */
+  fetchArtwork(): Promise<MediaItem[]>;
   scanNetwork(): Promise<MediaItem[]>;
   /** Starts a live byte-range relay for a network item and returns a URL an in-app <video>/<audio> element can play directly. */
   openNetworkStream(item: MediaItem): Promise<{ url: string; token: string }>;

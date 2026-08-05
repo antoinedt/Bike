@@ -1,12 +1,15 @@
 package com.medialibrary.manager
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
+import androidx.documentfile.provider.DocumentFile
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
@@ -29,7 +32,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -53,8 +55,21 @@ private val TABS = listOf(
 
 class MainActivity : ComponentActivity() {
 
+    private val viewModel: MediaLibraryViewModel by viewModels()
+
     private val requestPermissions =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { /* handled via re-check on scan */ }
+
+    /** SAF folder picker backing "which folders are considered" in Settings. */
+    private val pickFolder = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri == null) return@registerForActivityResult
+        contentResolver.takePersistableUriPermission(
+            uri,
+            Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+        )
+        val label = DocumentFile.fromTreeUri(this, uri)?.name ?: uri.lastPathSegment ?: "Folder"
+        viewModel.addLocalFolder(uri.toString(), label)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -66,7 +81,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             MediaLibraryTheme {
                 Surface {
-                    MediaLibraryApp()
+                    MediaLibraryApp(viewModel = viewModel, onPickFolder = { pickFolder.launch(null) })
                 }
             }
         }
@@ -80,9 +95,8 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun MediaLibraryApp() {
+private fun MediaLibraryApp(viewModel: MediaLibraryViewModel, onPickFolder: () -> Unit) {
     val navController = rememberNavController()
-    val viewModel: MediaLibraryViewModel = viewModel()
     val playback by viewModel.playback.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -125,7 +139,7 @@ private fun MediaLibraryApp() {
             composable("library") { LibraryScreen(viewModel) }
             composable("network") { NetworkScreen(viewModel) }
             composable("search") { SearchScreen(viewModel) }
-            composable("settings") { SettingsScreen(viewModel) }
+            composable("settings") { SettingsScreen(viewModel, onPickFolder) }
         }
     }
 
