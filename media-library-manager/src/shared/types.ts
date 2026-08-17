@@ -58,6 +58,14 @@ export interface SiteProfile {
    * the actual download link.
    */
   detailPageLinkSelector: string;
+  /**
+   * Set this when the site renders its results with JavaScript (check "View Page Source" vs.
+   * "Inspect" — if your selectors only match in Inspect, this is why). Fetches for this profile
+   * go through a hidden Electron BrowserWindow instead of a plain HTTP request, so the page
+   * actually executes its JS before scraping. Slower; leave off for ordinary server-rendered
+   * sites.
+   */
+  useHeadlessBrowser: boolean;
 }
 
 export interface SearchResultItem {

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
@@ -20,6 +21,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -142,6 +144,7 @@ private fun ProfilesSection(profiles: List<SiteProfile>, viewModel: MediaLibrary
     var sizeSelector by remember { mutableStateOf("") }
     var seedersSelector by remember { mutableStateOf("") }
     var detailPageLinkSelector by remember { mutableStateOf("") }
+    var useHeadlessBrowser by remember { mutableStateOf(false) }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Search sites", style = MaterialTheme.typography.titleMedium)
@@ -153,7 +156,7 @@ private fun ProfilesSection(profiles: List<SiteProfile>, viewModel: MediaLibrary
         )
         profiles.forEach { p ->
             ListItem(
-                headlineContent = { Text(p.label) },
+                headlineContent = { Text(if (p.useHeadlessBrowser) "${p.label} · JS-rendered" else p.label) },
                 supportingContent = { Text(p.searchUrlTemplate) },
                 trailingContent = { TextButton(onClick = { viewModel.removeSiteProfile(p.id) }) { Text("Remove") } }
             )
@@ -187,6 +190,14 @@ private fun ProfilesSection(profiles: List<SiteProfile>, viewModel: MediaLibrary
             detailPageLinkSelector, { detailPageLinkSelector = it },
             label = { Text("Detail-page link selector (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth()
         )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(checked = useHeadlessBrowser, onCheckedChange = { useHeadlessBrowser = it })
+            Text(
+                "Site renders results with JavaScript (use an off-screen WebView to fetch it — " +
+                    "slower, but works when \"View Page Source\" doesn't show the results)",
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
         Button(
             onClick = {
                 viewModel.addSiteProfile(
@@ -198,11 +209,13 @@ private fun ProfilesSection(profiles: List<SiteProfile>, viewModel: MediaLibrary
                         linkSelector = linkSelector,
                         sizeSelector = sizeSelector,
                         seedersSelector = seedersSelector,
-                        detailPageLinkSelector = detailPageLinkSelector
+                        detailPageLinkSelector = detailPageLinkSelector,
+                        useHeadlessBrowser = useHeadlessBrowser
                     )
                 )
                 label = ""; searchUrlTemplate = ""; resultItemSelector = ""; titleSelector = ""
                 linkSelector = ""; sizeSelector = ""; seedersSelector = ""; detailPageLinkSelector = ""
+                useHeadlessBrowser = false
             },
             enabled = label.isNotBlank() && searchUrlTemplate.isNotBlank() && resultItemSelector.isNotBlank()
         ) { Text("Add site") }

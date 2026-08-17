@@ -35,7 +35,9 @@ src/
 │   │   ├── smbClient.ts      SMB2 share listing (readdir-based)
 │   │   ├── smbRawClient.ts   raw offset/length SMB2 READ requests, for streaming
 │   │   └── streamServer.ts   loopback-only HTTP Range server relaying smbRawClient → <video>/<audio>
-│   ├── search/siteSearch.ts cheerio-based generic scraper driven by SiteProfile selectors
+│   ├── search/
+│   │   ├── siteSearch.ts     cheerio-based generic scraper driven by SiteProfile selectors
+│   │   └── headlessFetch.ts  hidden BrowserWindow fetch for JS-rendered sites (opt-in per profile)
 │   ├── artwork/artworkFetcher.ts  title-guessing + iTunes Search API cover/poster lookup
 │   └── torrent/handoff.ts   magnet: → shell.openExternal; .torrent → download + shell.openPath
 ├── renderer/              React UI (Vite)
@@ -73,7 +75,12 @@ it there:
 - **Search sites** — a URL template (`{query}` placeholder) plus CSS selectors for the result
   list, title, download link, size, and seeders. If a site's search results link to a details
   page rather than the magnet/`.torrent` link directly, set the "detail-page link selector" too
-  and the app does the second fetch for you.
+  and the app does the second fetch for you. If the site renders its results with JavaScript
+  (check "View Page Source" vs. "Inspect" in your browser — if a selector only matches in
+  Inspect, that's why), tick "Site renders results with JavaScript": fetches for that profile go
+  through a hidden `BrowserWindow` (Electron's own Chromium — see `search/headlessFetch.ts`)
+  instead of a plain HTTP request, so the page actually executes before scraping. Slower, so it's
+  opt-in per profile rather than the default.
 
 ## Artwork
 

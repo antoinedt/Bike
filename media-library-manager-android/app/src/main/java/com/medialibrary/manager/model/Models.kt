@@ -83,7 +83,15 @@ data class SiteProfile(
     val sizeSelector: String = "",
     val seedersSelector: String = "",
     /** If linkSelector points to a detail page rather than the download link directly, the selector to find it there. */
-    val detailPageLinkSelector: String = ""
+    val detailPageLinkSelector: String = "",
+    /**
+     * Set this when the site renders its results with JavaScript (check "View Page Source" vs.
+     * the Layout Inspector — if your selectors only match there, this is why). Fetches for this
+     * profile go through an off-screen WebView instead of a plain HTTP request, so the page
+     * actually executes its JS before scraping. Slower; leave off for ordinary server-rendered
+     * sites.
+     */
+    val useHeadlessBrowser: Boolean = false
 )
 
 data class SearchResultItem(

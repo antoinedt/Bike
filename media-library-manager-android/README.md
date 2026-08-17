@@ -13,12 +13,14 @@ version catalog style, `di/ServiceLocator` manual DI, dark Material3 theme).
 
 | Desktop | Android | Why different |
 |---|---|---|
-| Recursive fs walk over user-picked folders | `MediaStoreScanner` queries `MediaStore` (video/audio/images) | Scoped storage (Android 10+) means a raw filesystem walk needs `MANAGE_EXTERNAL_STORAGE`, a permission Play Store restricts heavily. MediaStore is the platform-sanctioned way to enumerate device media and needs only the granular `READ_MEDIA_*` permissions. There's no "add a folder" step — the whole device's indexed media is scanned. |
+| Recursive fs walk over user-picked folders | `MediaStoreScanner` (whole device) + `LocalFolderScanner` (SAF-picked folders) | Scoped storage (Android 10+) means a raw filesystem walk needs `MANAGE_EXTERNAL_STORAGE`, a permission Play Store restricts heavily. With no folders added, Library scans the whole device via `MediaStore` (needs only the granular `READ_MEDIA_*` permissions); adding a folder (Storage Access Framework tree picker) scopes the scan to just that tree via `DocumentFile`, same idea as the desktop's folder list. |
 | `smb2` (Node) via readdir + a raw-protocol hack for streaming | `SmbShareBrowser` + `SmbDataSource`, both on **jcifs-ng** | jcifs-ng is a mature, pure-Kotlin/Java-compatible SMB2/3 client with real `length()`/`lastModified()` and true random-access reads (`SmbRandomAccessFile`) — no need to reach into protocol internals the way the Node package required. |
 | Loopback HTTP relay server + `<video>`/`<audio>` | `SmbDataSource` (a Media3 `DataSource`) + ExoPlayer `PlayerView`, no server | ExoPlayer can pull from a custom in-process `DataSource` directly — ranged/seekable reads against the SMB share with no local server needed at all. |
 | Cheerio | **Jsoup** | Same idea, JVM equivalent: CSS selectors over fetched HTML, `abs:href` resolves relative links exactly like the desktop's URL resolution. |
+| Hidden `BrowserWindow` for JS-rendered sites | Off-screen `WebView` (`HeadlessWebViewFetcher`) | Same idea via the platform's own engine instead of Electron's Chromium — opt-in per site profile, waits for the configured selector to appear before extracting the rendered HTML. |
 | `shell.openExternal` / download + `shell.openPath` | `Intent(ACTION_VIEW)`, `.torrent` downloaded to cache + shared via `FileProvider` | Android's equivalent of "open with the OS default app" is an implicit intent; there's no direct analogue to opening a remote URL in another app for an arbitrary file type, so `.torrent` files are downloaded first (same as desktop) and handed off via a `content://` URI. |
-| electron-store (JSON on disk) | Jetpack **DataStore** (Preferences, JSON-serialized `AppSettings`) | Platform-idiomatic equivalent; same shape (network shares + site profiles), serialized with kotlinx.serialization. |
+| electron-store (JSON on disk) | Jetpack **DataStore** (Preferences, JSON-serialized `AppSettings`) | Platform-idiomatic equivalent; same shape (folders, network shares, site profiles), serialized with kotlinx.serialization. |
+| iTunes Search API artwork fetcher | Same API, Kotlin port (`ArtworkFetcher`) | Identical approach on both platforms — no API key, no scraping. |
 
 Local playback opens with the OS's default app immediately (same as desktop — it's already
 on-disk, no reason to route it through the in-app player). Network playback streams live inside
@@ -33,12 +35,17 @@ app/src/main/java/com/medialibrary/manager/
 ├── di/ServiceLocator.kt     Manual DI, mirrors the Bike app's pattern
 ├── model/Models.kt          MediaItem / NetworkShare / SiteProfile / AppSettings
 ├── data/SettingsRepository.kt   DataStore-backed config
-├── library/MediaStoreScanner.kt Local device scan via ContentResolver
+├── library/
+│   ├── MediaStoreScanner.kt   Whole-device scan via ContentResolver
+│   └── LocalFolderScanner.kt  SAF-picked folder tree scan via DocumentFile
 ├── network/
 │   ├── SmbContextFactory.kt  jcifs-ng CIFSContext/URL building from NetworkShare
 │   ├── SmbShareBrowser.kt    Recursive share listing (real size/mtime from jcifs-ng)
 │   └── SmbDataSource.kt      Media3 DataSource for live streaming playback
-├── search/SiteSearchRepository.kt  Jsoup-based generic scraper
+├── search/
+│   ├── SiteSearchRepository.kt    Jsoup-based generic scraper
+│   └── HeadlessWebViewFetcher.kt  Off-screen WebView fetch for JS-rendered sites (opt-in per profile)
+├── artwork/ArtworkFetcher.kt Title-guessing + iTunes Search API cover/poster lookup
 ├── torrent/TorrentHandoff.kt Intent-based magnet:/.torrent handoff
 └── ui/                       MediaLibraryViewModel + Compose screens/components
 ```

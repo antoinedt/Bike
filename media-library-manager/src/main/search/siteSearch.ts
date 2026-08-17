@@ -1,5 +1,6 @@
 import * as cheerio from "cheerio";
 import type { SearchResultItem, SiteProfile } from "../../shared/types.js";
+import { fetchRenderedHtml } from "./headlessFetch.js";
 
 const USER_AGENT =
   "Mozilla/5.0 (Media Library Manager; +desktop app) media-library-manager/0.1";
@@ -8,12 +9,26 @@ function buildUrl(template: string, query: string): string {
   return template.replace("{query}", encodeURIComponent(query));
 }
 
-async function fetchHtml(url: string): Promise<{ html: string; finalUrl: string }> {
+async function fetchPlainHtml(url: string): Promise<{ html: string; finalUrl: string }> {
   const res = await fetch(url, { headers: { "User-Agent": USER_AGENT } });
   if (!res.ok) {
     throw new Error(`Request to ${url} failed with status ${res.status}`);
   }
   return { html: await res.text(), finalUrl: res.url || url };
+}
+
+/**
+ * Fetches a page either as a plain HTTP request (fast, works for server-rendered sites) or via
+ * a hidden headless browser (slower, but sees JS-rendered content) depending on the profile's
+ * useHeadlessBrowser flag. `readySelector` is only used in the headless path — it's what we
+ * wait for the page to render before scraping.
+ */
+async function fetchHtml(
+  url: string,
+  useHeadlessBrowser: boolean,
+  readySelector: string
+): Promise<{ html: string; finalUrl: string }> {
+  return useHeadlessBrowser ? fetchRenderedHtml(url, readySelector) : fetchPlainHtml(url);
 }
 
 function resolveUrl(maybeRelative: string, baseUrl: string): string {
@@ -32,7 +47,7 @@ function resolveUrl(maybeRelative: string, baseUrl: string): string {
  */
 export async function searchSite(profile: SiteProfile, query: string): Promise<SearchResultItem[]> {
   const searchUrl = buildUrl(profile.searchUrlTemplate, query);
-  const { html, finalUrl } = await fetchHtml(searchUrl);
+  const { html, finalUrl } = await fetchHtml(searchUrl, profile.useHeadlessBrowser, profile.resultItemSelector);
   const $ = cheerio.load(html);
 
   const rows = $(profile.resultItemSelector).toArray();
@@ -54,7 +69,11 @@ export async function searchSite(profile: SiteProfile, query: string): Promise<S
 
     if (profile.detailPageLinkSelector && !downloadUrl.startsWith("magnet:")) {
       try {
-        downloadUrl = await resolveFromDetailPage(downloadUrl, profile.detailPageLinkSelector);
+        downloadUrl = await resolveFromDetailPage(
+          downloadUrl,
+          profile.detailPageLinkSelector,
+          profile.useHeadlessBrowser
+        );
       } catch {
         continue;
       }
@@ -73,8 +92,12 @@ export async function searchSite(profile: SiteProfile, query: string): Promise<S
   return results;
 }
 
-async function resolveFromDetailPage(detailPageUrl: string, selector: string): Promise<string> {
-  const { html, finalUrl } = await fetchHtml(detailPageUrl);
+async function resolveFromDetailPage(
+  detailPageUrl: string,
+  selector: string,
+  useHeadlessBrowser: boolean
+): Promise<string> {
+  const { html, finalUrl } = await fetchHtml(detailPageUrl, useHeadlessBrowser, selector);
   const $ = cheerio.load(html);
   const href = $(selector).first().attr("href");
   if (!href) throw new Error(`No download link found on detail page via selector "${selector}"`);

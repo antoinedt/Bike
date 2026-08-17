@@ -10,7 +10,8 @@ const EMPTY_PROFILE = {
   linkSelector: "",
   sizeSelector: "",
   seedersSelector: "",
-  detailPageLinkSelector: ""
+  detailPageLinkSelector: "",
+  useHeadlessBrowser: false
 };
 
 export default function SettingsPage({
@@ -166,7 +167,7 @@ function ProfilesSection({
   const [form, setForm] = useState({ ...EMPTY_PROFILE });
   const [busy, setBusy] = useState(false);
 
-  function set<K extends keyof typeof form>(key: K, value: string) {
+  function set<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
@@ -198,7 +199,10 @@ function ProfilesSection({
       <ul className="settings-list">
         {settings.siteProfiles.map((p) => (
           <li key={p.id}>
-            <span className="settings-item-label">{p.label}</span>
+            <span className="settings-item-label">
+              {p.label}
+              {p.useHeadlessBrowser && <span className="hint-inline"> · JS-rendered</span>}
+            </span>
             <span className="settings-item-sub">{p.searchUrlTemplate}</span>
             <button className="btn btn-small btn-danger" onClick={() => void remove(p.id)}>
               Remove
@@ -251,6 +255,15 @@ function ProfilesSection({
           onChange={(e) => set("detailPageLinkSelector", e.target.value)}
         />
       </div>
+      <label className="profile-toggle" style={{ marginBottom: 12 }}>
+        <input
+          type="checkbox"
+          checked={form.useHeadlessBrowser}
+          onChange={(e) => set("useHeadlessBrowser", e.target.checked)}
+        />
+        Site renders results with JavaScript (use a hidden browser window to fetch it — slower,
+        but works when "View Page Source" doesn't show the results)
+      </label>
       <button
         className="btn"
         onClick={() => void add()}
