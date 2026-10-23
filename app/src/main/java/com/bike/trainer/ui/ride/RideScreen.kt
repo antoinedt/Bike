@@ -125,6 +125,7 @@ fun RideScreen(
         engine.route.id != null && com.bike.trainer.BuildConfig.HAS_MAPS_KEY
     val stylized = !google3d && chosenScenery != com.bike.trainer.data.Scenery.STREET_VIEW
     val ownScenery = google3d || stylized
+    val photoTexture = remember { ServiceLocator.photoTexture }
     // Prefetched Street View frames for this route, if a valid cache exists.
     val svManifest = remember(engine.route.id) {
         com.bike.trainer.route.StreetViewCache.loadFor(context, engine.route)
@@ -233,6 +234,7 @@ fun RideScreen(
                     speedKmh = state.speedKmh,
                     chase = !streetLevel,
                     modifier = Modifier.fillMaxSize(),
+                    photos = svManifest.takeIf { photoTexture },
                 )
             } else if (googleStreet && svManifest != null) {
                 // Prefetched frames: smooth, offline, no live panorama reloads.

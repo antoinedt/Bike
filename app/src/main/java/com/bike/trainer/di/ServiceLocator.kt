@@ -42,6 +42,10 @@ object ServiceLocator {
     @Volatile
     var scenery: String = com.bike.trainer.data.Scenery.STREET_VIEW
 
+    /** Stylized ride: project prefetched Street View photos onto the 3D model. */
+    @Volatile
+    var photoTexture: Boolean = true
+
     /** Best in-ride screenshot (auto or manual), shown on the recap screen. */
     @Volatile
     var capturedRideImage: android.graphics.Bitmap? = null

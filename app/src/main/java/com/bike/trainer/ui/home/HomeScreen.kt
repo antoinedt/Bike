@@ -75,6 +75,7 @@ import com.bike.trainer.route.Route
 import com.bike.trainer.route.RouteGenerator
 import com.bike.trainer.route.RouteLibrary
 import com.bike.trainer.route.StreetViewCache
+import com.bike.trainer.route.StreetViewManifest
 import com.bike.trainer.route.StreetViewPrefetcher
 import com.bike.trainer.route.TerrainTiles
 import com.bike.trainer.session.RideEngine
@@ -111,6 +112,7 @@ fun HomeScreen(
 
     val startRide: (Route, Double, Boolean) -> Unit = { route, startMeters, ignoreHills ->
         ServiceLocator.scenery = scenery
+        ServiceLocator.photoTexture = appConfig?.photoTexture ?: true
         ServiceLocator.activeRide = RideEngine(
             route = route,
             trainer = trainer,
@@ -145,6 +147,8 @@ fun HomeScreen(
     // Selected GPX parsed, and how many of its terrain tiles are still missing.
     var selectedRoute by remember { mutableStateOf<Route?>(null) }
     var missingTiles by remember { mutableStateOf<Int?>(null) }
+    // Prefetched Street View frames of the selected GPX (for photo-textured Stylized).
+    var svFrames by remember { mutableStateOf<StreetViewManifest?>(null) }
     var startKm by remember { mutableStateOf("") }
     var ignoreHills by remember { mutableStateOf(false) }
     var workoutMenuExpanded by remember { mutableStateOf(false) }
@@ -156,6 +160,7 @@ fun HomeScreen(
         selectedStats = null
         selectedRoute = null
         missingTiles = null
+        svFrames = null
         val file = selectedGpx
         if (file != null && !randomSelected) {
             val route = withContext(Dispatchers.IO) {
@@ -166,7 +171,10 @@ fun HomeScreen(
             if (route != null && file == selectedGpx) {
                 selectedStats = route.totalDistance / 1000.0 to route.totalAscent
                 selectedRoute = route
-                missingTiles = withContext(Dispatchers.IO) { TerrainTiles.missing(context, route).let { it.first + it.second } }
+                val frames = withContext(Dispatchers.IO) { StreetViewCache.loadFor(context, route) }
+                svFrames = frames
+                missingTiles = withContext(Dispatchers.IO) { TerrainTiles.missing(context, route).let { it.first + it.second } } +
+                    (frames?.unlocatedCount ?: 0)
             }
         }
     }
@@ -341,6 +349,25 @@ fun HomeScreen(
                         Icon(Icons.Filled.Terrain, contentDescription = null)
                         Text(if (missing == 0) "  Stylized ✓ (works offline)" else "  Stylize…")
                     }
+                    val frames = svFrames
+                    val photosOn = appConfig?.photoTexture ?: true
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.clickable(enabled = frames != null) {
+                            scope.launch { ServiceLocator.appConfigRepository.setPhotoTexture(!photosOn) }
+                        },
+                    ) {
+                        Checkbox(
+                            checked = frames != null && photosOn,
+                            enabled = frames != null,
+                            onCheckedChange = { on -> scope.launch { ServiceLocator.appConfigRepository.setPhotoTexture(on) } },
+                        )
+                        Text(
+                            if (frames != null) "Use my Street View photos (${frames.imageCount})"
+                            else "Use Street View photos — prefetch them first",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
                 }
             }
         }
@@ -429,7 +456,7 @@ fun HomeScreen(
         PrefetchDialog(file = file, onDismiss = { prefetchFor = null })
     }
     stylizeFor?.let { route ->
-        StylizeDialog(route = route, onDismiss = { remaining ->
+        StylizeDialog(route = route, frames = svFrames, onDismiss = { remaining ->
             if (selectedRoute === route) missingTiles = remaining
             stylizeFor = null
         })
@@ -438,12 +465,14 @@ fun HomeScreen(
 
 /** Downloads the terrain tiles a route's stylized 3D scenery needs, for offline rides. */
 @Composable
-private fun StylizeDialog(route: Route, onDismiss: (remaining: Int?) -> Unit) {
+private fun StylizeDialog(route: Route, frames: StreetViewManifest?, onDismiss: (remaining: Int?) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var total by remember { mutableStateOf<Int?>(null) }
     var missingPair by remember { mutableStateOf<Pair<Int, Int>?>(null) }
-    val missing = missingPair?.let { it.first + it.second }
+    // Street View frames whose real camera position still needs a (free) lookup.
+    var unlocated by remember { mutableStateOf(frames?.unlocatedCount ?: 0) }
+    val missing = missingPair?.let { it.first + it.second + unlocated }
     var running by remember { mutableStateOf(false) }
     var progress by remember { mutableStateOf<TerrainTiles.Progress?>(null) }
     var status by remember { mutableStateOf<String?>(null) }
@@ -464,9 +493,10 @@ private fun StylizeDialog(route: Route, onDismiss: (remaining: Int?) -> Unit) {
         text = {
             Column {
                 Text(
-                    "Builds a low-poly 3D world of ${route.name} from real terrain and " +
-                        "OpenStreetMap (buildings, streets, parks, forests, water). Downloads " +
-                        "the map data once (free, no key) so the ride works offline.",
+                    "Builds a 3D model of ${route.name} from real terrain and OpenStreetMap " +
+                        "(buildings, streets, parks, forests, water) — your prefetched Street View " +
+                        "photos are then projected onto it. Downloads the map data once (free, " +
+                        "no key) so the ride works offline.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Spacer(Modifier.height(10.dp))
@@ -481,12 +511,22 @@ private fun StylizeDialog(route: Route, onDismiss: (remaining: Int?) -> Unit) {
                         color = MaterialTheme.colorScheme.primary,
                     )
                 } else {
-                    val mb = TerrainTiles.estimateBytes(missingPair!!) / 1_000_000.0
-                    Text(
-                        "$m of $t tiles to download (≈${String.format(java.util.Locale.US, "%.0f", mb.coerceAtLeast(1.0))} MB)",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    val tiles = missingPair!!.first + missingPair!!.second
+                    if (tiles > 0) {
+                        val mb = TerrainTiles.estimateBytes(missingPair!!) / 1_000_000.0
+                        Text(
+                            "$tiles of $t tiles to download (≈${String.format(java.util.Locale.US, "%.0f", mb.coerceAtLeast(1.0))} MB)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (unlocated > 0) {
+                        Text(
+                            "$unlocated Street View photos to align with the 3D model (free lookups)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
                 val p = progress
                 if (p != null && running) {
@@ -495,7 +535,7 @@ private fun StylizeDialog(route: Route, onDismiss: (remaining: Int?) -> Unit) {
                         progress = { if (p.total > 0) p.done.toFloat() / p.total else 0f },
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    Text("Downloading ${p.done}/${p.total}", style = MaterialTheme.typography.bodySmall)
+                    Text("Working ${p.done}/${p.total}", style = MaterialTheme.typography.bodySmall)
                 }
                 status?.let {
                     Spacer(Modifier.height(8.dp))
@@ -511,6 +551,11 @@ private fun StylizeDialog(route: Route, onDismiss: (remaining: Int?) -> Unit) {
                     status = null
                     job = scope.launch {
                         val failed = TerrainTiles.stylize(context, route) { progress = it }
+                        if (unlocated > 0 && com.bike.trainer.BuildConfig.HAS_MAPS_KEY) {
+                            unlocated = StreetViewPrefetcher.locate(
+                                context, route, com.bike.trainer.BuildConfig.MAPS_API_KEY,
+                            ) { done, total -> progress = TerrainTiles.Progress(done, total, 0) }
+                        }
                         running = false
                         refresh()
                         status = if (failed == 0) "Done — this route now rides offline"

@@ -4,6 +4,8 @@ import android.content.Context
 import android.util.Base64
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
+import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -79,19 +81,23 @@ object StreetViewPrefetcher {
 
                 val nearby = reusable.minByOrNull { abs(it.distance - dist) }
                     ?.takeIf { abs(it.distance - dist) <= reuseRadius }
+                var camLat: Double? = null
+                var camLon: Double? = null
                 val fileName: String? = if (nearby?.file != null) {
                     referenced.add(nearby.file + DEPTH_EXT) // keep any existing depth
+                    camLat = nearby.lat; camLon = nearby.lon
                     nearby.file
                 } else {
-                    val pano = panoIdAt(p.lat, p.lon, apiKey)
+                    val pano = panoAt(p.lat, p.lon, apiKey)
                     if (pano == null) {
                         null
                     } else {
+                        camLat = pano.lat; camLon = pano.lon
                         val dest = freshFile(dir)
                         if (downloadImage(p.lat, p.lon, headingDeg, apiKey, dest)) {
                             // Probe Street View depth (undocumented endpoint) and stash it
                             // beside the frame for the depth-reprojection renderer.
-                            val depth = fetchDepth(pano)
+                            val depth = fetchDepth(pano.id)
                             if (depth != null) {
                                 File(dir, dest.name + DEPTH_EXT).writeBytes(depth)
                                 referenced.add(dest.name + DEPTH_EXT)
@@ -107,7 +113,10 @@ object StreetViewPrefetcher {
                     withImage++
                     referenced.add(fileName)
                 }
-                samples.add(StreetViewSample(distance = dist, file = fileName))
+                samples.add(
+                    if (fileName != null) StreetViewSample(dist, fileName, camLat, camLon)
+                    else StreetViewSample(dist, null)
+                )
                 onProgress(Progress(done = i + 1, total = n, withImage = withImage))
             }
         } catch (e: Exception) {
@@ -143,17 +152,53 @@ object StreetViewPrefetcher {
         }
     }
 
-    /** Pano id at a point when Street View covers it (free metadata endpoint), else null. */
-    private fun panoIdAt(lat: Double, lon: Double, key: String): String? = runCatching {
+    private class Pano(val id: String, val lat: Double?, val lon: Double?)
+
+    /** Panorama at a point when Street View covers it (free metadata endpoint), else null. */
+    private fun panoAt(lat: Double, lon: Double, key: String): Pano? = runCatching {
         val url = "https://maps.googleapis.com/maps/api/streetview/metadata" +
             "?location=$lat,$lon&source=outdoor&key=$key"
         client.newCall(Request.Builder().url(url).build()).execute().use { resp ->
             val body = resp.body?.string() ?: return null
             val json = JSONObject(body)
             if (json.optString("status") != "OK") return null
-            json.optString("pano_id").ifBlank { null }
+            val id = json.optString("pano_id").ifBlank { return null }
+            val loc = json.optJSONObject("location")
+            Pano(id, loc?.optDouble("lat")?.takeIf { !it.isNaN() }, loc?.optDouble("lng")?.takeIf { !it.isNaN() })
         }
     }.getOrNull()
+
+    /**
+     * Look up where each cached frame was really taken (free metadata calls) for
+     * caches made before positions were stored, so photos line up with the 3D
+     * scenery. Returns how many frames are still unlocated.
+     */
+    suspend fun locate(
+        context: Context,
+        route: Route,
+        apiKey: String,
+        onProgress: (done: Int, total: Int) -> Unit,
+    ): Int = withContext(Dispatchers.IO) {
+        val manifest = StreetViewCache.loadFor(context, route) ?: return@withContext 0
+        val todo = manifest.samples.indices.filter { manifest.samples[it].file != null && manifest.samples[it].lat == null }
+        if (todo.isEmpty() || apiKey.isBlank()) return@withContext todo.size
+        val samples = manifest.samples.toMutableList()
+        var done = 0
+        for (i in todo) {
+            if (!coroutineContext.isActive) break
+            val s = samples[i]
+            val p = route.pointAt(s.distance)
+            panoAt(p.lat, p.lon, apiKey)?.let { pano ->
+                if (pano.lat != null && pano.lon != null) samples[i] = s.copy(lat = pano.lat, lon = pano.lon)
+            }
+            done++
+            withContext(Dispatchers.Main) { onProgress(done, todo.size) }
+            // Save as we go so a cancelled run keeps its progress.
+            if (done % 50 == 0) StreetViewCache.save(context, manifest.copy(samples = samples))
+        }
+        StreetViewCache.save(context, manifest.copy(samples = samples))
+        samples.count { it.file != null && it.lat == null }
+    }
 
     /**
      * Best-effort fetch of a panorama's depth map from Google's *undocumented*

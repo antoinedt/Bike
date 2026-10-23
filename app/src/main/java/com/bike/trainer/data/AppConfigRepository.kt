@@ -39,6 +39,8 @@ data class AppConfig(
     val gearDownField: Int = 2,
     /** Ride scenery: [Scenery.STREET_VIEW], [Scenery.GOOGLE_3D] or [Scenery.STYLIZED]. */
     val scenery: String = Scenery.STREET_VIEW,
+    /** Stylized: project the route's prefetched Street View photos onto the 3D model. */
+    val photoTexture: Boolean = true,
 ) {
     val mapConfigured: Boolean get() = mapTilesKey.isNotBlank()
 }
@@ -67,6 +69,7 @@ class AppConfigRepository(private val dataStore: DataStore<Preferences>) {
             gearDownField = prefs[GEAR_DOWN_FIELD] ?: 2,
             scenery = prefs[SCENERY]
                 ?: if (prefs[STYLIZED_SCENERY] == true) Scenery.STYLIZED else Scenery.STREET_VIEW,
+            photoTexture = prefs[PHOTO_TEXTURE] ?: true,
         )
     }
 
@@ -104,6 +107,10 @@ class AppConfigRepository(private val dataStore: DataStore<Preferences>) {
         dataStore.edit { it[SHOW_CAPTURE] = show }
     }
 
+    suspend fun setPhotoTexture(on: Boolean) {
+        dataStore.edit { it[PHOTO_TEXTURE] = on }
+    }
+
     suspend fun setScenery(scenery: String) {
         dataStore.edit { it[SCENERY] = scenery }
     }
@@ -130,6 +137,7 @@ class AppConfigRepository(private val dataStore: DataStore<Preferences>) {
         val SHOW_CAPTURE = booleanPreferencesKey("cfg_show_capture")
         val STYLIZED_SCENERY = booleanPreferencesKey("cfg_stylized_scenery")
         val SCENERY = stringPreferencesKey("cfg_scenery")
+        val PHOTO_TEXTURE = booleanPreferencesKey("cfg_photo_texture")
         val WORKOUT_TOLERANCE = floatPreferencesKey("cfg_workout_tolerance")
         val GEAR_UP_FIELD = intPreferencesKey("cfg_gear_up_field")
         val GEAR_DOWN_FIELD = intPreferencesKey("cfg_gear_down_field")

@@ -11,6 +11,9 @@ import kotlin.math.abs
 data class StreetViewSample(
     val distance: Double,
     val file: String?,
+    /** Where Google actually took the photo (the snapped panorama); null on older caches. */
+    val lat: Double? = null,
+    val lon: Double? = null,
 )
 
 /** Manifest describing a route's prefetched Street View frames. */
@@ -24,6 +27,9 @@ data class StreetViewManifest(
     val routeFingerprint: String = "",
 ) {
     val imageCount: Int get() = samples.count { it.file != null }
+
+    /** Frames whose real camera position hasn't been looked up yet. */
+    val unlocatedCount: Int get() = samples.count { it.file != null && it.lat == null }
 }
 
 /**

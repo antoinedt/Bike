@@ -522,6 +522,8 @@ class FloatList(initial: Int) {
 
     fun toArray(): FloatArray = data.copyOf(size)
 
+    fun clear() { size = 0 }
+
     companion object {
         const val STRIDE = 7
     }
