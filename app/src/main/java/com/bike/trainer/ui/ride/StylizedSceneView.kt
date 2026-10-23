@@ -3,19 +3,29 @@ package com.bike.trainer.ui.ride
 import android.content.Context
 import android.opengl.GLES20
 import android.opengl.GLSurfaceView
+import android.opengl.GLUtils
 import android.opengl.Matrix
 import android.os.SystemClock
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.bike.trainer.di.ServiceLocator
+import com.bike.trainer.route.OsmTiles
 import com.bike.trainer.route.Route
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -27,9 +37,10 @@ import javax.microedition.khronos.opengles.GL10
 import kotlin.math.abs
 
 /**
- * The "Stylized" scenery: a low-poly 3D world generated from the route itself —
- * real terrain relief from cached DEM tiles (see TerrainTiles / "Stylize"), the
- * road draped over it, roadside forest and a soft sky with distance fog. Rendered
+ * The "Stylized" scenery: a low-poly 3D model of the real place — terrain relief
+ * from DEM tiles, the ground painted with OpenStreetMap land use / water / streets,
+ * extruded OSM buildings and trees where the map has woods and parks (see
+ * TerrainTiles / OsmTiles / "Stylize"), with the route as the road you ride. Rendered
  * continuously and extrapolated between engine ticks so motion stays smooth.
  *
  * @param chase true = camera behind and above the rider, false = rider's-eye view.
@@ -76,11 +87,26 @@ fun StylizedSceneView(
         }
     }
 
-    AndroidView(modifier = modifier, factory = { view })
+    Box(modifier) {
+        AndroidView(modifier = Modifier.fillMaxSize(), factory = { view })
+        // Required attribution for the OpenStreetMap / OpenMapTiles data.
+        if (route.id != null) {
+            Text(
+                OsmTiles.ATTRIBUTION,
+                fontSize = 8.sp,
+                color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.85f),
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.35f))
+                    .padding(horizontal = 4.dp, vertical = 1.dp),
+            )
+        }
+    }
 }
 
 private class StylizedRenderer(context: Context, private val route: Route) : GLSurfaceView.Renderer {
     private val field = HeightField(context, route, allowNetwork = true)
+    private val osm = OsmSource(context, route, allowNetwork = true)
     private val builder = Executors.newSingleThreadExecutor { r -> Thread(r, "stylized-world").apply { isDaemon = true } }
     private val building = AtomicBoolean(false)
     private val pending = AtomicReference<WorldMesh?>(null)
@@ -99,8 +125,11 @@ private class StylizedRenderer(context: Context, private val route: Route) : GLS
     private var lastFrame = 0L
     private var eyeY = Double.NaN
     private var camChase = 0.0
-    private val buffers = IntArray(4)
-    private val counts = IntArray(4)
+    private val buffers = IntArray(MESHES)
+    private val counts = IntArray(MESHES)
+    private var groundTex = 0
+    private var hasGround = false
+    private var shownBitmap: android.graphics.Bitmap? = null
     private var uploaded = false
     private var program = 0
     private var skyProgram = 0
@@ -125,7 +154,10 @@ private class StylizedRenderer(context: Context, private val route: Route) : GLS
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
         program = link(VERTEX, FRAGMENT)
         skyProgram = link(SKY_VERTEX, SKY_FRAGMENT)
-        GLES20.glGenBuffers(4, buffers, 0)
+        GLES20.glGenBuffers(MESHES, buffers, 0)
+        val t = IntArray(1)
+        GLES20.glGenTextures(1, t, 0)
+        groundTex = t[0]
         uploaded = false
     }
 
@@ -194,9 +226,19 @@ private class StylizedRenderer(context: Context, private val route: Route) : GLS
         GLES20.glUniform3f(GLES20.glGetUniformLocation(program, "uEye"), p.x.toFloat(), eyeY.toFloat(), (-p.y).toFloat())
         GLES20.glUniform3f(GLES20.glGetUniformLocation(program, "uFog"), HORIZON[0], HORIZON[1], HORIZON[2])
         GLES20.glUniform2f(GLES20.glGetUniformLocation(program, "uFogRange"), 900f, 2900f)
+        GLES20.glUniform3f(
+            GLES20.glGetUniformLocation(program, "uTexRect"),
+            w.originX.toFloat(), w.originY.toFloat(), w.size.toFloat(),
+        )
+        GLES20.glUniform1i(GLES20.glGetUniformLocation(program, "uTex"), 0)
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, groundTex)
 
-        drawMesh(0) // terrain
+        GLES20.glUniform1f(GLES20.glGetUniformLocation(program, "uUseTex"), if (hasGround) 1f else 0f)
+        drawMesh(0) // terrain (painted with the real land use)
+        GLES20.glUniform1f(GLES20.glGetUniformLocation(program, "uUseTex"), 0f)
         drawMesh(1) // trees
+        drawMesh(4) // buildings
         GLES20.glEnable(GLES20.GL_POLYGON_OFFSET_FILL)
         GLES20.glPolygonOffset(-1f, -2f)
         drawMesh(2) // road
@@ -217,7 +259,7 @@ private class StylizedRenderer(context: Context, private val route: Route) : GLS
         runCatching {
             builder.execute {
                 try {
-                    val mesh = WorldBuilder.build(field, route, (rider + 1100.0).coerceAtMost(route.totalDistance), rider)
+                    val mesh = WorldBuilder.build(field, osm, route, (rider + 1100.0).coerceAtMost(route.totalDistance), rider)
                     if (!released) pending.set(mesh)
                 } catch (_: Throwable) {
                     // Leave the previous window up; next frame will retry.
@@ -230,10 +272,10 @@ private class StylizedRenderer(context: Context, private val route: Route) : GLS
     }
 
     private fun upload(w: WorldMesh) {
-        val arrays = arrayOf(w.terrain, w.trees, w.road, w.markings)
-        for (i in 0..3) {
+        val arrays = arrayOf(w.terrain, w.trees, w.road, w.markings, w.buildings)
+        for (i in 0 until MESHES) {
             val a = arrays[i]
-            counts[i] = a.size / 6
+            counts[i] = a.size / FloatList.STRIDE
             GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, buffers[i])
             if (a.isEmpty()) continue
             val fb = ByteBuffer.allocateDirect(a.size * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
@@ -241,6 +283,23 @@ private class StylizedRenderer(context: Context, private val route: Route) : GLS
             GLES20.glBufferData(GLES20.GL_ARRAY_BUFFER, a.size * 4, fb, GLES20.GL_STATIC_DRAW)
         }
         GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, 0)
+
+        // Ground texture (land use / water / streets), mipmapped for distance.
+        val bmp = w.ground
+        hasGround = bmp != null && !bmp.isRecycled
+        if (hasGround) {
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, groundTex)
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR_MIPMAP_LINEAR)
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
+            GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bmp!!, 0)
+            GLES20.glGenerateMipmap(GLES20.GL_TEXTURE_2D)
+        }
+        // The previous window's bitmap is no longer needed; keep the current one in
+        // case the GL context is lost and it has to be uploaded again.
+        if (shownBitmap !== bmp) shownBitmap?.recycle()
+        shownBitmap = bmp
         uploaded = true
     }
 
@@ -248,12 +307,21 @@ private class StylizedRenderer(context: Context, private val route: Route) : GLS
         if (counts[i] == 0) return
         val aPos = GLES20.glGetAttribLocation(program, "aPos")
         val aCol = GLES20.glGetAttribLocation(program, "aCol")
+        val aShade = GLES20.glGetAttribLocation(program, "aShade")
+        val stride = FloatList.STRIDE * 4
         GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, buffers[i])
         GLES20.glEnableVertexAttribArray(aPos)
-        GLES20.glVertexAttribPointer(aPos, 3, GLES20.GL_FLOAT, false, 24, 0)
+        GLES20.glVertexAttribPointer(aPos, 3, GLES20.GL_FLOAT, false, stride, 0)
         GLES20.glEnableVertexAttribArray(aCol)
-        GLES20.glVertexAttribPointer(aCol, 3, GLES20.GL_FLOAT, false, 24, 12)
+        GLES20.glVertexAttribPointer(aCol, 3, GLES20.GL_FLOAT, false, stride, 12)
+        if (aShade >= 0) {
+            GLES20.glEnableVertexAttribArray(aShade)
+            GLES20.glVertexAttribPointer(aShade, 1, GLES20.GL_FLOAT, false, stride, 24)
+        }
         GLES20.glDrawArrays(GLES20.GL_TRIANGLES, 0, counts[i])
+        GLES20.glDisableVertexAttribArray(aPos)
+        GLES20.glDisableVertexAttribArray(aCol)
+        if (aShade >= 0) GLES20.glDisableVertexAttribArray(aShade)
         GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, 0)
     }
 
@@ -271,6 +339,8 @@ private class StylizedRenderer(context: Context, private val route: Route) : GLS
         GLES20.glEnableVertexAttribArray(aCol)
         GLES20.glVertexAttribPointer(aCol, 3, GLES20.GL_FLOAT, false, 20, skyQuad)
         GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
+        GLES20.glDisableVertexAttribArray(aPos)
+        GLES20.glDisableVertexAttribArray(aCol)
     }
 
     private fun link(vs: String, fs: String): Int {
@@ -288,6 +358,7 @@ private class StylizedRenderer(context: Context, private val route: Route) : GLS
     }
 
     companion object {
+        private const val MESHES = 5
         private val HORIZON = floatArrayOf(0.80f, 0.88f, 0.94f)
         private val ZENITH = floatArrayOf(0.30f, 0.55f, 0.85f)
 
@@ -302,25 +373,45 @@ private class StylizedRenderer(context: Context, private val route: Route) : GLS
         private const val VERTEX = """
             uniform mat4 uMvp;
             uniform vec3 uEye;
+            uniform vec3 uTexRect;
             attribute vec3 aPos;
             attribute vec3 aCol;
+            attribute float aShade;
             varying vec3 vCol;
             varying float vDist;
+            varying float vShade;
+            varying vec2 vUv;
             void main() {
                 vCol = aCol;
+                vShade = aShade;
                 vDist = distance(aPos, uEye);
+                vUv = vec2((aPos.x - uTexRect.x) / uTexRect.z, (-aPos.z - uTexRect.y) / uTexRect.z);
                 gl_Position = uMvp * vec4(aPos, 1.0);
             }
         """
         private const val FRAGMENT = """
+            #ifdef GL_FRAGMENT_PRECISION_HIGH
+            precision highp float;
+            #else
             precision mediump float;
+            #endif
             uniform vec3 uFog;
             uniform vec2 uFogRange;
+            uniform sampler2D uTex;
+            uniform float uUseTex;
             varying vec3 vCol;
             varying float vDist;
+            varying float vShade;
+            varying vec2 vUv;
             void main() {
+                vec3 c = vCol;
+                if (uUseTex > 0.5) {
+                    // Premultiplied texel: real land use where mapped, terrain colour elsewhere.
+                    vec4 t = texture2D(uTex, vUv);
+                    c = vCol * (1.0 - t.a) + t.rgb * vShade;
+                }
                 float f = clamp((vDist - uFogRange.x) / (uFogRange.y - uFogRange.x), 0.0, 1.0);
-                gl_FragColor = vec4(mix(vCol, uFog, f), 1.0);
+                gl_FragColor = vec4(mix(c, uFog, f), 1.0);
             }
         """
         private const val SKY_VERTEX = """

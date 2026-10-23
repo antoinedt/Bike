@@ -95,15 +95,29 @@ object TerrainTiles {
 
     data class Progress(val done: Int, val total: Int, val failed: Int)
 
-    /** Download all missing corridor tiles for [route]; returns the failure count. */
+    /** What "Stylize" still has to download for [route]: (terrain tiles, map tiles). */
+    fun missing(context: Context, route: Route): Pair<Int, Int> =
+        missingTiles(context, route).size to OsmTiles.missingTiles(context, route).size
+
+    fun totalTiles(route: Route): Int = corridorTiles(route).size + OsmTiles.corridorTiles(route).size
+
+    fun estimateBytes(missing: Pair<Int, Int>): Long =
+        missing.first * APPROX_TILE_BYTES + missing.second * OsmTiles.APPROX_TILE_BYTES
+
+    /**
+     * Download every missing terrain + OpenStreetMap tile along [route] so the
+     * stylized scenery rides offline; returns the failure count.
+     */
     suspend fun stylize(context: Context, route: Route, onProgress: (Progress) -> Unit): Int =
         withContext(Dispatchers.IO) {
-            val todo = missingTiles(context, route)
+            val jobs: List<() -> Boolean> =
+                missingTiles(context, route).map { (x, y) -> { fetch(context, x, y) } } +
+                    OsmTiles.missingTiles(context, route).map { (x, y) -> { OsmTiles.fetch(context, x, y) } }
             var failed = 0
-            todo.forEachIndexed { i, (x, y) ->
+            jobs.forEachIndexed { i, job ->
                 coroutineContext.ensureActive()
-                if (!fetch(context, x, y)) failed++
-                withContext(Dispatchers.Main) { onProgress(Progress(i + 1, todo.size, failed)) }
+                if (!job()) failed++
+                withContext(Dispatchers.Main) { onProgress(Progress(i + 1, jobs.size, failed)) }
             }
             failed
         }

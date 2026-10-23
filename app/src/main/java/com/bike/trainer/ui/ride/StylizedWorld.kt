@@ -1,6 +1,7 @@
 package com.bike.trainer.ui.ride
 
 import android.content.Context
+import com.bike.trainer.route.LocalProjection
 import com.bike.trainer.route.Route
 import com.bike.trainer.route.TerrainTiles
 import kotlin.math.PI
@@ -25,10 +26,7 @@ class HeightField(
     private val allowNetwork: Boolean,
 ) {
     private val useDem = route.id != null && route.points.isNotEmpty()
-    private val lat0 = route.points.firstOrNull()?.lat ?: 0.0
-    private val lon0 = route.points.firstOrNull()?.lon ?: 0.0
-    private val mPerDegLat = EARTH_RADIUS * PI / 180.0
-    private val mPerDegLon = mPerDegLat * cos(Math.toRadians(lat0)).coerceAtLeast(0.01)
+    private val proj = LocalProjection(route)
 
     private val tiles = HashMap<Long, FloatArray?>()
 
@@ -54,8 +52,8 @@ class HeightField(
     }
 
     private fun dem(x: Double, y: Double): Double? {
-        val lat = lat0 + y / mPerDegLat
-        val lon = lon0 + x / mPerDegLon
+        val lat = proj.lat(y)
+        val lon = proj.lon(x)
         val gx = TerrainTiles.tileX(lon) * 256.0 - 0.5
         val gy = TerrainTiles.tileY(lat) * 256.0 - 0.5
         val ix = floor(gx).toInt()
@@ -113,7 +111,6 @@ class HeightField(
     private fun bucket(v: Double) = floor(v / BUCKET).toInt()
 
     companion object {
-        private const val EARTH_RADIUS = 6_371_000.0
         private const val BUCKET = 200.0
         fun key(a: Int, b: Int): Long = (a.toLong() shl 32) or (b.toLong() and 0xFFFFFFFFL)
     }
@@ -146,19 +143,25 @@ internal fun valueNoise(x: Double, y: Double): Double {
 
 /**
  * One window of low-poly world around the rider, as interleaved
- * [x, y, z, r, g, b] float triangles in GL space (X = east, Y = up, Z = -north).
- * Keeps its height grid so the camera can sit exactly on the rendered surface.
+ * [x, y, z, r, g, b, shade] float triangles in GL space (X = east, Y = up,
+ * Z = -north). Terrain also gets [ground]: a texture of the real land use / water /
+ * streets, covering [originX]..+[size] east and [originY]..+[size] north. Keeps its
+ * height grid so the camera can sit exactly on the rendered surface.
  */
 class WorldMesh(
     val terrain: FloatArray,
     val trees: FloatArray,
     val road: FloatArray,
     val markings: FloatArray,
-    private val originX: Double,
-    private val originY: Double,
+    val buildings: FloatArray,
+    val ground: android.graphics.Bitmap?,
+    val originX: Double,
+    val originY: Double,
     private val n: Int,
     private val heights: DoubleArray,
 ) {
+    val size: Double get() = n * SPACING
+
     /** Height of the rendered terrain surface (same triangulation), or null outside. */
     fun heightAt(x: Double, y: Double): Double? {
         val fx = (x - originX) / SPACING
@@ -182,12 +185,17 @@ class WorldMesh(
     }
 }
 
-/** Builds [WorldMesh] windows: terrain, road ribbon + markings, roadside trees. */
+/**
+ * Builds [WorldMesh] windows: terrain painted with the real OpenStreetMap land
+ * use, the route as a road, extruded buildings and trees where the map has them.
+ */
 object WorldBuilder {
     private const val ROAD_HALF_WIDTH = 3.5
     private const val ROAD_LIFT = 0.3
     private const val ROAD_STEP = 4.0
     private const val TREE_BAND = 450.0
+    private const val BUILDING_BAND = 500.0
+    private const val MAX_BUILDINGS = 12_000
     private const val TREE_CLEARANCE = 9.0
     private const val TREELINE = 2050.0
 
@@ -197,7 +205,7 @@ object WorldBuilder {
         for (i in 0..2) l[i] /= m
     }
 
-    fun build(field: HeightField, route: Route, centerDist: Double, riderDist: Double): WorldMesh {
+    fun build(field: HeightField, osm: OsmSource, route: Route, centerDist: Double, riderDist: Double): WorldMesh {
         val s = WorldMesh.SPACING
         val n = WorldMesh.CELLS
         val c = route.pointAt(centerDist)
@@ -208,7 +216,13 @@ object WorldBuilder {
         for (j in 0..n) for (i in 0..n) {
             heights[j * (n + 1) + i] = field.height(ox + i * s, oy + j * s)
         }
-        val shell = WorldMesh(FloatArray(0), FloatArray(0), FloatArray(0), FloatArray(0), ox, oy, n, heights)
+        val shell = WorldMesh(
+            FloatArray(0), FloatArray(0), FloatArray(0), FloatArray(0), FloatArray(0), null, ox, oy, n, heights,
+        )
+
+        // ---- Real map data for this window ----
+        val win = osm.window(ox, oy, ox + n * s, oy + n * s)
+        val painter = if (win.loadedAreas.isNotEmpty()) GroundPainter(ox, oy, n * s).also { it.paint(win) } else null
 
         // ---- Road samples inside the window ----
         // Snapped so the dashed centre line doesn't shift between windows.
@@ -227,7 +241,7 @@ object WorldBuilder {
             roadBuckets.getOrPut(HeightField.key(floor(rx[k] / 20.0).toInt(), floor(ry[k] / 20.0).toInt())) { ArrayList() }.add(k)
         }
 
-        val terrain = FloatList(n * n * 18)
+        val terrain = FloatList(n * n * 42)
         val cellRgb = FloatArray(3)
         for (j in 0 until n) for (i in 0 until n) {
             val x0 = ox + i * s
@@ -243,8 +257,8 @@ object WorldBuilder {
         }
 
         // ---- Road ribbon + markings (heights from the rendered surface) ----
-        val road = FloatList(rx.size * 18)
-        val marks = FloatList(rx.size * 36)
+        val road = FloatList(rx.size * 42)
+        val marks = FloatList(rx.size * 84)
         for (k in 0 until rx.size - 1) {
             val ax = rx[k]; val ay = ry[k]; val bx = rx[k + 1]; val by = ry[k + 1]
             val dx = bx - ax; val dy = by - ay
@@ -261,42 +275,103 @@ object WorldBuilder {
             }
         }
 
-        // ---- Trees: a band along the road, kept clear of the tarmac ----
-        val near = BooleanArray(n * n)
-        val reach = (TREE_BAND / s).toInt()
-        var k = 0
-        while (k < rx.size) {
-            val ci = floor((rx[k] - ox) / s).toInt()
-            val cj = floor((ry[k] - oy) / s).toInt()
-            for (j in cj - reach..cj + reach) for (i in ci - reach..ci + reach) {
-                if (i in 0 until n && j in 0 until n) near[j * n + i] = true
+        // Cells near the road, for buildings and trees.
+        fun nearMask(radius: Double): BooleanArray {
+            val near = BooleanArray(n * n)
+            val reach = (radius / s).toInt()
+            var k = 0
+            while (k < rx.size) {
+                val ci = floor((rx[k] - ox) / s).toInt()
+                val cj = floor((ry[k] - oy) / s).toInt()
+                for (j in cj - reach..cj + reach) for (i in ci - reach..ci + reach) {
+                    if (i in 0 until n && j in 0 until n) near[j * n + i] = true
+                }
+                k += 10
             }
-            k += 10
+            return near
         }
-        val trees = FloatList(60_000)
+        fun cellOf(mask: BooleanArray, x: Double, y: Double): Boolean {
+            val i = floor((x - ox) / s).toInt()
+            val j = floor((y - oy) / s).toInt()
+            return i in 0 until n && j in 0 until n && mask[j * n + i]
+        }
+
+        // ---- Buildings: real OSM footprints and heights, near the road ----
+        val buildings = FloatList(200_000)
+        val nearBuildings = nearMask(BUILDING_BAND)
+        var placed = 0
+        for (f in win.features) {
+            if (placed >= MAX_BUILDINGS) break
+            if (f.layer != "building") continue
+            val cx = (f.minX + f.maxX) / 2; val cy = (f.minY + f.maxY) / 2
+            if (!cellOf(nearBuildings, cx, cy)) continue
+            // Never let the road run through a building (GPS tracks can drift).
+            if (routeInside(f, rx, ry, roadBuckets)) continue
+            val seed = (floor(cx).toInt() * 73856093) xor (floor(cy).toInt() * 19349663)
+            if (BuildingMesher.add(buildings, f, { x, y -> shell.heightAt(x, y) }, light, seed)) placed++
+        }
+
+        // ---- Trees: where the map has woods / parks (or roadside forest without data) ----
+        val nearTrees = nearMask(TREE_BAND)
+        val trees = FloatList(120_000)
         for (j in 0 until n) for (i in 0 until n) {
-            if (!near[j * n + i]) continue
+            if (!nearTrees[j * n + i]) continue
             val wi = floor(ox / s).toInt() + i
             val wj = floor(oy / s).toInt() + j
-            for (t in 0..1) {
+            for (t in 0..3) {
                 val tx = ox + (i + hash01(wi, wj, 11 + t)) * s
                 val ty = oy + (j + hash01(wi, wj, 23 + t)) * s
                 val h = shell.heightAt(tx, ty) ?: continue
                 if (h > TREELINE) continue
-                // Slope from the neighbouring surface.
                 val hx = shell.heightAt(tx + 4, ty) ?: h
                 val hy = shell.heightAt(tx, ty + 4) ?: h
                 val slope = hypot(hx - h, hy - h) / 4.0
                 if (slope > 0.8) continue
-                val density = 0.55 * (1.0 - slope) * (if (h > TREELINE - 250) 0.5 else 1.0)
+                val landClass = painter?.classAt(tx, ty) ?: LandClass.NONE
+                val density = when (landClass) {
+                    LandClass.FOREST -> 0.85
+                    LandClass.GRASS -> if (t < 2) 0.30 else 0.0
+                    LandClass.URBAN -> if (t < 2) 0.10 else 0.0
+                    LandClass.LAND -> if (t < 2) 0.15 else 0.0
+                    LandClass.WETLAND -> if (t < 1) 0.15 else 0.0
+                    LandClass.FARM -> if (t < 1) 0.02 else 0.0
+                    // No map data here: the old roadside-forest guess.
+                    LandClass.NONE -> if (t < 2) 0.55 * (1.0 - slope) * (if (h > TREELINE - 250) 0.5 else 1.0) else 0.0
+                    else -> 0.0 // water, roads, buildings, rock / sand / ice
+                }
                 if (hash01(wi, wj, 37 + t) > density) continue
                 if (nearRoad(tx, ty, rx, ry, roadBuckets)) continue
                 val tall = 7.0 + hash01(wi, wj, 53 + t) * 8.0
-                cone(trees, tx, ty, h - 0.5, tall, tall * 0.3, hash01(wi, wj, 71 + t) > 0.5)
+                val broadleaf = h < 1000 && landClass != LandClass.NONE && hash01(wi, wj, 89 + t) > 0.3
+                if (broadleaf) blob(trees, tx, ty, h - 0.5, tall * 0.9, hash01(wi, wj, 71 + t) > 0.5)
+                else cone(trees, tx, ty, h - 0.5, tall, tall * 0.3, hash01(wi, wj, 71 + t) > 0.5)
             }
         }
+        painter?.recycleClassRaster()
 
-        return WorldMesh(terrain.toArray(), trees.toArray(), road.toArray(), marks.toArray(), ox, oy, n, heights)
+        return WorldMesh(
+            terrain.toArray(), trees.toArray(), road.toArray(), marks.toArray(), buildings.toArray(),
+            painter?.texture, ox, oy, n, heights,
+        )
+    }
+
+    private fun routeInside(
+        f: OsmFeature, rx: List<Double>, ry: List<Double>, b: HashMap<Long, MutableList<Int>>,
+    ): Boolean {
+        val pad = ROAD_HALF_WIDTH
+        for (i in floor((f.minX - pad) / 20.0).toInt()..floor((f.maxX + pad) / 20.0).toInt()) {
+            for (j in floor((f.minY - pad) / 20.0).toInt()..floor((f.maxY + pad) / 20.0).toInt()) {
+                b[HeightField.key(i, j)]?.forEach { k ->
+                    val x = rx[k]; val y = ry[k]
+                    if (x < f.minX - pad || x > f.maxX + pad || y < f.minY - pad || y > f.maxY + pad) return@forEach
+                    for (ring in f.parts) {
+                        val cnt = ring.size / 2
+                        if (cnt >= 3 && BuildingMesher.contains(ring, cnt, x, y)) return true
+                    }
+                }
+            }
+        }
+        return false
     }
 
     private fun nearRoad(
@@ -341,9 +416,9 @@ object WorldBuilder {
         }
         val shade = (0.55 + 0.5 * max(0.0, nx * light[0] + ny * light[1] + nz * light[2]) + jitter).toFloat()
         val r = rgb[0] * shade; val g = rgb[1] * shade; val bl = rgb[2] * shade
-        out.vertex(ax, ah, -ay, r, g, bl)
-        out.vertex(bx, bh, -by, r, g, bl)
-        out.vertex(cx, ch, -cy, r, g, bl)
+        out.vertex(ax, ah, -ay, r, g, bl, shade)
+        out.vertex(bx, bh, -by, r, g, bl, shade)
+        out.vertex(cx, ch, -cy, r, g, bl, shade)
     }
 
     /** A flat strip between lateral offsets [l0]..[l1] along one road segment. */
@@ -369,7 +444,7 @@ object WorldBuilder {
     private fun cone(out: FloatList, x: Double, y: Double, base: Double, tall: Double, radius: Double, dark: Boolean) {
         val sides = 5
         val col = if (dark) floatArrayOf(0.17f, 0.40f, 0.21f) else floatArrayOf(0.23f, 0.49f, 0.23f)
-        val ax = x; val ah = base + tall; val ay = y
+        val ah = base + tall
         val baseH = base + 1.2
         for (s in 0 until sides) {
             val a0 = 2 * PI * s / sides
@@ -380,23 +455,48 @@ object WorldBuilder {
             val am = (a0 + a1) / 2
             val nx = cos(am) * 0.8; val nz = -sin(am) * 0.8; val ny = 0.45
             val shade = (0.55 + 0.55 * max(0.0, nx * light[0] + ny * light[1] + nz * light[2])).toFloat()
-            out.vertex(ax, ah, -ay, col[0] * shade, col[1] * shade, col[2] * shade)
+            out.vertex(x, ah, -y, col[0] * shade, col[1] * shade, col[2] * shade)
             out.vertex(x0, baseH, -y0, col[0] * shade, col[1] * shade, col[2] * shade)
             out.vertex(x1, baseH, -y1, col[0] * shade, col[1] * shade, col[2] * shade)
         }
-        // Little trunk so the cone doesn't float on slopes.
-        val tr = radius * 0.12
-        val trunk = floatArrayOf(0.36f, 0.26f, 0.18f)
+        trunk(out, x, y, base, baseH, radius * 0.12)
+    }
+
+    /** A low-poly broadleaf tree: a faceted crown (octahedron) on a trunk. */
+    private fun blob(out: FloatList, x: Double, y: Double, base: Double, tall: Double, dark: Boolean) {
+        val col = if (dark) floatArrayOf(0.27f, 0.50f, 0.20f) else floatArrayOf(0.36f, 0.58f, 0.24f)
+        val r = tall * 0.33
+        val trunkTop = base + tall - 2 * r
+        val cy = trunkTop + r
+        trunk(out, x, y, base, trunkTop + r * 0.3, r * 0.12)
+        for (q in 0 until 4) {
+            val a0 = PI / 2 * q + PI / 4
+            val a1 = a0 + PI / 2
+            val x0 = x + cos(a0) * r; val y0 = y + sin(a0) * r
+            val x1 = x + cos(a1) * r; val y1 = y + sin(a1) * r
+            val am = (a0 + a1) / 2
+            for (up in intArrayOf(1, -1)) {
+                val nx = cos(am) * 0.7; val nz = -sin(am) * 0.7; val ny = 0.7 * up
+                val shade = (0.55 + 0.55 * max(0.0, nx * light[0] + ny * light[1] + nz * light[2])).toFloat()
+                out.vertex(x, cy + up * r * 1.1, -y, col[0] * shade, col[1] * shade, col[2] * shade)
+                out.vertex(x0, cy, -y0, col[0] * shade, col[1] * shade, col[2] * shade)
+                out.vertex(x1, cy, -y1, col[0] * shade, col[1] * shade, col[2] * shade)
+            }
+        }
+    }
+
+    private fun trunk(out: FloatList, x: Double, y: Double, base: Double, top: Double, tr: Double) {
+        val c = floatArrayOf(0.36f, 0.26f, 0.18f)
         for (s in 0 until 4) {
             val a0 = PI / 2 * s; val a1 = PI / 2 * (s + 1)
             val x0 = x + cos(a0) * tr; val y0 = y + sin(a0) * tr
             val x1 = x + cos(a1) * tr; val y1 = y + sin(a1) * tr
-            out.vertex(x0, base, -y0, trunk[0], trunk[1], trunk[2])
-            out.vertex(x1, base, -y1, trunk[0], trunk[1], trunk[2])
-            out.vertex(x1, baseH, -y1, trunk[0], trunk[1], trunk[2])
-            out.vertex(x0, base, -y0, trunk[0], trunk[1], trunk[2])
-            out.vertex(x1, baseH, -y1, trunk[0], trunk[1], trunk[2])
-            out.vertex(x0, baseH, -y0, trunk[0], trunk[1], trunk[2])
+            out.vertex(x0, base, -y0, c[0], c[1], c[2])
+            out.vertex(x1, base, -y1, c[0], c[1], c[2])
+            out.vertex(x1, top, -y1, c[0], c[1], c[2])
+            out.vertex(x0, base, -y0, c[0], c[1], c[2])
+            out.vertex(x1, top, -y1, c[0], c[1], c[2])
+            out.vertex(x0, top, -y0, c[0], c[1], c[2])
         }
     }
 
@@ -408,17 +508,21 @@ object WorldBuilder {
     private val LINE_RGB = floatArrayOf(0.92f, 0.92f, 0.90f)
 }
 
-/** Growable float buffer (avoids boxing for the large vertex arrays). */
-internal class FloatList(initial: Int) {
+/** Growable float buffer of [x, y, z, r, g, b, shade] vertices (no boxing). */
+class FloatList(initial: Int) {
     private var data = FloatArray(initial.coerceAtLeast(16))
     var size = 0
         private set
 
-    fun vertex(x: Double, y: Double, z: Double, r: Float, g: Float, b: Float) {
-        if (size + 6 > data.size) data = data.copyOf(data.size * 2)
+    fun vertex(x: Double, y: Double, z: Double, r: Float, g: Float, b: Float, shade: Float = 1f) {
+        if (size + STRIDE > data.size) data = data.copyOf(data.size * 2)
         data[size++] = x.toFloat(); data[size++] = y.toFloat(); data[size++] = z.toFloat()
-        data[size++] = r; data[size++] = g; data[size++] = b
+        data[size++] = r; data[size++] = g; data[size++] = b; data[size++] = shade
     }
 
     fun toArray(): FloatArray = data.copyOf(size)
+
+    companion object {
+        const val STRIDE = 7
+    }
 }

@@ -164,7 +164,7 @@ fun HomeScreen(
             if (route != null && file == selectedGpx) {
                 selectedStats = route.totalDistance / 1000.0 to route.totalAscent
                 selectedRoute = route
-                missingTiles = withContext(Dispatchers.IO) { TerrainTiles.missingTiles(context, route).size }
+                missingTiles = withContext(Dispatchers.IO) { TerrainTiles.missing(context, route).let { it.first + it.second } }
             }
         }
     }
@@ -426,7 +426,8 @@ private fun StylizeDialog(route: Route, onDismiss: (remaining: Int?) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var total by remember { mutableStateOf<Int?>(null) }
-    var missing by remember { mutableStateOf<Int?>(null) }
+    var missingPair by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    val missing = missingPair?.let { it.first + it.second }
     var running by remember { mutableStateOf(false) }
     var progress by remember { mutableStateOf<TerrainTiles.Progress?>(null) }
     var status by remember { mutableStateOf<String?>(null) }
@@ -434,10 +435,10 @@ private fun StylizeDialog(route: Route, onDismiss: (remaining: Int?) -> Unit) {
 
     suspend fun refresh() {
         val (t, m) = withContext(Dispatchers.IO) {
-            TerrainTiles.corridorTiles(route).size to TerrainTiles.missingTiles(context, route).size
+            TerrainTiles.totalTiles(route) to TerrainTiles.missing(context, route)
         }
         total = t
-        missing = m
+        missingPair = m
     }
     LaunchedEffect(route) { refresh() }
 
@@ -447,8 +448,9 @@ private fun StylizeDialog(route: Route, onDismiss: (remaining: Int?) -> Unit) {
         text = {
             Column {
                 Text(
-                    "Builds a low-poly 3D world from real terrain along ${route.name}. " +
-                        "Downloads elevation data once (free, no key) so the ride works offline.",
+                    "Builds a low-poly 3D world of ${route.name} from real terrain and " +
+                        "OpenStreetMap (buildings, streets, parks, forests, water). Downloads " +
+                        "the map data once (free, no key) so the ride works offline.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Spacer(Modifier.height(10.dp))
@@ -458,14 +460,14 @@ private fun StylizeDialog(route: Route, onDismiss: (remaining: Int?) -> Unit) {
                     Text("Checking…", style = MaterialTheme.typography.bodySmall)
                 } else if (m == 0) {
                     Text(
-                        "Ready — all $t terrain tiles are on this device.",
+                        "Ready — all $t map tiles are on this device.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.primary,
                     )
                 } else {
-                    val mb = m * TerrainTiles.APPROX_TILE_BYTES / 1_000_000.0
+                    val mb = TerrainTiles.estimateBytes(missingPair!!) / 1_000_000.0
                     Text(
-                        "$m of $t terrain tiles to download (≈${String.format(java.util.Locale.US, "%.1f", mb)} MB)",
+                        "$m of $t tiles to download (≈${String.format(java.util.Locale.US, "%.0f", mb.coerceAtLeast(1.0))} MB)",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

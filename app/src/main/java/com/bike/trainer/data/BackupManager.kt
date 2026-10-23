@@ -78,6 +78,7 @@ class BackupManager(
             addTree(zip, RouteLibrary.folder(context), "routes")
             addTree(zip, StreetViewCache.cacheRoot(context), "svcache")
             addTree(zip, com.bike.trainer.route.TerrainTiles.root(context), "terrain")
+            addTree(zip, com.bike.trainer.route.OsmTiles.root(context), "osm")
         }
     }
 
@@ -87,6 +88,7 @@ class BackupManager(
         val routesDir = RouteLibrary.folder(context)
         val svDir = StreetViewCache.cacheRoot(context)
         val terrainDir = com.bike.trainer.route.TerrainTiles.root(context)
+        val osmDir = com.bike.trainer.route.OsmTiles.root(context)
         ZipInputStream(input.buffered()).use { zip ->
             var entry = zip.nextEntry
             while (entry != null) {
@@ -103,6 +105,8 @@ class BackupManager(
                             runCatching { extract(zip, File(svDir, name.removePrefix("svcache/"))) }
                         name.startsWith("terrain/") ->
                             runCatching { extract(zip, File(terrainDir, name.removePrefix("terrain/"))) }
+                        name.startsWith("osm/") ->
+                            runCatching { extract(zip, File(osmDir, name.removePrefix("osm/"))) }
                     }
                 }
                 zip.closeEntry()
