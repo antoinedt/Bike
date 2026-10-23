@@ -11,6 +11,7 @@ import com.bike.trainer.world.SceneBuilder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.min
 import okhttp3.FormBody
@@ -94,46 +95,86 @@ object WorldStore {
      * Build (or finish) the world. Map sections already downloaded are reused; any
      * that still fail are skipped so the rest can be built and ridden now.
      */
-    suspend fun build(context: Context, route: Route, onProgress: (Progress) -> Unit): Result = withContext(Dispatchers.IO) {
+    suspend fun build(
+        context: Context,
+        route: Route,
+        /** Set to stop downloading early and build the world from what has arrived. */
+        stopDownloads: java.util.concurrent.atomic.AtomicBoolean = java.util.concurrent.atomic.AtomicBoolean(false),
+        onProgress: (Progress) -> Unit,
+    ): Result = withContext(Dispatchers.IO) {
         val id = route.id ?: return@withContext Result("Only GPX routes have a real place to build", null)
         if (route.points.size < 2) return@withContext Result("Route is empty", null)
         val out = dir(context, id).apply { mkdirs() }
         val osmDir = File(out, "osm").apply { mkdirs() }
         val fp = StreetViewCache.fingerprint(route)
 
-        // 1. Map data, section by section (cached per route fingerprint).
+        // 1. Map data in 1 km sections (cached per route fingerprint), downloaded in
+        //    parallel: one worker per server, failed sections go back in the queue.
         val sections = ((route.totalDistance / SECTION_METERS).toInt() + 1).coerceAtLeast(1)
-        val jsons = ArrayList<String>()
-        var done = 0
-        var downloaded = 0
-        for (s in 0 until sections) {
-            coroutineContext.ensureActive()
-            val label = "Map data ${s + 1}/$sections"
-            post(onProgress, Progress(label, 0.6f * s / sections))
-            val key = "$fp|$s|${SECTION_METERS.toInt()}|${CORRIDOR_METERS.toInt()}"
+        fun key(s: Int) = "$fp|$s|${SECTION_METERS.toInt()}|${CORRIDOR_METERS.toInt()}"
+        fun cachedFiles(s: Int): List<File>? {
             val keyFile = File(osmDir, "section_$s.key")
-            val cached = if (keyFile.exists() && keyFile.readText().startsWith("$key|")) {
-                val n = keyFile.readText().substringAfterLast('|').toIntOrNull() ?: 0
-                (0 until n).map { File(osmDir, "section_${s}_$it.json") }.takeIf { fs -> fs.isNotEmpty() && fs.all { it.exists() } }
-            } else null
-            if (cached != null) {
-                cached.forEach { jsons.add(it.readText()) }
-                done++
-                continue
-            }
-            // Be gentle with the free servers between downloads.
-            if (downloaded > 0) delay(2500)
-            val parts = download(route, s * SECTION_METERS, min((s + 1) * SECTION_METERS, route.totalDistance), 0) { msg ->
-                post(onProgress, Progress("$label — $msg", 0.6f * s / sections))
-            }
-            downloaded++
-            if (parts == null) continue // skipped for now; the next build retries it
-            parts.forEachIndexed { k, text -> File(osmDir, "section_${s}_$k.json").writeText(text) }
-            keyFile.writeText("$key|${parts.size}")
-            jsons.addAll(parts)
-            done++
+            if (!keyFile.exists()) return null
+            val text = keyFile.readText()
+            if (!text.startsWith(key(s) + "|")) return null
+            val n = text.substringAfterLast('|').toIntOrNull() ?: 0
+            return (0 until n).map { File(osmDir, "section_${s}_$it.json") }.takeIf { fs -> fs.isNotEmpty() && fs.all { it.exists() } }
         }
-        if (done == 0) {
+        val queue = java.util.concurrent.ConcurrentLinkedQueue((0 until sections).filter { cachedFiles(it) == null })
+        val done = java.util.concurrent.atomic.AtomicInteger(sections - queue.size)
+        val tries = java.util.concurrent.ConcurrentHashMap<Int, Int>()
+        val notes = java.util.concurrent.ConcurrentHashMap<String, String>()
+        fun report() = post(onProgress, Progress(
+            "Map data ${done.get()}/$sections" + if (notes.isEmpty()) "" else "\n" + notes.values.joinToString("\n"),
+            0.6f * done.get() / sections,
+        ))
+        report()
+        kotlinx.coroutines.coroutineScope {
+          val downloads = launch {
+            for (url in ENDPOINTS) launch {
+                val name = java.net.URI(url).host.removePrefix("maps.").removePrefix("overpass.")
+                var failuresInARow = 0
+                while (failuresInARow < 3) {
+                    coroutineContext.ensureActive()
+                    val s = queue.poll() ?: break
+                    val range = s * SECTION_METERS to min((s + 1) * SECTION_METERS, route.totalDistance)
+                    notes[name] = "$name: section ${s + 1}…"; report()
+                    val t0 = System.currentTimeMillis()
+                    val parts = download(route, range.first, range.second, url, 0) { msg -> notes[name] = "$name: section ${s + 1} $msg"; report() }
+                    if (parts != null) {
+                        parts.forEachIndexed { k, text -> File(osmDir, "section_${s}_$k.json").writeText(text) }
+                        File(osmDir, "section_$s.key").writeText(key(s) + "|" + parts.size)
+                        done.incrementAndGet()
+                        failuresInARow = 0
+                        val kb = parts.sumOf { it.length } / 1024
+                        notes[name] = "$name: section ${s + 1} ${kb} KB in ${(System.currentTimeMillis() - t0) / 1000}s"; report()
+                        delay(1500)
+                    } else {
+                        failuresInARow++
+                        // Let another server try it (each section gets a few attempts in total).
+                        if (tries.merge(s, 1, Int::plus)!! < ENDPOINTS.size + 1) queue.add(s)
+                        notes[name] = "$name: busy, pausing"; report()
+                        delay(20_000L * failuresInARow)
+                    }
+                }
+                notes.remove(name); report()
+            }
+          }
+            // "Stop & build": abort the downloads (in-flight requests too), keep going.
+            while (downloads.isActive) {
+                if (stopDownloads.get()) downloads.cancel()
+                delay(200)
+            }
+        }
+        coroutineContext.ensureActive()
+        val jsons = ArrayList<String>()
+        var built = 0
+        for (s in 0 until sections) {
+            val files = cachedFiles(s) ?: continue
+            files.forEach { jsons.add(it.readText()) }
+            built++
+        }
+        if (built == 0) {
             return@withContext Result("Couldn't download any map data (servers busy or offline) — try again later", status(context, route))
         }
 
@@ -160,25 +201,25 @@ object WorldStore {
         out.listFiles()?.forEach { f -> if (f.isFile) f.delete() }
         tmp.listFiles()?.forEach { f -> f.renameTo(File(out, f.name)) }
         tmp.deleteRecursively()
-        File(out, "stamp.txt").writeText("${stamp(route)}#$done/$sections")
+        File(out, "stamp.txt").writeText("${stamp(route)}#$built/$sections")
         post(onProgress, Progress("Done", 1f))
-        Result(null, Status(done, sections))
+        Result(null, Status(built, sections))
     }
 
     /**
      * Map data for the route between [d0] and [d1]. A range the server finds too
      * big is split in two (up to 3 times). Null if it couldn't be downloaded.
      */
-    private suspend fun download(route: Route, d0: Double, d1: Double, depth: Int, note: (String) -> Unit): List<String>? {
-        return when (val r = overpass(query(route, d0, d1), note)) {
+    private suspend fun download(route: Route, d0: Double, d1: Double, url: String, depth: Int, note: (String) -> Unit): List<String>? {
+        return when (val r = overpass(query(route, d0, d1), url, note)) {
             is Answer.Ok -> listOf(r.text)
             Answer.TooBig -> {
                 if (depth >= 3) return null
                 note("large area, splitting")
                 val mid = (d0 + d1) / 2
-                val a = download(route, d0, mid, depth + 1, note) ?: return null
+                val a = download(route, d0, mid, url, depth + 1, note) ?: return null
                 delay(2000)
-                val b = download(route, mid, d1, depth + 1, note) ?: return null
+                val b = download(route, mid, d1, url, depth + 1, note) ?: return null
                 a + b
             }
             Answer.Failed -> null
@@ -205,7 +246,8 @@ object WorldStore {
         val dLat = CORRIDOR_METERS / 111_320.0
         val dLon = dLat / kotlin.math.cos(Math.toRadians((minLat + maxLat) / 2)).coerceAtLeast(0.1)
         val bbox = String.format(Locale.US, "%.6f,%.6f,%.6f,%.6f", minLat - dLat, minLon - dLon, maxLat + dLat, maxLon + dLon)
-        return "[out:json][timeout:120][bbox:$bbox];($FILTERS);out geom;"
+        // "qt" (quadtile order) is cheaper for the server than sorting by id.
+        return "[out:json][timeout:120][bbox:$bbox];($FILTERS);out geom qt;"
     }
 
     private sealed interface Answer {
@@ -228,46 +270,48 @@ object WorldStore {
 
     private const val UA = "VibeBike/1.0 (indoor cycling app)"
 
+    /** A request that's aborted (connection closed) as soon as the coroutine is cancelled. */
+    private suspend fun fetch(req: Request): Pair<Int, String?> =
+        kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+            val call = http.newCall(req)
+            cont.invokeOnCancellation { call.cancel() }
+            call.enqueue(object : okhttp3.Callback {
+                override fun onFailure(call: okhttp3.Call, e: java.io.IOException) {
+                    if (cont.isActive) cont.resumeWith(kotlin.Result.success(-1 to null))
+                }
+
+                override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
+                    val body = runCatching { response.use { it.body?.string() } }.getOrNull()
+                    if (cont.isActive) cont.resumeWith(kotlin.Result.success(response.code to body))
+                }
+            })
+        }
+
     /**
-     * One Overpass request with patient retries across mirrors. For the main server
-     * we first wait for our query slot; busy mirrors get increasingly long pauses; a
-     * server-side timeout / out-of-memory means the area is too big for one request.
+     * One Overpass request to [url]. For the main server we first wait for our query
+     * slot. A server-side timeout / out-of-memory means the area is too big for one
+     * request; anything else unsuccessful counts as busy (the caller re-queues).
      */
-    private suspend fun overpass(q: String, note: (String) -> Unit): Answer {
-        val waits = longArrayOf(20_000, 45_000, 90_000)
-        val codes = LinkedHashSet<String>()
-        for (round in 0..waits.size) {
-            var tooBig = 0
-            for (url in ENDPOINTS) {
-                coroutineContext.ensureActive()
-                if (url.startsWith(MAIN_SERVER)) {
-                    val wait = slotWait().coerceAtMost(180)
-                    if (wait > 0) {
-                        note("waiting ${wait}s for a free server slot")
-                        delay(wait * 1000L + 500)
-                    }
-                }
-                val (code, text) = runCatching {
-                    val req = Request.Builder().url(url)
-                        .header("User-Agent", UA)
-                        .post(FormBody.Builder().add("data", q).build())
-                        .build()
-                    http.newCall(req).execute().use { resp -> resp.code to resp.body?.string() }
-                }.getOrElse { -1 to null }
-                if (code == 200 && text != null && text.contains("\"elements\"")) {
-                    // A runtime error remark means the answer was cut short.
-                    if (text.contains("\"remark\"") && text.contains("runtime error")) tooBig++ else return Answer.Ok(text)
-                } else if (code == 504 || (text != null && text.contains("runtime error"))) {
-                    tooBig++
-                }
-                codes.add(java.net.URI(url).host.substringBefore(".overpass").removePrefix("www.") + ":" + (if (code < 0) "no connection" else code.toString()))
-            }
-            if (tooBig > 0) return Answer.TooBig
-            if (round < waits.size) {
-                note("servers busy (${codes.joinToString()}), retrying in ${waits[round] / 1000}s")
-                delay(waits[round])
+    private suspend fun overpass(q: String, url: String, note: (String) -> Unit): Answer {
+        coroutineContext.ensureActive()
+        if (url.startsWith(MAIN_SERVER)) {
+            val wait = slotWait().coerceAtMost(180)
+            if (wait > 0) {
+                note("waiting ${wait}s for a free slot")
+                delay(wait * 1000L + 500)
             }
         }
+        val req = Request.Builder().url(url)
+            .header("User-Agent", UA)
+            .post(FormBody.Builder().add("data", q).build())
+            .build()
+        val (code, text) = fetch(req)
+        if (code == 200 && text != null && text.contains("\"elements\"")) {
+            // A runtime error remark means the answer was cut short.
+            return if (text.contains("\"remark\"") && text.contains("runtime error")) Answer.TooBig else Answer.Ok(text)
+        }
+        if (code == 504 || (text != null && text.contains("runtime error"))) return Answer.TooBig
+        note("failed (${if (code < 0) "no connection" else "HTTP $code"})")
         return Answer.Failed
     }
 }

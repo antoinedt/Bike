@@ -520,6 +520,9 @@ private fun BuildWorldDialog(route: Route, onDismiss: (com.bike.trainer.ui.world
     var status by remember { mutableStateOf<String?>(null) }
     var built by remember { mutableStateOf<com.bike.trainer.ui.world.WorldStore.Status?>(null) }
     var job by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    val stop = remember { java.util.concurrent.atomic.AtomicBoolean(false) }
+    // Still downloading map data (vs. building from it).
+    val downloading = running && (progress?.fraction ?: 0f) < 0.65f
     AlertDialog(
         onDismissRequest = { if (!running) onDismiss(built) },
         title = { Text(if (running) "Building world…" else "Build 3D world") },
@@ -549,8 +552,9 @@ private fun BuildWorldDialog(route: Route, onDismiss: (com.bike.trainer.ui.world
                 onClick = {
                     running = true
                     status = null
+                    stop.set(false)
                     job = scope.launch {
-                        val result = com.bike.trainer.ui.world.WorldStore.build(context, route) { progress = it }
+                        val result = com.bike.trainer.ui.world.WorldStore.build(context, route, stop) { progress = it }
                         running = false
                         built = result.status
                         val st = result.status
@@ -567,10 +571,13 @@ private fun BuildWorldDialog(route: Route, onDismiss: (com.bike.trainer.ui.world
         },
         dismissButton = {
             TextButton(onClick = {
-                if (running) {
-                    job?.cancel(); running = false; status = "Cancelled"
-                } else onDismiss(built)
-            }) { Text(if (running) "Cancel" else "Close") }
+                when {
+                    // Keep what's downloaded: stop the downloads and build from it.
+                    downloading -> stop.set(true)
+                    running -> { job?.cancel(); running = false; status = "Cancelled" }
+                    else -> onDismiss(built)
+                }
+            }) { Text(when { downloading -> "Stop & build"; running -> "Cancel"; else -> "Close" }) }
         },
     )
 }
