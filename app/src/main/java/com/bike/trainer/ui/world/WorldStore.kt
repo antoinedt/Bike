@@ -126,7 +126,7 @@ object WorldStore {
         val d = dir(context, id)
         if (!File(d, "world.json").exists()) return null
         val parts = File(d, "stamp.txt").takeIf { it.exists() }?.readText()?.split("#") ?: return null
-        val head = parts[0].split("|")
+        val head = parts[0].split("|", limit = 2) // (the fingerprint has "|" in it)
         if (head.getOrNull(1) != StreetViewCache.fingerprint(route)) return null
         val outdated = head[0] != SceneBuilder.VERSION.toString()
         val photos = parts.firstOrNull { it.startsWith("photos=") }?.removePrefix("photos=")?.toIntOrNull() ?: 0
