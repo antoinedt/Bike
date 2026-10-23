@@ -1,0 +1,275 @@
+extends Node3D
+## VibeBike ride world: loads the offline-built world of a route (world.json +
+## chunk_NNN.glb / .json, see SceneBuilder.kt), renders it cel-shaded with ink
+## lines and a comic sky, and moves the camera along the route.
+##
+## Driven by the Android app through the "VibeBike" plugin (signals carry the
+## world folder, distance and speed). For desktop look-dev it also accepts
+## command-line user args:  -- --world=<dir> --d=<metres> [--chase] [--shot=<png>]
+
+const Props = preload("res://props.gd")
+
+var toon_shader: Shader = preload("res://shaders/toon.gdshader")
+var ink_shader: Shader = preload("res://shaders/ink_line.gdshader")
+var sky_shader: Shader = preload("res://shaders/sky.gdshader")
+
+var world_dir := ""
+var route := PackedVector3Array()
+var route_step := 5.0
+var chunks_meta := []
+var loaded := {}          # chunk index -> Node3D
+var chunk_len := 400.0
+
+var distance := 0.0       # latest distance from the app
+var speed := 0.0          # m/s
+var sample_time := 0.0
+var render_d := 0.0
+var chase := false
+var chase_k := 0.0
+var cam: Camera3D
+var props: Props
+
+var shot_path := ""
+var shot_frames := 0
+var debug_noshadow := false
+
+var mat_ground: ShaderMaterial
+var mat_walls: ShaderMaterial
+var mat_roofs: ShaderMaterial
+var mat_ink: ShaderMaterial
+
+
+func _ready() -> void:
+	_build_environment()
+	mat_walls = _toon(2)
+	mat_roofs = _toon(0)
+	mat_ink = ShaderMaterial.new()
+	mat_ink.shader = ink_shader
+	props = Props.new()
+	add_child(props)
+
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--world="): world_dir = a.substr(8)
+		elif a.begins_with("--d="): distance = float(a.substr(4)); render_d = distance
+		elif a == "--chase": chase = true; chase_k = 1.0
+		elif a.begins_with("--shot="): shot_path = a.substr(7)
+		elif a == "--noshadow": debug_noshadow = true
+
+	if debug_noshadow:
+		for c in get_children():
+			if c is DirectionalLight3D: c.shadow_enabled = false
+	var plugin = Engine.get_singleton("VibeBike") if Engine.has_singleton("VibeBike") else null
+	if plugin:
+		plugin.connect("open_world", open_world)
+		plugin.connect("ride_update", ride_update)
+		plugin.connect("set_chase", func(c): chase = c)
+		plugin.call("worldReady")
+	if world_dir != "":
+		open_world(world_dir)
+
+
+func _toon(mode: int) -> ShaderMaterial:
+	var m := ShaderMaterial.new()
+	m.shader = toon_shader
+	m.set_shader_parameter("mode", mode)
+	return m
+
+
+func _build_environment() -> void:
+	var env := Environment.new()
+	var sky := Sky.new()
+	var sm := ShaderMaterial.new()
+	sm.shader = sky_shader
+	var noise := FastNoiseLite.new()
+	noise.frequency = 0.012
+	noise.fractal_octaves = 4
+	var nt := NoiseTexture2D.new()
+	nt.width = 512; nt.height = 512; nt.seamless = true; nt.noise = noise
+	sm.set_shader_parameter("noise", nt)
+	sky.sky_material = sm
+	env.background_mode = Environment.BG_SKY
+	env.sky = sky
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.ambient_light_color = Color(0.62, 0.68, 0.82)
+	env.ambient_light_energy = 0.35
+	env.tonemap_mode = Environment.TONE_MAPPER_LINEAR
+	env.fog_enabled = true
+	env.fog_light_color = Color(0.70, 0.84, 0.96)
+	env.fog_density = 0.0016
+	env.fog_sky_affect = 0.0
+	var we := WorldEnvironment.new()
+	we.environment = env
+	add_child(we)
+
+	var sun := DirectionalLight3D.new()
+	sun.rotation_degrees = Vector3(-48, -35, 0)
+	sun.light_energy = 1.05
+	sun.light_color = Color(1.0, 0.97, 0.90)
+	sun.shadow_enabled = true
+	sun.directional_shadow_max_distance = 90.0
+	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+	sun.shadow_blur = 0.0
+	sun.shadow_bias = 0.08
+	sun.shadow_normal_bias = 1.5
+	add_child(sun)
+
+	cam = Camera3D.new()
+	cam.fov = 62
+	cam.near = 0.4
+	cam.far = 2500
+	add_child(cam)
+	cam.current = true
+
+
+## Open a world folder (built on the phone by SceneBuilder).
+func open_world(dir: String) -> void:
+	world_dir = dir
+	for c in loaded.values(): c.queue_free()
+	loaded.clear()
+	var text := FileAccess.get_file_as_string(dir.path_join("world.json"))
+	var data = JSON.parse_string(text)
+	if data == null:
+		push_error("No world at " + dir)
+		return
+	route_step = float(data.get("routeStep", 5.0))
+	chunk_len = float(data.get("chunkLength", 400.0))
+	chunks_meta = data["chunks"]
+	var r: Array = data["route"]
+	route = PackedVector3Array()
+	for i in range(0, r.size(), 3):
+		route.append(Vector3(r[i], r[i + 1], r[i + 2]))
+	_update_chunks(true)
+
+
+func ride_update(d: float, v: float) -> void:
+	distance = d
+	speed = v
+	sample_time = Time.get_ticks_msec() / 1000.0
+
+
+func _route_at(d: float) -> Vector3:
+	if route.size() == 0: return Vector3.ZERO
+	var f := clampf(d / route_step, 0.0, route.size() - 1.001)
+	var i := int(f)
+	return route[i].lerp(route[min(i + 1, route.size() - 1)], f - i)
+
+
+func _update_chunks(force := false) -> void:
+	var cur := int(floor(render_d / chunk_len))
+	for meta in chunks_meta:
+		var i := int(meta["i"])
+		var want := i >= cur - 1 and i <= cur + 2
+		if want and not loaded.has(i):
+			var node := _load_chunk(i)
+			if node: loaded[i] = node
+		elif not want and loaded.has(i):
+			loaded[i].queue_free()
+			loaded.erase(i)
+
+
+func _load_chunk(i: int) -> Node3D:
+	var base := world_dir.path_join("chunk_%03d" % i)
+	var root := Node3D.new()
+	add_child(root)
+	if FileAccess.file_exists(base + ".glb"):
+		var doc := GLTFDocument.new()
+		var state := GLTFState.new()
+		if doc.append_from_file(base + ".glb", state) == OK:
+			var scene := doc.generate_scene(state)
+			root.add_child(scene)
+			_style(scene)
+	var info = JSON.parse_string(FileAccess.get_file_as_string(base + ".json"))
+	if info != null:
+		_ink(root, info.get("edges", []))
+		props.add_chunk(root, info.get("props", []))
+	return root
+
+
+## Swap the imported materials for the toon ones by mesh name.
+func _style(n: Node) -> void:
+	if n is MeshInstance3D:
+		var mi := n as MeshInstance3D
+		var name := String(mi.name)
+		if name.begins_with("ground"):
+			var tex: Texture2D = null
+			var src := mi.mesh.surface_get_material(0)
+			if src is BaseMaterial3D: tex = (src as BaseMaterial3D).albedo_texture
+			var m := _toon(1)
+			m.set_shader_parameter("albedo_tex", tex)
+			mi.material_override = m
+			# The ground only receives shadows (self-shadowing the bumpy DEM makes blotches).
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		elif name.begins_with("walls"):
+			mi.material_override = mat_walls
+		elif name.begins_with("roads"):
+			mi.material_override = mat_roofs
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		else:
+			mi.material_override = mat_roofs
+	for c in n.get_children(): _style(c)
+
+
+## Build the screen-space ink line mesh for a chunk's edges.
+func _ink(root: Node3D, e: Array) -> void:
+	var count := e.size() / 6
+	if count == 0: return
+	var verts := PackedVector3Array(); verts.resize(count * 4)
+	var custom := PackedFloat32Array(); custom.resize(count * 16)
+	var idx := PackedInt32Array(); idx.resize(count * 6)
+	for k in count:
+		var a := Vector3(e[6 * k], e[6 * k + 1], e[6 * k + 2])
+		var b := Vector3(e[6 * k + 3], e[6 * k + 4], e[6 * k + 5])
+		var vi := 4 * k
+		verts[vi] = a; verts[vi + 1] = a; verts[vi + 2] = b; verts[vi + 3] = b
+		var ends := [b, b, a, a]
+		var sides := [1.0, -1.0, -1.0, 1.0]
+		for q in 4:
+			custom[(vi + q) * 4] = ends[q].x
+			custom[(vi + q) * 4 + 1] = ends[q].y
+			custom[(vi + q) * 4 + 2] = ends[q].z
+			custom[(vi + q) * 4 + 3] = sides[q]
+		var ii := 6 * k
+		idx[ii] = vi; idx[ii + 1] = vi + 1; idx[ii + 2] = vi + 2
+		idx[ii + 3] = vi; idx[ii + 4] = vi + 2; idx[ii + 5] = vi + 3
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_CUSTOM0] = custom
+	arrays[Mesh.ARRAY_INDEX] = idx
+	var mesh := ArrayMesh.new()
+	var fmt := Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays, [], {}, fmt)
+	var mi := MeshInstance3D.new()
+	mi.mesh = mesh
+	mi.material_override = mat_ink
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mi.extra_cull_margin = 16384
+	root.add_child(mi)
+
+
+func _process(delta: float) -> void:
+	if route.size() < 2: return
+	# Extrapolate between app ticks, then ease toward it (snap on big jumps).
+	var now := Time.get_ticks_msec() / 1000.0
+	var target := distance + speed * clampf(now - sample_time, 0.0, 0.6)
+	if absf(target - render_d) > 150.0 or shot_path != "": render_d = target
+	else: render_d += (target - render_d) * clampf(delta * 6.0, 0.0, 1.0)
+	chase_k += ((1.0 if chase else 0.0) - chase_k) * clampf(delta * 3.0, 0.0, 1.0)
+
+	var back := 9.0 * chase_k
+	var p := _route_at(render_d - back)
+	var look := Vector3.ZERO
+	for k in range(1, 5): look += _route_at(render_d + 10.0 + k * 8.0)
+	look /= 4.0
+	var eye := p + Vector3(0, 1.7 + 3.0 * chase_k, 0)
+	look.y = look.y + 1.2
+	if eye.distance_to(look) > 0.5:
+		cam.look_at_from_position(eye, look, Vector3.UP)
+	_update_chunks()
+
+	if shot_path != "":
+		shot_frames += 1
+		if shot_frames == 12:
+			var img := get_viewport().get_texture().get_image()
+			img.save_png(shot_path)
+			get_tree().quit()
