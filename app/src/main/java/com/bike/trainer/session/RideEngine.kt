@@ -295,6 +295,12 @@ class RideEngine(
         )
     }
 
+    /** Stop the ride without saving it (back → "Discard"). */
+    fun discard() {
+        loop?.cancel()
+        loop = null
+    }
+
     fun shiftUp() {
         if (gears.shiftUp()) {
             pushGradeToTrainer()

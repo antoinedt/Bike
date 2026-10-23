@@ -209,6 +209,40 @@ fun RideScreen(
     LaunchedEffect(state.status) {
         if (state.status == RideStatus.Finished) onFinished()
     }
+
+    // Back during a ride: ask instead of leaving the ride running behind the home screen.
+    var leaveDialog by remember { mutableStateOf(false) }
+    var wasRunning by remember { mutableStateOf(false) }
+    androidx.activity.compose.BackHandler(enabled = state.status != RideStatus.Finished) {
+        wasRunning = state.status == RideStatus.Running
+        engine.pause()
+        leaveDialog = true
+    }
+    if (leaveDialog) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { leaveDialog = false; if (wasRunning) engine.resume() },
+            title = { Text("Leave the ride?") },
+            text = { Text("Finish saves the ride (stats, Strava / Garmin). Discard throws it away.") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { leaveDialog = false; engine.finish() }) {
+                    Text("Finish & save")
+                }
+            },
+            dismissButton = {
+                Row {
+                    androidx.compose.material3.TextButton(onClick = {
+                        leaveDialog = false
+                        engine.discard()
+                        onExit()
+                    }) { Text("Discard") }
+                    androidx.compose.material3.TextButton(onClick = {
+                        leaveDialog = false
+                        if (wasRunning) engine.resume()
+                    }) { Text("Keep riding") }
+                }
+            },
+        )
+    }
     // Apply shifts from a connected physical Zwift controller.
     LaunchedEffect(Unit) {
         ServiceLocator.zwiftClickManager.gearEvents.collect { shift ->

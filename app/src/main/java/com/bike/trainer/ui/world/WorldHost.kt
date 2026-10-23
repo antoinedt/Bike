@@ -50,6 +50,12 @@ object WorldHost {
                 .commitNowAllowingStateLoss()
         }
         box.visibility = View.VISIBLE
+        // The scene needs no keys: don't let its view take focus (and eat Back).
+        renderView()?.apply {
+            isFocusable = false
+            isFocusableInTouchMode = false
+            clearFocus()
+        }
         plugin?.openWorld(dir)
     }
 

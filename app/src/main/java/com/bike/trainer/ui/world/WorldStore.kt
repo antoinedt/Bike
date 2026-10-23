@@ -34,8 +34,10 @@ import kotlin.coroutines.coroutineContext
  * 3. Stores the result in filesDir/worlds/<route>/ for the ride (fully offline).
  */
 object WorldStore {
-    /** Overpass sections (points only, so they can be long). */
-    private const val SECTION_METERS = 3000.0
+    /** Overpass sections: small, so each finishes quickly and progress is saved often. */
+    private const val SECTION_METERS = 1000.0
+    /** Earlier builds used 3 km sections; those downloads are still reused. */
+    private const val LEGACY_SECTION_METERS = 3000.0
     private const val CORRIDOR_METERS = 320.0
     /** Map tiles are fetched this far either side of the route. */
     private const val TILE_CORRIDOR_METERS = 420.0
@@ -141,9 +143,15 @@ object WorldStore {
         val sections = ((route.totalDistance / SECTION_METERS).toInt() + 1).coerceAtLeast(1)
         fun key(s: Int) = "$fp|$s|${SECTION_METERS.toInt()}|${CORRIDOR_METERS.toInt()}|points"
         fun pointsFile(s: Int): File? {
-            val k = File(osmDir, "points_$s.key")
-            val f = File(osmDir, "points_$s.json")
-            return f.takeIf { it.exists() && k.exists() && k.readText() == key(s) }
+            val k = File(osmDir, "pts1k_$s.key")
+            val f = File(osmDir, "pts1k_$s.json")
+            if (f.exists() && k.exists() && k.readText() == key(s)) return f
+            // A 3 km section from an earlier build covering this kilometre.
+            val ls = (s * SECTION_METERS / LEGACY_SECTION_METERS).toInt()
+            val lk = File(osmDir, "points_$ls.key")
+            val lf = File(osmDir, "points_$ls.json")
+            val legacyKey = "$fp|$ls|${LEGACY_SECTION_METERS.toInt()}|${CORRIDOR_METERS.toInt()}|points"
+            return lf.takeIf { it.exists() && lk.exists() && lk.readText() == legacyKey }
         }
         val pointsDone = java.util.concurrent.atomic.AtomicInteger((0 until sections).count { pointsFile(it) != null })
         fun report() = post(onProgress, Progress(
@@ -181,8 +189,8 @@ object WorldStore {
                     val q = pointsQuery(route, s * SECTION_METERS, min((s + 1) * SECTION_METERS, route.totalDistance))
                     when (val r = overpass(q, url) { msg -> notes[name] = "$name: ${s + 1} $msg"; report() }) {
                         is Answer.Ok -> {
-                            File(osmDir, "points_$s.json").writeText(r.text)
-                            File(osmDir, "points_$s.key").writeText(key(s))
+                            File(osmDir, "pts1k_$s.json").writeText(r.text)
+                            File(osmDir, "pts1k_$s.key").writeText(key(s))
                             pointsDone.incrementAndGet()
                             failuresInARow = 0
                             notes[name] = "$name: ${s + 1} done (${r.text.length / 1024} KB, ${(System.currentTimeMillis() - t0) / 1000}s)"; report()
@@ -216,7 +224,8 @@ object WorldStore {
             osm = osm.plus(TileOsm.convert(feats, x, y, OsmTiles.ZOOM, geo))
             tilesHere++
         }
-        val pointJsons = (0 until sections).mapNotNull { pointsFile(it)?.readText() }
+        // (A legacy 3 km file can cover several sections: read each file once.)
+        val pointJsons = (0 until sections).mapNotNull { pointsFile(it) }.distinct().map { it.readText() }
         if (pointJsons.isNotEmpty()) osm = osm.plus(OsmData.merge(pointJsons, geo).let { OsmData(it.points, it.ways, emptyList()) })
         val built = tilesHere + pointJsons.size
         val total = tiles.size + sections

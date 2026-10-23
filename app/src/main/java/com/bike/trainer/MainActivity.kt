@@ -54,6 +54,18 @@ class MainActivity : FragmentActivity(), GodotHost {
         if (isFinishing && WorldHost.started) android.os.Process.killProcess(android.os.Process.myPid())
     }
 
+    /**
+     * Back always goes to the app's own back handling (ride "Leave?" dialog,
+     * navigation). Godot's view would otherwise swallow it when it has focus.
+     */
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        if (event.keyCode == android.view.KeyEvent.KEYCODE_BACK && WorldHost.started) {
+            if (event.action == android.view.KeyEvent.ACTION_UP && !event.isCanceled) onBackPressedDispatcher.onBackPressed()
+            return true
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
     // ---- GodotHost ----
     override fun getActivity() = this
 
