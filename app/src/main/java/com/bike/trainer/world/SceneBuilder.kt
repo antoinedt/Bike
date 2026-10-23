@@ -754,36 +754,63 @@ class SceneBuilder(
                 carry = s - len
             }
         }
-        // Woods and parks without mapped trees: scatter.
-        val buildingRings = osm.areas.filter { it.tags.containsKey("building") }.map { it.outers[0] to Geometry.bbox(it.outers) }
+        // Woods and parks without mapped trees: scatter. Cheap checks first (near the
+        // route? one lookup), then grid-indexed lookups of nearby buildings / trees.
+        val bGrid = HashMap<Long, MutableList<Pair<DoubleArray, DoubleArray>>>()
+        for (b in osm.areas) {
+            if (!b.tags.containsKey("building")) continue
+            val bb = Geometry.bbox(b.outers)
+            if (nearest((bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2, PROP_RANGE + 200) == null) continue
+            for (i in floor(bb[0] / 50).toLong()..floor(bb[2] / 50).toLong()) for (j in floor(bb[1] / 50).toLong()..floor(bb[3] / 50).toLong()) {
+                bGrid.getOrPut((i shl 32) or (j and 0xFFFFFFFFL)) { ArrayList() }.add(b.outers[0] to bb)
+            }
+        }
+        val tGrid = HashMap<Long, MutableList<DoubleArray>>()
+        for (p in treePts) tGrid.getOrPut((floor(p[0] / 50).toLong() shl 32) or (floor(p[1] / 50).toLong() and 0xFFFFFFFFL)) { ArrayList() }.add(p)
+        fun inBuilding(x: Double, y: Double): Boolean =
+            bGrid[(floor(x / 50).toLong() shl 32) or (floor(y / 50).toLong() and 0xFFFFFFFFL)]
+                ?.any { (r, b) -> x in b[0]..b[2] && y in b[1]..b[3] && Geometry.contains(r, x, y) } ?: false
         for (a in osm.areas) {
             val t = a.tags
             val dense = t["natural"] == "wood" || t["landuse"] == "forest"
             val sparse = t["leisure"] in setOf("park", "garden") || t["landuse"] in setOf("cemetery", "grass", "village_green")
             if (!dense && !sparse) continue
             val ring = a.outers.maxByOrNull { abs(Geometry.area(it)) } ?: continue
-            val bb = Geometry.bbox(listOf(ring))
-            val mapped = treePts.any { p -> p[0] in bb[0]..bb[2] && p[1] in bb[1]..bb[3] && Geometry.contains(ring, p[0], p[1]) }
-            if (mapped && !dense) continue
+            val full = Geometry.bbox(listOf(ring))
             val step = if (dense) 6.0 else 13.0
-            var y = floor(bb[1] / step) * step
-            while (y < bb[3]) {
-                var x = floor(bb[0] / step) * step
-                while (x < bb[2]) {
-                    val hx = ((x * 73856093).toLong() xor (y * 19349663).toLong())
-                    val jx = x + ((hx and 0xFF) / 255.0) * step
-                    val jy = y + (((hx shr 8) and 0xFF) / 255.0) * step
-                    val keep = ((hx shr 16) and 0xFF) / 255.0 < (if (dense) 0.85 else 0.35)
-                    if (keep && Geometry.contains(ring, jx, jy) && a.inners.none { Geometry.contains(it, jx, jy) } &&
-                        buildingRings.none { (r, b) -> jx in b[0]..b[2] && jy in b[1]..b[3] && Geometry.contains(r, jx, jy) } &&
-                        nearest(jx, jy, PROP_RANGE) != null
-                    ) {
-                        val conifer = dense && ((hx shr 24) and 3) == 0L
-                        prop(if (conifer) "conifer" else "tree", jx, jy, 0.8 + ((hx shr 26) and 7) / 14.0, ((hx shr 4) and 63) / 10.0, ((hx shr 12) and 7).toInt())
-                    }
-                    x += step
+            // Skip parks whose own trees are mapped (Berlin maps its park trees).
+            if (!dense) {
+                var mapped = false
+                loop@ for (i in floor(full[0] / 50).toLong()..floor(full[2] / 50).toLong()) for (j in floor(full[1] / 50).toLong()..floor(full[3] / 50).toLong()) {
+                    val list = tGrid[(i shl 32) or (j and 0xFFFFFFFFL)] ?: continue
+                    for (p in list) if (Geometry.contains(ring, p[0], p[1])) { mapped = true; break@loop }
                 }
-                y += step
+                if (mapped) continue
+            }
+            // Visit only the corridor cells overlapping this area, then the tree grid inside them.
+            for (ci in floor(full[0] / CELL).toLong()..floor(full[2] / CELL).toLong()) {
+                for (cj in floor(full[1] / CELL).toLong()..floor(full[3] / CELL).toLong()) {
+                    val e = field[(ci shl 32) or (cj and 0xFFFFFFFFL)] ?: continue
+                    if (e[1] > PROP_RANGE + CELL) continue
+                    var y = kotlin.math.ceil(cj * CELL / step) * step
+                    while (y < (cj + 1) * CELL) {
+                        var x = kotlin.math.ceil(ci * CELL / step) * step
+                        while (x < (ci + 1) * CELL) {
+                            val hx = ((x * 73856093).toLong() xor (y * 19349663).toLong())
+                            val jx = x + ((hx and 0xFF) / 255.0) * step
+                            val jy = y + (((hx shr 8) and 0xFF) / 255.0) * step
+                            val keep = ((hx shr 16) and 0xFF) / 255.0 < (if (dense) 0.85 else 0.35)
+                            if (keep && nearest(jx, jy, PROP_RANGE) != null && Geometry.contains(ring, jx, jy) &&
+                                a.inners.none { Geometry.contains(it, jx, jy) } && !inBuilding(jx, jy)
+                            ) {
+                                val conifer = dense && ((hx shr 24) and 3) == 0L
+                                prop(if (conifer) "conifer" else "tree", jx, jy, 0.8 + ((hx shr 26) and 7) / 14.0, ((hx shr 4) and 63) / 10.0, ((hx shr 12) and 7).toInt())
+                            }
+                            x += step
+                        }
+                        y += step
+                    }
+                }
             }
         }
     }
