@@ -292,7 +292,7 @@ fun SummaryScreen(onDone: () -> Unit) {
                         return@OutlinedButton
                     }
                     runCatching {
-                        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+                        val uri = FileProvider.getUriForFile(context, "${context.packageName}.rides", file)
                         val send = Intent(Intent.ACTION_SEND).apply {
                             type = "application/octet-stream"
                             putExtra(Intent.EXTRA_STREAM, uri)

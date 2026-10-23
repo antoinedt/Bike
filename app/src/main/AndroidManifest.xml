@@ -63,8 +63,8 @@
 
         <!-- Share recorded ride files (TCX) to other apps, e.g. Garmin Connect. -->
         <provider
-            android:name="androidx.core.content.FileProvider"
-            android:authorities="${applicationId}.fileprovider"
+            android:name=".RideFileProvider"
+            android:authorities="${applicationId}.rides"
             android:exported="false"
             android:grantUriPermissions="true">
             <meta-data

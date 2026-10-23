@@ -44,6 +44,7 @@ import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -123,8 +124,20 @@ fun RideScreen(
     // Google 3D needs a real place (GPX) and the Google key; otherwise use Stylized.
     val google3d = chosenScenery == com.bike.trainer.data.Scenery.GOOGLE_3D &&
         engine.route.id != null && com.bike.trainer.BuildConfig.HAS_MAPS_KEY
-    val stylized = !google3d && chosenScenery != com.bike.trainer.data.Scenery.STREET_VIEW
-    val ownScenery = google3d || stylized
+    // The cel-shaded 3D world, when it has been built for this route.
+    val worldDir = remember(engine.route.id) {
+        if (chosenScenery == com.bike.trainer.data.Scenery.WORLD &&
+            com.bike.trainer.ui.world.WorldStore.isBuilt(context, engine.route)
+        ) com.bike.trainer.ui.world.WorldStore.dir(context, engine.route.id!!).absolutePath else null
+    }
+    val world = worldDir != null
+    val stylized = !google3d && !world && chosenScenery != com.bike.trainer.data.Scenery.STREET_VIEW
+    val ownScenery = google3d || stylized || world
+    LaunchedEffect(Unit) {
+        if (chosenScenery == com.bike.trainer.data.Scenery.WORLD && !world) {
+            Toast.makeText(context, "No 3D world built for this route — showing Stylized.", Toast.LENGTH_LONG).show()
+        }
+    }
     val photoTexture = remember { ServiceLocator.photoTexture }
     // Prefetched Street View frames for this route, if a valid cache exists.
     val svManifest = remember(engine.route.id) {
@@ -218,7 +231,26 @@ fun RideScreen(
                     )
                 },
         ) {
-            if (google3d) {
+            if (world) {
+                // The Godot view sits behind the UI; this area stays transparent.
+                DisposableEffect(worldDir) {
+                    com.bike.trainer.ui.world.WorldHost.show(worldDir!!)
+                    onDispose {
+                        com.bike.trainer.ui.world.WorldHost.hide()
+                        if (ServiceLocator.sceneView === com.bike.trainer.ui.world.WorldHost.renderView()) {
+                            ServiceLocator.sceneView = null
+                        }
+                    }
+                }
+                LaunchedEffect(sceneBounds) {
+                    sceneBounds?.let { com.bike.trainer.ui.world.WorldHost.setBounds(it) }
+                    ServiceLocator.sceneView = com.bike.trainer.ui.world.WorldHost.renderView()
+                }
+                SideEffect {
+                    com.bike.trainer.ui.world.WorldHost.update(state.lapPositionMeters, state.speedKmh / 3.6)
+                    com.bike.trainer.ui.world.WorldHost.setChase(!streetLevel)
+                }
+            } else if (google3d) {
                 Google3DSceneView(
                     route = engine.route,
                     distanceMeters = state.lapPositionMeters,

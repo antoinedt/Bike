@@ -42,9 +42,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -145,6 +142,9 @@ fun HomeScreen(
     var menuExpanded by remember { mutableStateOf(false) }
     var prefetchFor by remember { mutableStateOf<java.io.File?>(null) }
     var stylizeFor by remember { mutableStateOf<Route?>(null) }
+    var sceneryMenu by remember { mutableStateOf(false) }
+    var buildWorldFor by remember { mutableStateOf<Route?>(null) }
+    var worldBuilt by remember { mutableStateOf<Boolean?>(null) }
     // Selected GPX parsed, and how many of its terrain tiles are still missing.
     var selectedRoute by remember { mutableStateOf<Route?>(null) }
     var missingTiles by remember { mutableStateOf<Int?>(null) }
@@ -172,6 +172,7 @@ fun HomeScreen(
             if (route != null && file == selectedGpx) {
                 selectedStats = route.totalDistance / 1000.0 to route.totalAscent
                 selectedRoute = route
+                worldBuilt = withContext(Dispatchers.IO) { com.bike.trainer.ui.world.WorldStore.isBuilt(context, route) }
                 val frames = withContext(Dispatchers.IO) { StreetViewCache.loadFor(context, route) }
                 svFrames = frames
                 missingTiles = withContext(Dispatchers.IO) {
@@ -315,18 +316,48 @@ fun HomeScreen(
             Spacer(Modifier.height(8.dp))
             Text("Scenery", style = MaterialTheme.typography.labelLarge)
             Spacer(Modifier.height(4.dp))
-            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                val options = listOf(
-                    "Street View" to Scenery.STREET_VIEW,
-                    "Google 3D" to Scenery.GOOGLE_3D,
-                    "Stylized" to Scenery.STYLIZED,
+            val sceneryOptions = listOf(
+                Scenery.WORLD to "3D World (cel-shaded, offline)",
+                Scenery.STREET_VIEW to "Street View",
+                Scenery.STYLIZED to "Stylized (legacy)",
+                Scenery.GOOGLE_3D to "Google 3D (online)",
+            )
+            ExposedDropdownMenuBox(
+                expanded = sceneryMenu,
+                onExpandedChange = { sceneryMenu = !sceneryMenu },
+            ) {
+                OutlinedTextField(
+                    value = sceneryOptions.firstOrNull { it.first == scenery }?.second ?: "Street View",
+                    onValueChange = {},
+                    readOnly = true,
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = sceneryMenu) },
+                    modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
                 )
-                options.forEachIndexed { i, (label, value) ->
-                    SegmentedButton(
-                        selected = scenery == value,
-                        onClick = { scope.launch { ServiceLocator.appConfigRepository.setScenery(value) } },
-                        shape = SegmentedButtonDefaults.itemShape(index = i, count = options.size),
-                    ) { Text(label, maxLines = 1) }
+                ExposedDropdownMenu(expanded = sceneryMenu, onDismissRequest = { sceneryMenu = false }) {
+                    sceneryOptions.forEach { (value, label) ->
+                        DropdownMenuItem(
+                            text = { Text(label) },
+                            onClick = {
+                                sceneryMenu = false
+                                scope.launch { ServiceLocator.appConfigRepository.setScenery(value) }
+                            },
+                        )
+                    }
+                }
+            }
+            if (scenery == Scenery.WORLD) {
+                val r = selectedRoute
+                if (randomSelected) {
+                    Text(
+                        "Random routes aren't a real place — they'll use Stylized.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else if (r != null) {
+                    TextButton(onClick = { buildWorldFor = r }) {
+                        Icon(Icons.Filled.Terrain, contentDescription = null)
+                        Text(if (worldBuilt == true) "  World built ✓ (rebuild…)" else "  Build world…")
+                    }
                 }
             }
             if (scenery == Scenery.GOOGLE_3D) {
@@ -458,12 +489,76 @@ fun HomeScreen(
     prefetchFor?.let { file ->
         PrefetchDialog(file = file, onDismiss = { prefetchFor = null })
     }
+    buildWorldFor?.let { route ->
+        BuildWorldDialog(route = route, onDismiss = { built ->
+            if (selectedRoute === route && built) worldBuilt = true
+            buildWorldFor = null
+        })
+    }
     stylizeFor?.let { route ->
         StylizeDialog(route = route, frames = svFrames, onDismiss = { remaining ->
             if (selectedRoute === route) missingTiles = remaining
             stylizeFor = null
         })
     }
+}
+
+/** Builds a route's offline cel-shaded 3D world (map data download + build on the phone). */
+@Composable
+private fun BuildWorldDialog(route: Route, onDismiss: (built: Boolean) -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var running by remember { mutableStateOf(false) }
+    var progress by remember { mutableStateOf<com.bike.trainer.ui.world.WorldStore.Progress?>(null) }
+    var status by remember { mutableStateOf<String?>(null) }
+    var built by remember { mutableStateOf(false) }
+    var job by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    AlertDialog(
+        onDismissRequest = { if (!running) onDismiss(built) },
+        title = { Text(if (running) "Building world…" else "Build 3D world") },
+        text = {
+            Column {
+                Text(
+                    "Downloads the OpenStreetMap data along ${route.name} (buildings, streets, trees, " +
+                        "street furniture — free) and builds a cel-shaded 3D world of it on this phone. " +
+                        "Rides then work fully offline.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                val p = progress
+                if (p != null && running) {
+                    Spacer(Modifier.height(12.dp))
+                    LinearProgressIndicator(progress = { p.fraction }, modifier = Modifier.fillMaxWidth())
+                    Text(p.step, style = MaterialTheme.typography.bodySmall)
+                }
+                status?.let {
+                    Spacer(Modifier.height(8.dp))
+                    Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = !running,
+                onClick = {
+                    running = true
+                    status = null
+                    job = scope.launch {
+                        val err = com.bike.trainer.ui.world.WorldStore.build(context, route) { progress = it }
+                        running = false
+                        built = err == null
+                        status = err ?: "Done — pick \"3D World\" and start the ride"
+                    }
+                },
+            ) { Text(if (built) "Rebuild" else "Build") }
+        },
+        dismissButton = {
+            TextButton(onClick = {
+                if (running) {
+                    job?.cancel(); running = false; status = "Cancelled"
+                } else onDismiss(built)
+            }) { Text(if (running) "Cancel" else "Close") }
+        },
+    )
 }
 
 /** Downloads the terrain tiles a route's stylized 3D scenery needs, for offline rides. */

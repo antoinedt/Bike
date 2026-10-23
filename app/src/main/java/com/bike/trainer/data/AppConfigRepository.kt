@@ -50,6 +50,8 @@ object Scenery {
     const val STREET_VIEW = "STREET_VIEW"
     const val GOOGLE_3D = "GOOGLE_3D"
     const val STYLIZED = "STYLIZED"
+    /** The offline cel-shaded 3D world (Godot), built by "Build world". */
+    const val WORLD = "WORLD"
 }
 
 class AppConfigRepository(private val dataStore: DataStore<Preferences>) {

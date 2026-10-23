@@ -17,6 +17,8 @@ android {
     defaultConfig {
         applicationId = "com.bike.trainer"
         minSdk = 26
+        // The Godot engine ships for 4 ABIs (~300 MB); phones need only arm64.
+        ndk { abiFilters += "arm64-v8a" }
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
@@ -60,6 +62,11 @@ android {
         }
     }
 
+    // The Godot world project (res://) is packaged at the root of the assets.
+    sourceSets["main"].assets.srcDirs("src/main/assets", "src/godot")
+    // Compress native libs in the APK (the Godot engine is ~70 MB uncompressed).
+    packaging { jniLibs { useLegacyPackaging = true } }
+
     buildTypes {
         debug {
             signingConfig = signingConfigs.getByName("debug")
@@ -102,6 +109,9 @@ dependencies {
     implementation(libs.androidx.material3)
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.androidx.webkit)
+    // Embedded Godot engine for the cel-shaded "3D World" scenery.
+    implementation(libs.godot.android)
+    implementation("androidx.fragment:fragment-ktx:1.8.6")
     implementation(libs.androidx.navigation.compose)
     debugImplementation(libs.androidx.ui.tooling)
 

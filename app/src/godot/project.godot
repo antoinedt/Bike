@@ -11,6 +11,8 @@ boot_splash/show_image=false
 
 [display]
 
+; 6 = sensor: follow the phone's own rotation setting (don't force landscape).
+window/handheld/orientation=6
 window/size/viewport_width=720
 window/size/viewport_height=1000
 
