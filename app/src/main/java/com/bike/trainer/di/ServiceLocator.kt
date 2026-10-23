@@ -38,6 +38,10 @@ object ServiceLocator {
     @Volatile
     var activeRide: RideEngine? = null
 
+    /** Scenery chosen for [activeRide]: true = Stylized 3D world, false = Street View. */
+    @Volatile
+    var stylizedScenery: Boolean = false
+
     /** Best in-ride screenshot (auto or manual), shown on the recap screen. */
     @Volatile
     var capturedRideImage: android.graphics.Bitmap? = null

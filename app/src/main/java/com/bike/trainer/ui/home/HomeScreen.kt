@@ -26,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.DirectionsBike
+import androidx.compose.material.icons.filled.Terrain
 import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -41,6 +42,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -71,6 +75,7 @@ import com.bike.trainer.route.RouteGenerator
 import com.bike.trainer.route.RouteLibrary
 import com.bike.trainer.route.StreetViewCache
 import com.bike.trainer.route.StreetViewPrefetcher
+import com.bike.trainer.route.TerrainTiles
 import com.bike.trainer.session.RideEngine
 import com.bike.trainer.session.Workout
 import com.bike.trainer.session.WorkoutLibrary
@@ -96,11 +101,14 @@ fun HomeScreen(
 
     val settings by settingsRepo.settings.collectAsStateWithLifecycle(initialValue = RiderSettings())
     val activeEntry by profileRepo.active.collectAsStateWithLifecycle(initialValue = null)
+    val appConfig by ServiceLocator.appConfigRepository.config.collectAsStateWithLifecycle(initialValue = null)
+    val stylized = appConfig?.stylizedScenery ?: false
 
     // Selected workout (null = Freeride). Declared before startRide so it captures it.
     var selectedWorkout by remember { mutableStateOf<Workout?>(null) }
 
     val startRide: (Route, Double, Boolean) -> Unit = { route, startMeters, ignoreHills ->
+        ServiceLocator.stylizedScenery = stylized
         ServiceLocator.activeRide = RideEngine(
             route = route,
             trainer = trainer,
@@ -131,6 +139,10 @@ fun HomeScreen(
     var randomSelected by remember { mutableStateOf(false) }
     var menuExpanded by remember { mutableStateOf(false) }
     var prefetchFor by remember { mutableStateOf<java.io.File?>(null) }
+    var stylizeFor by remember { mutableStateOf<Route?>(null) }
+    // Selected GPX parsed, and how many of its terrain tiles are still missing.
+    var selectedRoute by remember { mutableStateOf<Route?>(null) }
+    var missingTiles by remember { mutableStateOf<Int?>(null) }
     var startKm by remember { mutableStateOf("") }
     var ignoreHills by remember { mutableStateOf(false) }
     var workoutMenuExpanded by remember { mutableStateOf(false) }
@@ -140,6 +152,8 @@ fun HomeScreen(
 
     LaunchedEffect(selectedGpx, randomSelected) {
         selectedStats = null
+        selectedRoute = null
+        missingTiles = null
         val file = selectedGpx
         if (file != null && !randomSelected) {
             val route = withContext(Dispatchers.IO) {
@@ -149,6 +163,8 @@ fun HomeScreen(
             }
             if (route != null && file == selectedGpx) {
                 selectedStats = route.totalDistance / 1000.0 to route.totalAscent
+                selectedRoute = route
+                missingTiles = withContext(Dispatchers.IO) { TerrainTiles.missingTiles(context, route).size }
             }
         }
     }
@@ -281,6 +297,36 @@ fun HomeScreen(
                     Text("  Prefetch Street View…")
                 }
             }
+
+            // ---- Scenery: real Street View imagery, or the generated 3D world ----
+            Spacer(Modifier.height(8.dp))
+            Text("Scenery", style = MaterialTheme.typography.labelLarge)
+            Spacer(Modifier.height(4.dp))
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                listOf("Street View" to false, "Stylized 3D" to true).forEachIndexed { i, (label, value) ->
+                    SegmentedButton(
+                        selected = stylized == value,
+                        onClick = { scope.launch { ServiceLocator.appConfigRepository.setStylizedScenery(value) } },
+                        shape = SegmentedButtonDefaults.itemShape(index = i, count = 2),
+                    ) { Text(label) }
+                }
+            }
+            if (stylized) {
+                val r = selectedRoute
+                if (randomSelected) {
+                    Text(
+                        "Random routes get generated hills — nothing to download.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else if (r != null) {
+                    val missing = missingTiles
+                    TextButton(onClick = { stylizeFor = r }) {
+                        Icon(Icons.Filled.Terrain, contentDescription = null)
+                        Text(if (missing == 0) "  Stylized ✓ (works offline)" else "  Stylize…")
+                    }
+                }
+            }
         }
 
         // ---- Workout ----
@@ -366,6 +412,108 @@ fun HomeScreen(
     prefetchFor?.let { file ->
         PrefetchDialog(file = file, onDismiss = { prefetchFor = null })
     }
+    stylizeFor?.let { route ->
+        StylizeDialog(route = route, onDismiss = { remaining ->
+            if (selectedRoute === route) missingTiles = remaining
+            stylizeFor = null
+        })
+    }
+}
+
+/** Downloads the terrain tiles a route's stylized 3D scenery needs, for offline rides. */
+@Composable
+private fun StylizeDialog(route: Route, onDismiss: (remaining: Int?) -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var total by remember { mutableStateOf<Int?>(null) }
+    var missing by remember { mutableStateOf<Int?>(null) }
+    var running by remember { mutableStateOf(false) }
+    var progress by remember { mutableStateOf<TerrainTiles.Progress?>(null) }
+    var status by remember { mutableStateOf<String?>(null) }
+    var job by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+
+    suspend fun refresh() {
+        val (t, m) = withContext(Dispatchers.IO) {
+            TerrainTiles.corridorTiles(route).size to TerrainTiles.missingTiles(context, route).size
+        }
+        total = t
+        missing = m
+    }
+    LaunchedEffect(route) { refresh() }
+
+    AlertDialog(
+        onDismissRequest = { if (!running) onDismiss(missing) },
+        title = { Text(if (running) "Stylizing…" else "Stylize route") },
+        text = {
+            Column {
+                Text(
+                    "Builds a low-poly 3D world from real terrain along ${route.name}. " +
+                        "Downloads elevation data once (free, no key) so the ride works offline.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Spacer(Modifier.height(10.dp))
+                val t = total
+                val m = missing
+                if (t == null || m == null) {
+                    Text("Checking…", style = MaterialTheme.typography.bodySmall)
+                } else if (m == 0) {
+                    Text(
+                        "Ready — all $t terrain tiles are on this device.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                } else {
+                    val mb = m * TerrainTiles.APPROX_TILE_BYTES / 1_000_000.0
+                    Text(
+                        "$m of $t terrain tiles to download (≈${String.format(java.util.Locale.US, "%.1f", mb)} MB)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                val p = progress
+                if (p != null && running) {
+                    Spacer(Modifier.height(12.dp))
+                    LinearProgressIndicator(
+                        progress = { if (p.total > 0) p.done.toFloat() / p.total else 0f },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Text("Downloading ${p.done}/${p.total}", style = MaterialTheme.typography.bodySmall)
+                }
+                status?.let {
+                    Spacer(Modifier.height(8.dp))
+                    Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = !running && (missing ?: 0) > 0,
+                onClick = {
+                    running = true
+                    status = null
+                    job = scope.launch {
+                        val failed = TerrainTiles.stylize(context, route) { progress = it }
+                        running = false
+                        refresh()
+                        status = if (failed == 0) "Done — this route now rides offline"
+                        else "$failed tiles failed — check your connection and retry"
+                    }
+                },
+            ) { Text("Stylize") }
+        },
+        dismissButton = {
+            TextButton(onClick = {
+                if (running) {
+                    job?.cancel()
+                    running = false
+                    status = "Cancelled"
+                    scope.launch { refresh() }
+                } else {
+                    onDismiss(missing)
+                }
+            }) { Text(if (running) "Cancel" else "Close") }
+        },
+    )
 }
 
 /** Sampling/cost dialog that prefetches Street View frames for one GPX route. */

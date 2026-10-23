@@ -77,6 +77,7 @@ class BackupManager(
             zip.closeEntry()
             addTree(zip, RouteLibrary.folder(context), "routes")
             addTree(zip, StreetViewCache.cacheRoot(context), "svcache")
+            addTree(zip, com.bike.trainer.route.TerrainTiles.root(context), "terrain")
         }
     }
 
@@ -85,6 +86,7 @@ class BackupManager(
         var jsonStr: String? = null
         val routesDir = RouteLibrary.folder(context)
         val svDir = StreetViewCache.cacheRoot(context)
+        val terrainDir = com.bike.trainer.route.TerrainTiles.root(context)
         ZipInputStream(input.buffered()).use { zip ->
             var entry = zip.nextEntry
             while (entry != null) {
@@ -99,6 +101,8 @@ class BackupManager(
                             runCatching { extract(zip, File(routesDir, name.removePrefix("routes/"))) }
                         name.startsWith("svcache/") ->
                             runCatching { extract(zip, File(svDir, name.removePrefix("svcache/"))) }
+                        name.startsWith("terrain/") ->
+                            runCatching { extract(zip, File(terrainDir, name.removePrefix("terrain/"))) }
                     }
                 }
                 zip.closeEntry()

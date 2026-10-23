@@ -117,6 +117,9 @@ fun RideScreen(
     val showCapture = appConfig?.showCaptureButton ?: true
     val workoutTol = (appConfig?.workoutTolerance ?: 0.10f).toDouble()
     var sceneBounds by remember { mutableStateOf<android.graphics.Rect?>(null) }
+    // Scenery picked on the start screen: the generated low-poly world replaces
+    // Street View / the map entirely (no coverage check, no Google key needed).
+    val stylized = remember { ServiceLocator.stylizedScenery }
     // Prefetched Street View frames for this route, if a valid cache exists.
     val svManifest = remember(engine.route.id) {
         com.bike.trainer.route.StreetViewCache.loadFor(context, engine.route)
@@ -128,6 +131,7 @@ fun RideScreen(
     var svLiveAvailable by remember(engine.route.id) { mutableStateOf<Boolean?>(null) }
     LaunchedEffect(engine.route.id) {
         svLiveAvailable = when {
+            stylized -> false
             svManifest != null -> true
             !com.bike.trainer.BuildConfig.HAS_MAPS_KEY -> false
             else -> {
@@ -140,7 +144,7 @@ fun RideScreen(
     }
     // Let the rider know once why a route is on the map rather than Street View.
     LaunchedEffect(svLiveAvailable) {
-        if (svLiveAvailable == false && svManifest == null &&
+        if (!stylized && svLiveAvailable == false && svManifest == null &&
             com.bike.trainer.BuildConfig.HAS_MAPS_KEY
         ) {
             Toast.makeText(
@@ -153,7 +157,7 @@ fun RideScreen(
     // "Google street view is on screen": street toggle + key + (cached OR confirmed
     // live coverage). Until the coverage check resolves we keep this false so the
     // map shows and the crash-prone panorama is never created.
-    val googleStreet = streetLevel && com.bike.trainer.BuildConfig.HAS_MAPS_KEY &&
+    val googleStreet = !stylized && streetLevel && com.bike.trainer.BuildConfig.HAS_MAPS_KEY &&
         (svManifest != null || svLiveAvailable == true)
 
     suspend fun captureScene(): Boolean {
@@ -208,7 +212,15 @@ fun RideScreen(
                     )
                 },
         ) {
-            if (googleStreet && svManifest != null) {
+            if (stylized) {
+                StylizedSceneView(
+                    route = engine.route,
+                    distanceMeters = state.lapPositionMeters,
+                    speedKmh = state.speedKmh,
+                    chase = !streetLevel,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else if (googleStreet && svManifest != null) {
                 // Prefetched frames: smooth, offline, no live panorama reloads.
                 CachedStreetView(
                     manifest = svManifest,
@@ -278,7 +290,7 @@ fun RideScreen(
             }
             // Animated rider, shown only over Street View where it reads as a
             // real cyclist on the road (the chase/map view has its own framing).
-            if (googleStreet) {
+            if (googleStreet || stylized) {
                 CyclistView(
                     speedKmh = state.speedKmh,
                     cadenceRpm = state.cadenceRpm,
@@ -339,6 +351,7 @@ fun RideScreen(
                 }
                 if (showView) {
                     val viewDesc = when {
+                        stylized -> if (streetLevel) "Rider view" else "Chase view"
                         !streetLevel -> "Chase view"
                         com.bike.trainer.BuildConfig.HAS_MAPS_KEY -> "Street View"
                         else -> "Ground view"
