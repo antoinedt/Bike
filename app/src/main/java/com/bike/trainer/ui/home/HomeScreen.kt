@@ -357,17 +357,34 @@ fun HomeScreen(
                     RiderPicker(appConfig?.riderStyle ?: "armour") { st ->
                         scope.launch { ServiceLocator.appConfigRepository.setRiderStyle(st) }
                     }
+                    val ws = worldStatus
+                    val photos = svFrames?.imageCount ?: 0
                     TextButton(onClick = { buildWorldFor = r }) {
                         Icon(Icons.Filled.Terrain, contentDescription = null)
-                        val ws = worldStatus
                         Text(
                             when {
                                 ws == null -> "  Build world…"
-                                ws.complete -> "  World built ✓ (rebuild…)"
-                                else -> "  World partly built (${ws.done}/${ws.total}) — finish…"
+                                ws.outdated -> "  Rebuild world (new builder)…"
+                                !ws.complete -> "  World partly built (${ws.done}/${ws.total}) — finish…"
+                                photos > ws.photos -> "  Rebuild with $photos Street View photos…"
+                                else -> "  World built ✓ (rebuild…)"
                             }
                         )
                     }
+                    Text(
+                        when {
+                            ws == null && photos > 0 -> "Will use the $photos Street View photos prefetched for this route."
+                            ws == null -> "No Street View photos prefetched: the world will come from map data only. " +
+                                "Prefetch Street View first for façades that look like the real place."
+                            ws.outdated -> "Built with an older builder: rebuild for the new building styles and landmarks."
+                            ws.photos > 0 -> "Built with ${ws.photos} Street View photos (façade colours, styles, street trees)." +
+                                if (photos > ws.photos) " More photos prefetched since ($photos): rebuild to use them." else ""
+                            photos > 0 -> "Built from map data only. $photos Street View photos were prefetched since: rebuild to use them."
+                            else -> "Built from map data only (no Street View photos prefetched for this route)."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
             if (scenery == Scenery.GOOGLE_3D) {
@@ -497,7 +514,11 @@ fun HomeScreen(
     }
 
     prefetchFor?.let { file ->
-        PrefetchDialog(file = file, onDismiss = { prefetchFor = null })
+        PrefetchDialog(file = file, onDismiss = {
+            prefetchFor = null
+            // New photos may change what the world can be built with.
+            selectedRoute?.let { r -> scope.launch { svFrames = withContext(Dispatchers.IO) { StreetViewCache.loadFor(context, r) } } }
+        })
     }
     buildWorldFor?.let { route ->
         BuildWorldDialog(route = route, onDismiss = { st ->
@@ -549,6 +570,10 @@ private fun BuildWorldDialog(route: Route, onDismiss: (com.bike.trainer.ui.world
     val stop = remember { java.util.concurrent.atomic.AtomicBoolean(false) }
     // Still downloading map data (vs. building from it).
     val downloading = running && (progress?.fraction ?: 0f) < 0.65f
+    var photos by remember { mutableStateOf<Int?>(null) }
+    LaunchedEffect(route) {
+        photos = withContext(Dispatchers.IO) { com.bike.trainer.ui.world.WorldStore.availablePhotos(context, route) }
+    }
     AlertDialog(
         onDismissRequest = { if (!running) onDismiss(built) },
         title = { Text(if (running) "Building world…" else "Build 3D world") },
@@ -560,6 +585,17 @@ private fun BuildWorldDialog(route: Route, onDismiss: (com.bike.trainer.ui.world
                         "Rides then work fully offline.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
+                photos?.let { n ->
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        if (n > 0) "With Street View photos: the $n photos prefetched for this route are analysed on the " +
+                            "phone for façade colours, building styles and street trees."
+                        else "Map data only: no Street View photos are prefetched for this route. Prefetch them " +
+                            "first (then rebuild) for façades that look more like the real place.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (n > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 val p = progress
                 if (p != null && running) {
                     Spacer(Modifier.height(12.dp))
@@ -589,7 +625,8 @@ private fun BuildWorldDialog(route: Route, onDismiss: (com.bike.trainer.ui.world
                             st != null && !st.complete ->
                                 "Built ${st.done} of ${st.total} sections — the rest of the route has terrain only. " +
                                     "Tap Build again later to download the missing parts."
-                            else -> "Done — pick \"3D World\" and start the ride"
+                            st != null && st.photos > 0 -> "Done, built with ${st.photos} Street View photos. Pick \"3D World\" and start the ride"
+                            else -> "Done, built from map data only. Pick \"3D World\" and start the ride"
                         }
                     }
                 },

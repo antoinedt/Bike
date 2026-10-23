@@ -66,6 +66,8 @@ android {
     sourceSets["main"].assets.srcDirs("src/main/assets", "src/godot")
     // Compress native libs in the APK (the Godot engine is ~70 MB uncompressed).
     packaging { jniLibs { useLegacyPackaging = true } }
+    // The street segmentation model is memory-mapped straight from the APK.
+    androidResources { noCompress += "tflite" }
 
     buildTypes {
         debug {
@@ -112,6 +114,8 @@ dependencies {
     // Embedded Godot engine for the cel-shaded "3D World" scenery.
     implementation(libs.godot.android)
     implementation("androidx.fragment:fragment-ktx:1.8.6")
+    // On-device segmentation of the Street View frames (world builder).
+    implementation("org.tensorflow:tensorflow-lite:2.16.1")
     implementation(libs.androidx.navigation.compose)
     debugImplementation(libs.androidx.ui.tooling)
 

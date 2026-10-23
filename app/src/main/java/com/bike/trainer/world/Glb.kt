@@ -15,10 +15,10 @@ class MeshData {
     val vertexCount get() = pos.size / 3
 
     /** Add a vertex (GL/Godot space) and return its index. */
-    fun v(x: Double, y: Double, z: Double, nx: Double, ny: Double, nz: Double, rgb: Int, u0: Double = 0.0, v0: Double = 0.0, u1: Double = 0.0, v1: Double = 0.0): Int {
+    fun v(x: Double, y: Double, z: Double, nx: Double, ny: Double, nz: Double, rgb: Int, u0: Double = 0.0, v0: Double = 0.0, u1: Double = 0.0, v1: Double = 0.0, alpha: Float = 1f): Int {
         pos.add(x.toFloat()); pos.add(y.toFloat()); pos.add(z.toFloat())
         nrm.add(nx.toFloat()); nrm.add(ny.toFloat()); nrm.add(nz.toFloat())
-        col.add(((rgb shr 16) and 0xFF) / 255f); col.add(((rgb shr 8) and 0xFF) / 255f); col.add((rgb and 0xFF) / 255f); col.add(1f)
+        col.add(((rgb shr 16) and 0xFF) / 255f); col.add(((rgb shr 8) and 0xFF) / 255f); col.add((rgb and 0xFF) / 255f); col.add(alpha)
         uv0.add(u0.toFloat()); uv0.add(v0.toFloat())
         uv1.add(u1.toFloat()); uv1.add(v1.toFloat())
         return vertexCount - 1

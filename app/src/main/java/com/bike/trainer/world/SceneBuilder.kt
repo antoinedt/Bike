@@ -33,7 +33,13 @@ class SceneBuilder(
     private val route: Route,
     private val osm: OsmData,
     dem: HeightSource,
+    /** What the Street View photos say about each building (none without photos). */
+    private val facts: (OsmArea) -> BuildingFacts? = { null },
+    /** Trees seen in the photos (local x, y), added where the map has none. */
+    private val photoTrees: List<DoubleArray> = emptyList(),
 ) {
+    private val region = route.points.firstOrNull()?.let { Region.of(it.lat, it.lon) } ?: Region.OTHER
+
     /**
      * Everything stands on the rendered ground: the DEM sampled on the ground
      * mesh's 8 m grid and interpolated over the very same triangles, so streets,
@@ -56,7 +62,7 @@ class SceneBuilder(
     }
 
     companion object {
-        const val VERSION = 1
+        const val VERSION = 2
         const val CHUNK_LEN = 400.0
         private const val TILE = 160.0
         private const val TEX = 512
@@ -186,7 +192,7 @@ class SceneBuilder(
             cur = Chunk()
             groundTiles[index]?.forEach { paintTile(it) }
             ways[index]?.forEach { linework(it) }
-            buildings[index]?.forEach { (a, ring) -> building(cur, a.id, a.tags, ring) }
+            buildings[index]?.forEach { (a, ring) -> building(cur, a, ring) }
             props[index]?.let { cur.props.append(it.first); cur.propCount = it.second }
             val glb = GlbWriter()
             cur.ground.forEach { (name, g) -> glb.add(name, g.first, "ground", g.second) }
@@ -546,10 +552,13 @@ class SceneBuilder(
         return out
     }
 
-    private fun building(chunk: Chunk, id: Long, t: Map<String, String>, raw: DoubleArray) {
+    private fun building(chunk: Chunk, area: OsmArea, raw: DoubleArray) {
+        val id = area.id
+        val t = area.tags
         val ring = Geometry.simplify(Geometry.ccw(raw))
         val n = ring.size / 2
-        if (n < 3 || abs(Geometry.area(ring, n)) < 6.0) return
+        val footprint = abs(Geometry.area(ring, n))
+        if (n < 3 || footprint < 6.0) return
         val type = t["building"] ?: t["building:part"] ?: "yes"
         val levels = t["building:levels"]?.toDoubleOrNull()
         val roofLevels = t["roof:levels"]?.toDoubleOrNull() ?: 0.0
@@ -571,30 +580,42 @@ class SceneBuilder(
         val base = ground + minHeight
         val bottom = if (minHeight > 0) base else ground - 0.6
         val top = ground + height
+        val isPart = t.containsKey("building:part")
 
-        // Roof shape.
+        // Style from tags, size, region and the photos.
+        val f = facts(area)
+        val nLevels = estimateLevels(levels, height - minHeight)
+        val style = if (isPart && t["building"] == null) ArchStyle.BLANK.takeIf { height - minHeight < 4 } ?: ArchStyle.classify(type, t, height, nLevels, footprint, longestSide(ring), region, f)
+        else ArchStyle.classify(type, t, height, nLevels, footprint, longestSide(ring), region, f)
+
+        // Roof shape: tagged, or obvious for houses / churches on simple footprints.
         val tagShape = t["roof:shape"]
-        val house = type in setOf("house", "detached", "semidetached_house", "bungalow", "farm", "barn", "shed", "cabin", "farm_auxiliary", "garage", "church", "chapel")
-        val shape = tagShape ?: if (house && n == 4 && abs(Geometry.area(ring, n)) < 600) "gabled" else "flat"
+        val wantsPitch = style == ArchStyle.HOUSE || style == ArchStyle.CHURCH ||
+            type in setOf("barn", "farm_auxiliary", "cabin", "garage", "shed")
+        val shape = tagShape ?: if (wantsPitch && n == 4 && footprint < 1500) "gabled" else "flat"
         val pitched = n == 4 && shape in setOf("gabled", "hipped", "pyramidal", "half-hipped", "gambrel", "mansard")
+        val radial = !pitched && shape in setOf("dome", "onion", "cone", "pyramidal", "round")
         val rect = if (pitched) rectAxes(ring) else null
-        val roofH = if (pitched && rect != null) {
-            parseMeters(t["roof:height"]) ?: (min(rect[2], rect[3]) / 2 * tan(Math.toRadians(36.0))).coerceAtMost(height * 0.5)
-        } else 0.0
+        val roofH = when {
+            pitched && rect != null -> parseMeters(t["roof:height"])
+                ?: (min(rect[2], rect[3]) / 2 * tan(Math.toRadians(if (style == ArchStyle.CHURCH) 50.0 else 36.0))).coerceAtMost(height * 0.55)
+            radial -> parseMeters(t["roof:height"]) ?: (Math.sqrt(footprint / PI) * if (shape == "cone") 2.0 else 1.0).coerceAtMost(height * 0.6)
+            else -> 0.0
+        }
         val eave = top - roofH
 
         val seed = (id xor (id ushr 17)).toInt() and 0x7FFFFFFF
-        val wall = parseColour(t["building:colour"]) ?: parseColour(t["colour"]) ?: WALLS[seed % WALLS.size]
-        val roof = parseColour(t["roof:colour"]) ?: if (pitched) ROOF_PITCHED[(seed / 7) % ROOF_PITCHED.size] else ROOF_FLAT[(seed / 7) % ROOF_FLAT.size]
-        val style = when {
-            type in setOf("garage", "garages", "shed", "carport", "roof", "industrial", "warehouse", "hut") -> 0.0
-            t.containsKey("shop") || type in setOf("retail", "commercial", "supermarket", "kiosk") -> 2.0
-            else -> 1.0
-        }
+        val wall = parseColour(t["building:colour"]) ?: parseColour(t["colour"]) ?: f?.colour ?: style.palette[seed % style.palette.size]
+        val roof = parseColour(t["roof:colour"]) ?: if (pitched || radial) ROOF_PITCHED[(seed / 7) % ROOF_PITCHED.size] else ROOF_FLAT[(seed / 7) % ROOF_FLAT.size]
+        val shop = t.containsKey("shop") || type in setOf("retail", "commercial", "supermarket", "kiosk")
+        val floorH = clampFloor(eave - base, nLevels)
 
-        // Walls (one quad per edge), UVs in bays / floors for the window shader.
+        // Walls (one quad per edge). UVs in bays / floors for the façade shader:
+        // UV1 = (style id, wall length in bays); colour alpha < 1 = shopfront ground floor.
         val w = chunk.walls
+        val detail = Details(w) { ax, ah, ay, bx, bh, by -> edge(chunk, ax, ah, ay, bx, bh, by) }
         var along = 0.0
+        var balconies = 0
         for (i in 0 until n) {
             val j = (i + 1) % n
             val ax = ring[2 * i]; val ay = ring[2 * i + 1]; val bx = ring[2 * j]; val by = ring[2 * j + 1]
@@ -602,18 +623,56 @@ class SceneBuilder(
             if (len < 0.05) continue
             // CCW ring: outward normal is to the right of travel (y north). Godot z = -north.
             val nx = (by - ay) / len; val nz = (bx - ax) / len
-            val u0 = along / BAY; val u1 = (along + len) / BAY
-            val v0 = (bottom - ground) / FLOOR; val v1 = (eave - ground) / FLOOR
-            val s1 = len / BAY
-            val p0 = w.v(ax, bottom, -ay, nx, 0.0, nz, wall, u0, v0, style, s1)
-            val p1 = w.v(bx, bottom, -by, nx, 0.0, nz, wall, u1, v0, style, s1)
-            val p2 = w.v(bx, eave, -by, nx, 0.0, nz, wall, u1, v1, style, s1)
-            val p3 = w.v(ax, eave, -ay, nx, 0.0, nz, wall, u0, v1, style, s1)
+            val u0 = along / style.bay; val u1 = (along + len) / style.bay
+            val v0 = (bottom - ground) / floorH; val v1 = (eave - ground) / floorH
+            val s1 = len / style.bay
+            val sid = style.id.toDouble()
+            val a = if (shop) 0.5f else 1f
+            val p0 = w.v(ax, bottom, -ay, nx, 0.0, nz, wall, u0, v0, sid, s1, a)
+            val p1 = w.v(bx, bottom, -by, nx, 0.0, nz, wall, u1, v0, sid, s1, a)
+            val p2 = w.v(bx, eave, -by, nx, 0.0, nz, wall, u1, v1, sid, s1, a)
+            val p3 = w.v(ax, eave, -ay, nx, 0.0, nz, wall, u0, v1, sid, s1, a)
             w.tri(p0, p1, p2); w.tri(p0, p2, p3)
             along += len
-            // Ink: base + eave edges.
             edge(chunk, ax, bottom.coerceAtLeast(ground), ay, bx, bottom.coerceAtLeast(ground), by)
             edge(chunk, ax, eave, ay, bx, eave, by)
+
+            // Balconies / galleries on the walls that face the route close by.
+            if (minHeight > 0 || nLevels < 2 || balconies > 60) continue
+            val mx = (ax + bx) / 2; val my = (ay + by) / 2
+            val nr = nearest(mx, my, 40.0) ?: continue
+            if (nr[1] > 35.0) continue
+            val rp = route.pointAt(nr[0])
+            val ox = (by - ay) / len; val oy = -(bx - ax) / len // outward, local metres
+            if ((rp.x - mx) * ox + (rp.y - my) * oy < 0.4 * hypot(rp.x - mx, rp.y - my)) continue
+            val ux = (bx - ax) / len; val uy = (by - ay) / len
+            when (style) {
+                ArchStyle.HISTORIC -> {
+                    val bays = (len / style.bay).toInt()
+                    if (bays < 3) continue
+                    val trim = Rgb.lighter(wall, 0.18)
+                    for (fl in 1 until nLevels) for (b in 0 until bays) {
+                        if ((b + fl) % 3 != 0 || b == 0 || b == bays - 1) continue
+                        val c = (b + 0.5) * len / bays
+                        val cx = ax + ux * c; val cy = ay + uy * c
+                        val h = ground + fl * floorH
+                        detail.box(cx + ox * 0.45, cy + oy * 0.45, h + 0.06, ux, uy, ox, oy, 0.34 * style.bay, 0.45, 0.07, trim)
+                        detail.box(cx + ox * 0.88, cy + oy * 0.88, h + 0.55, ux, uy, ox, oy, 0.34 * style.bay, 0.03, 0.42, 0x3A3F48, ink = false)
+                        balconies++
+                    }
+                }
+                ArchStyle.PLEX -> if (len <= 22.0) {
+                    val trim = 0x3A3F48
+                    for (fl in 1 until nLevels) {
+                        val h = ground + fl * floorH
+                        val mxx = (ax + bx) / 2; val myy = (ay + by) / 2
+                        detail.box(mxx + ox * 0.75, myy + oy * 0.75, h + 0.06, ux, uy, ox, oy, len / 2 - 0.4, 0.75, 0.07, Rgb.darker(wall, 0.35))
+                        detail.box(mxx + ox * 1.47, myy + oy * 1.47, h + 0.55, ux, uy, ox, oy, len / 2 - 0.4, 0.03, 0.42, trim, ink = false)
+                        balconies++
+                    }
+                }
+                else -> {}
+            }
         }
         // Vertical corner edges where the outline actually turns.
         for (i in 0 until n) {
@@ -624,8 +683,69 @@ class SceneBuilder(
             if (ang > 0.35) edge(chunk, ring[2 * i], bottom.coerceAtLeast(ground), ring[2 * i + 1], ring[2 * i], eave, ring[2 * i + 1])
         }
 
-        if (pitched && rect != null && roofH > 0.3) pitchedRoof(chunk, ring, rect, eave, top, wall, roof, shape)
-        else flatRoof(chunk, ring, n, eave, roof)
+        // Projecting bands: cornices, ledges, parapets.
+        if (minHeight <= 0 && n <= 64) when (style) {
+            ArchStyle.HISTORIC -> {
+                val trim = Rgb.lighter(wall, 0.15)
+                detail.band(ring, eave - 0.55, eave, 0.32, trim)
+                if (nLevels >= 2) detail.band(ring, base + floorH - 0.08, base + floorH + 0.18, 0.12, trim)
+            }
+            ArchStyle.PLEX -> detail.band(ring, eave - 0.45, eave + 0.25, 0.22, Rgb.darker(wall, 0.35))
+            ArchStyle.SLAB -> detail.band(ring, eave - 0.2, eave + 0.35, 0.06, Rgb.lighter(wall, 0.1))
+            ArchStyle.GLASS -> detail.band(ring, eave - 0.1, eave + 0.6, 0.04, 0x4A5260)
+            ArchStyle.INDUSTRIAL -> detail.band(ring, eave - 0.1, eave + 0.4, 0.05, Rgb.darker(wall, 0.15))
+            else -> {}
+        }
+
+        when {
+            pitched && rect != null && roofH > 0.3 -> {
+                pitchedRoof(chunk, ring, rect, eave, top, wall, roof, shape)
+                if (style == ArchStyle.HOUSE) {
+                    // A chimney.
+                    val cx = rect[0] + rect[4] * rect[2] * 0.25; val cy = rect[1] + rect[5] * rect[2] * 0.25
+                    detail.box(cx, cy, top - roofH * 0.3, rect[4], rect[5], -rect[5], rect[4], 0.3, 0.3, roofH * 0.45 + 0.4, 0x8A5A48)
+                }
+            }
+            radial && roofH > 0.3 -> radialRoof(chunk, ring, n, eave, roofH, roof, shape)
+            else -> flatRoof(chunk, ring, n, eave, roof)
+        }
+    }
+
+    /** Dome / onion / cone / pyramid over any footprint (towers, church spires, landmarks). */
+    private fun radialRoof(chunk: Chunk, ring: DoubleArray, n: Int, eave: Double, h: Double, rgb: Int, shape: String) {
+        val c = Geometry.centroid(ring, n)
+        val steps = if (shape == "cone" || shape == "pyramidal") 1 else 5
+        fun ringAt(k: Int): Pair<Double, Double> { // (scale, height) for step k
+            val f = k.toDouble() / steps
+            return when (shape) {
+                "dome", "round" -> kotlin.math.cos(f * PI / 2) to h * kotlin.math.sin(f * PI / 2)
+                "onion" -> (if (f < 0.4) 1.0 + 0.35 * kotlin.math.sin(f / 0.4 * PI / 2) else 1.35 * (1 - (f - 0.4) / 0.6)) to h * f
+                else -> (1 - f) to h * f
+            }
+        }
+        val m = chunk.roofs
+        for (k in 0 until steps) {
+            val (s0, h0) = ringAt(k); val (s1, h1) = ringAt(k + 1)
+            for (i in 0 until n) {
+                val j = (i + 1) % n
+                val pts = listOf(
+                    doubleArrayOf(c[0] + (ring[2 * i] - c[0]) * s0, c[1] + (ring[2 * i + 1] - c[1]) * s0, eave + h0),
+                    doubleArrayOf(c[0] + (ring[2 * j] - c[0]) * s0, c[1] + (ring[2 * j + 1] - c[1]) * s0, eave + h0),
+                    doubleArrayOf(c[0] + (ring[2 * j] - c[0]) * s1, c[1] + (ring[2 * j + 1] - c[1]) * s1, eave + h1),
+                    doubleArrayOf(c[0] + (ring[2 * i] - c[0]) * s1, c[1] + (ring[2 * i + 1] - c[1]) * s1, eave + h1),
+                )
+                // Face normal (Godot space), pointing up / outwards.
+                val ux = pts[1][0] - pts[0][0]; val uy = pts[1][2] - pts[0][2]; val uz = -(pts[1][1] - pts[0][1])
+                val vx = pts[3][0] - pts[0][0]; val vy = pts[3][2] - pts[0][2]; val vz = -(pts[3][1] - pts[0][1])
+                var nx = uy * vz - uz * vy; var ny = uz * vx - ux * vz; var nz = ux * vy - uy * vx
+                val l = sqrt(nx * nx + ny * ny + nz * nz).coerceAtLeast(1e-9)
+                nx /= l; ny /= l; nz /= l
+                if (ny < 0) { nx = -nx; ny = -ny; nz = -nz }
+                val s = m.vertexCount
+                for (p in pts) m.v(p[0], p[2], -p[1], nx, ny, nz, rgb)
+                m.tri(s, s + 1, s + 2); m.tri(s, s + 2, s + 3)
+            }
+        }
     }
 
     /** For a 4-point ring: [cx, cy, length along long axis, width, ux, uy] of its rectangle. */
@@ -770,6 +890,18 @@ class SceneBuilder(
         fun inBuilding(x: Double, y: Double): Boolean =
             bGrid[(floor(x / 50).toLong() shl 32) or (floor(y / 50).toLong() and 0xFFFFFFFFL)]
                 ?.any { (r, b) -> x in b[0]..b[2] && y in b[1]..b[3] && Geometry.contains(r, x, y) } ?: false
+        // Street trees seen in the photos, where the map has none close by (and not
+        // on the route itself).
+        for (p in photoTrees) {
+            val x = p[0]; val y = p[1]
+            val nr = nearest(x, y, PROP_RANGE) ?: continue
+            if (nr[1] < 4.0 || inBuilding(x, y)) continue
+            val near = tGrid[(floor(x / 50).toLong() shl 32) or (floor(y / 50).toLong() and 0xFFFFFFFFL)]
+                ?.any { hypot(it[0] - x, it[1] - y) < 6.0 } ?: false
+            if (near) continue
+            val k = (x * 7 + y * 13).toInt()
+            prop("tree", x, y, 0.85 + (k and 3) * 0.08, (k and 63) / 10.0, k and 7)
+        }
         for (a in osm.areas) {
             val t = a.tags
             val dense = t["natural"] == "wood" || t["landuse"] == "forest"
