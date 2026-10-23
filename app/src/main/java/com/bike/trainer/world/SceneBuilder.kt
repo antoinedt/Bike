@@ -64,6 +64,8 @@ class SceneBuilder(
         private const val GROUND_RANGE = 280.0
         private const val BUILDING_RANGE = 230.0
         private const val PROP_RANGE = 160.0
+        private const val CELL = 20.0
+        private const val FIELD_RANGE = 440.0
         private const val BAY = 3.2
         private const val FLOOR = 3.2
 
@@ -112,10 +114,19 @@ class SceneBuilder(
         var propCount = 0
     }
 
-    // Route samples every 5 m (for nearest-route queries and the manifest).
+    // Route samples every 5 m (for the manifest).
     private val rs = ArrayList<DoubleArray>() // [d, x, y]
-    private val rBuckets = HashMap<Long, MutableList<Int>>()
-    private val chunks = HashMap<Int, Chunk>()
+
+    /**
+     * "Nearest point on the route" for every 20 m cell near the route, computed once
+     * (cell -> [distance along route, distance from route]). Queries are then a
+     * single lookup instead of a search, which matters on big city routes.
+     */
+    private val field = HashMap<Long, DoubleArray>()
+
+    /** The chunk being built (the world is built and written one chunk at a time). */
+    private var current = -1
+    private var cur = Chunk()
 
     init {
         var d = 0.0
@@ -125,59 +136,73 @@ class SceneBuilder(
             if (d >= route.totalDistance) break
             d = min(d + 5.0, route.totalDistance)
         }
-        rs.forEachIndexed { i, s -> rBuckets.getOrPut(key(s[1], s[2], 50.0)) { ArrayList() }.add(i) }
+        val reach = (FIELD_RANGE / CELL).toInt() + 1
+        var k = 0
+        while (k < rs.size) {
+            val s = rs[k]
+            val cx = floor(s[1] / CELL).toLong(); val cy = floor(s[2] / CELL).toLong()
+            for (i in cx - reach..cx + reach) for (j in cy - reach..cy + reach) {
+                val dist = hypot((i + 0.5) * CELL - s[1], (j + 0.5) * CELL - s[2])
+                if (dist > FIELD_RANGE + CELL) continue
+                val key = (i shl 32) or (j and 0xFFFFFFFFL)
+                val e = field[key]
+                if (e == null) field[key] = doubleArrayOf(s[0], dist)
+                else if (dist < e[1]) { e[0] = s[0]; e[1] = dist }
+            }
+            k += 4 // every 20 m is plenty for 20 m cells
+        }
     }
 
     private fun key(x: Double, y: Double, cell: Double): Long =
         (floor(x / cell).toLong() shl 32) or (floor(y / cell).toLong() and 0xFFFFFFFFL)
 
-    /** (distance along route, distance from route) of the nearest route sample. */
+    /** (distance along route, distance from route) of the nearest route point, ±10 m. */
     private fun nearest(x: Double, y: Double, maxRange: Double): DoubleArray? {
-        val reach = (maxRange / 50.0).toInt() + 1
-        val bx = floor(x / 50.0).toLong(); val by = floor(y / 50.0).toLong()
-        var best = Double.MAX_VALUE; var bestD = 0.0
-        for (i in bx - reach..bx + reach) for (j in by - reach..by + reach) {
-            rBuckets[(i shl 32) or (j and 0xFFFFFFFFL)]?.forEach { k ->
-                val s = rs[k]
-                val dd = hypot(s[1] - x, s[2] - y)
-                if (dd < best) { best = dd; bestD = s[0] }
-            }
-        }
-        return if (best <= maxRange) doubleArrayOf(bestD, best) else null
+        val e = field[(floor(x / CELL).toLong() shl 32) or (floor(y / CELL).toLong() and 0xFFFFFFFFL)] ?: return null
+        return if (e[1] <= maxRange) e else null
     }
 
-    private fun chunkFor(d: Double): Chunk = chunks.getOrPut(floor(d / CHUNK_LEN).toInt()) { Chunk() }
+    private fun chunkIndex(d: Double) = floor(d / CHUNK_LEN).toInt()
 
     // ---------------------------------------------------------------------------------
     // Entry point
 
-    /** Build everything; [write] receives each output file (name, bytes). */
+    /**
+     * Build everything; [write] receives each output file (name, bytes). Features are
+     * first sorted into the chunks they touch, then each chunk is built, written and
+     * released before the next, so memory stays at one chunk whatever the route length.
+     */
     fun build(write: (String, ByteArray) -> Unit, progress: (String) -> Unit = {}) {
-        progress("Ground")
-        buildGround()
-        progress("Streets")
-        buildLinework()
-        progress("Buildings")
-        buildBuildings()
-        progress("Props")
-        buildProps()
-        progress("Writing")
+        progress("Sorting map data")
+        val groundTiles = groundTilesByChunk()
+        val ways = waysByChunk()
+        val buildings = buildingsByChunk()
+        val props = propsByChunk()
+        val indices = (groundTiles.keys + ways.keys + buildings.keys + props.keys).toSortedSet()
         val infos = ArrayList<ChunkInfo>()
-        for ((index, c) in chunks.toSortedMap()) {
+        for ((n, index) in indices.withIndex()) {
+            progress("Chunk ${n + 1}/${indices.size}")
+            current = index
+            cur = Chunk()
+            groundTiles[index]?.forEach { paintTile(it) }
+            ways[index]?.forEach { linework(it) }
+            buildings[index]?.forEach { (a, ring) -> building(cur, a.id, a.tags, ring) }
+            props[index]?.let { cur.props.append(it.first); cur.propCount = it.second }
             val glb = GlbWriter()
-            c.ground.forEach { (name, g) -> glb.add(name, g.first, "ground", g.second) }
-            glb.add("walls", c.walls, "walls")
-            glb.add("roofs", c.roofs, "roofs")
-            glb.add("roads", c.roads, "roads")
+            cur.ground.forEach { (name, g) -> glb.add(name, g.first, "ground", g.second) }
+            glb.add("walls", cur.walls, "walls")
+            glb.add("roofs", cur.roofs, "roofs")
+            glb.add("roads", cur.roads, "roads")
             val name = "chunk_%03d".format(index)
             if (!glb.isEmpty()) write("$name.glb", glb.bytes())
             val edges = StringBuilder()
-            for (i in 0 until c.edges.size) {
+            for (i in 0 until cur.edges.size) {
                 if (i > 0) edges.append(',')
-                edges.append(fmt(c.edges.a[i].toDouble()))
+                edges.append(fmt(cur.edges.a[i].toDouble()))
             }
-            write("$name.json", "{\"edges\":[$edges],\"props\":[${c.props}]}".toByteArray())
+            write("$name.json", "{\"edges\":[$edges],\"props\":[${cur.props}]}".toByteArray())
             infos.add(ChunkInfo(index, index * CHUNK_LEN, (index + 1) * CHUNK_LEN))
+            cur = Chunk() // release this chunk's geometry
         }
         write("world.json", manifest(infos).toByteArray())
     }
@@ -209,29 +234,42 @@ class SceneBuilder(
 
     private class Feature(val bbox: DoubleArray, val draw: (Raster) -> Unit, val order: Int)
 
-    private fun buildGround() {
-        val features = groundFeatures().sortedBy { it.order }
-        // Tiles touching the corridor.
+    private val groundFeatureList by lazy { groundFeatures().sortedBy { it.order } }
+
+    /** Ground tiles touching the corridor, by the chunk nearest to their centre. */
+    private fun groundTilesByChunk(): Map<Int, List<Long>> {
         val tiles = HashSet<Long>()
+        val r = (GROUND_RANGE / TILE).toInt() + 1
         for (s in rs) {
-            val r = (GROUND_RANGE / TILE).toInt() + 1
             val tx = floor(s[1] / TILE).toLong(); val ty = floor(s[2] / TILE).toLong()
             for (i in tx - r..tx + r) for (j in ty - r..ty + r) tiles.add((i shl 32) or (j and 0xFFFFFFFFL))
         }
+        val out = HashMap<Int, MutableList<Long>>()
         for (t in tiles) {
             val ix = (t shr 32).toInt(); val iy = t.toInt()
-            val ox = ix * TILE; val oy = iy * TILE
-            val near = nearest(ox + TILE / 2, oy + TILE / 2, GROUND_RANGE + TILE * 0.71) ?: continue
-            val raster = Raster(TEX, ox, oy, TILE)
-            raster.fill(C_MEADOW)
-            for (f in features) {
-                val b = f.bbox
-                if (b[2] < ox || b[0] > ox + TILE || b[3] < oy || b[1] > oy + TILE) continue
-                f.draw(raster)
+            // Nearest over the tile's centre and corners (it may only clip the corridor).
+            var best: DoubleArray? = null
+            for ((fx, fy) in listOf(0.5 to 0.5, 0.0 to 0.0, 1.0 to 0.0, 0.0 to 1.0, 1.0 to 1.0)) {
+                val nr = nearest((ix + fx) * TILE, (iy + fy) * TILE, GROUND_RANGE) ?: continue
+                if (best == null || nr[1] < best[1]) best = nr
             }
-            val mesh = groundMesh(ox, oy)
-            chunkFor(near[0]).ground.add("ground_${ix}_$iy" to (mesh to raster.png()))
+            val b = best ?: continue
+            out.getOrPut(chunkIndex(b[0])) { ArrayList() }.add(t)
         }
+        return out
+    }
+
+    private fun paintTile(t: Long) {
+        val ix = (t shr 32).toInt(); val iy = t.toInt()
+        val ox = ix * TILE; val oy = iy * TILE
+        val raster = Raster(TEX, ox, oy, TILE)
+        raster.fill(C_MEADOW)
+        for (f in groundFeatureList) {
+            val b = f.bbox
+            if (b[2] < ox || b[0] > ox + TILE || b[3] < oy || b[1] > oy + TILE) continue
+            f.draw(raster)
+        }
+        cur.ground.add("ground_${ix}_$iy" to (groundMesh(ox, oy) to raster.png()))
     }
 
     private fun groundMesh(ox: Double, oy: Double): MeshData {
@@ -273,31 +311,49 @@ class SceneBuilder(
         const val ASPHALT = 0.09; const val LANE = 0.11; const val MARK = 0.13
     }
 
-    private fun buildLinework() {
+    /** Ways that come near the route, by every chunk they can contribute to. */
+    private fun waysByChunk(): Map<Int, List<OsmWay>> {
+        val out = HashMap<Int, MutableList<OsmWay>>()
         for (w in osm.ways) {
             val t = w.tags
             if (t["tunnel"] == "yes" || t["tunnel"] == "building_passage" || (t["layer"]?.toIntOrNull() ?: 0) < 0) continue
-            // Only ways that come near the route.
-            var near = false
+            if (t["waterway"] == null && t["railway"] == null && t["highway"] == null) continue
+            val set = HashSet<Int>()
             var i = 0
-            while (i < w.xy.size && !near) { near = nearest(w.xy[i], w.xy[i + 1], GROUND_RANGE) != null; i += 2 }
-            if (!near) continue
-            val xy = w.xy
-            val ww = t["waterway"]
-            val rail = t["railway"]
-            val hw = t["highway"]
-            when {
-                ww != null -> {
-                    val width = parseMeters(t["width"]) ?: when (ww) { "river" -> 18.0; "canal" -> 12.0; "stream" -> 3.0; else -> 1.5 }
-                    ribbon(xy, width / 2, -width / 2, Lift.WATER, C_WATER)
-                }
-                rail in setOf("rail", "light_rail", "narrow_gauge", "tram") -> {
-                    if (rail != "tram") ribbon(xy, 1.7, -1.7, Lift.PATH, C_RAIL_BED)
-                    ribbon(xy, 0.80, 0.66, Lift.MARK, C_RAIL)
-                    ribbon(xy, -0.66, -0.80, Lift.MARK, C_RAIL)
-                }
-                hw != null -> street(xy, hw, t)
+            while (i < w.xy.size) {
+                // Sample long segments too, so a way crossing the corridor isn't missed.
+                if (i + 2 < w.xy.size) {
+                    val ax = w.xy[i]; val ay = w.xy[i + 1]; val bx = w.xy[i + 2]; val by = w.xy[i + 3]
+                    val steps = max(1, (hypot(bx - ax, by - ay) / CELL).toInt())
+                    for (k in 0 until steps) {
+                        val f = k.toDouble() / steps
+                        nearest(ax + (bx - ax) * f, ay + (by - ay) * f, GROUND_RANGE)?.let { set.add(chunkIndex(it[0])) }
+                    }
+                } else nearest(w.xy[i], w.xy[i + 1], GROUND_RANGE)?.let { set.add(chunkIndex(it[0])) }
+                i += 2
             }
+            for (c in set) out.getOrPut(c) { ArrayList() }.add(w)
+        }
+        return out
+    }
+
+    private fun linework(w: OsmWay) {
+        val t = w.tags
+        val xy = w.xy
+        val ww = t["waterway"]
+        val rail = t["railway"]
+        val hw = t["highway"]
+        when {
+            ww != null -> {
+                val width = parseMeters(t["width"]) ?: when (ww) { "river" -> 18.0; "canal" -> 12.0; "stream" -> 3.0; else -> 1.5 }
+                ribbon(xy, width / 2, -width / 2, Lift.WATER, C_WATER)
+            }
+            rail in setOf("rail", "light_rail", "narrow_gauge", "tram") -> {
+                if (rail != "tram") ribbon(xy, 1.7, -1.7, Lift.PATH, C_RAIL_BED)
+                ribbon(xy, 0.80, 0.66, Lift.MARK, C_RAIL)
+                ribbon(xy, -0.66, -0.80, Lift.MARK, C_RAIL)
+            }
+            hw != null -> street(xy, hw, t)
         }
     }
 
@@ -403,7 +459,8 @@ class SceneBuilder(
             if (on > 0 && mid % (on + off) >= on) continue
             val cx = (px[i] + px[i + 1]) / 2; val cy = (py[i] + py[i + 1]) / 2
             val near = nearest(cx, cy, GROUND_RANGE) ?: continue
-            val m = chunkFor(near[0]).roads
+            if (chunkIndex(near[0]) != current) continue
+            val m = cur.roads
             fun vert(k: Int, o: Double): Int {
                 val x = px[k] + nx[k] * o; val y = py[k] + ny[k] * o
                 return m.v(x, terrain.height(x, y) + lift, -y, 0.0, 1.0, 0.0, rgb)
@@ -467,9 +524,11 @@ class SceneBuilder(
     // ---------------------------------------------------------------------------------
     // Buildings
 
-    private fun buildBuildings() {
+    /** Building footprints near the route, by the chunk nearest to them. */
+    private fun buildingsByChunk(): Map<Int, List<Pair<OsmArea, DoubleArray>>> {
         val parts = osm.areas.filter { it.tags.containsKey("building:part") && it.tags["building:part"] != "no" }
         val partCentres = parts.map { Geometry.centroid(it.outers[0]) }
+        val out = HashMap<Int, MutableList<Pair<OsmArea, DoubleArray>>>()
         for (a in osm.areas) {
             val t = a.tags
             val isPart = t.containsKey("building:part") && t["building:part"] != "no"
@@ -481,9 +540,10 @@ class SceneBuilder(
             val near = nearest(c[0], c[1], BUILDING_RANGE) ?: continue
             // A building drawn as parts: the parts carry the real shape.
             if (isBuilding && !isPart && partCentres.any { pc -> Geometry.contains(outer, pc[0], pc[1]) }) continue
-            val chunk = chunkFor(near[0])
-            for (ring in a.outers) building(chunk, a.id, t, ring)
+            val list = out.getOrPut(chunkIndex(near[0])) { ArrayList() }
+            for (ring in a.outers) list.add(a to ring)
         }
+        return out
     }
 
     private fun building(chunk: Chunk, id: Long, t: Map<String, String>, raw: DoubleArray) {
@@ -638,12 +698,21 @@ class SceneBuilder(
     // ---------------------------------------------------------------------------------
     // Props
 
+    /** Props (small) are gathered for all chunks up front: chunk -> (json, count). */
+    private val propBuf = HashMap<Int, Pair<StringBuilder, Int>>()
+
     private fun prop(type: String, x: Double, y: Double, scale: Double, rot: Double, variant: Int = 0) {
         val near = nearest(x, y, PROP_RANGE) ?: return
-        val c = chunkFor(near[0])
-        if (c.propCount > 0) c.props.append(',')
-        c.props.append("{\"t\":\"$type\",\"p\":[${fmt(x)},${fmt(terrain.height(x, y))},${fmt(-y)}],\"s\":${fmt(scale)},\"r\":${fmt(rot)},\"k\":$variant}")
-        c.propCount++
+        val idx = chunkIndex(near[0])
+        val (sb, count) = propBuf[idx] ?: (StringBuilder() to 0)
+        if (count > 0) sb.append(',')
+        sb.append("{\"t\":\"$type\",\"p\":[${fmt(x)},${fmt(terrain.height(x, y))},${fmt(-y)}],\"s\":${fmt(scale)},\"r\":${fmt(rot)},\"k\":$variant}")
+        propBuf[idx] = sb to count + 1
+    }
+
+    private fun propsByChunk(): Map<Int, Pair<StringBuilder, Int>> {
+        buildProps()
+        return propBuf
     }
 
     private fun buildProps() {

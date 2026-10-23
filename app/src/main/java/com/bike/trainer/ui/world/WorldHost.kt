@@ -72,6 +72,8 @@ object WorldHost {
 
     fun setChase(on: Boolean) = plugin?.setChase(on)
 
+    fun setStyle(name: String) = plugin?.setStyle(name)
+
     fun hide() {
         container?.visibility = View.GONE
     }

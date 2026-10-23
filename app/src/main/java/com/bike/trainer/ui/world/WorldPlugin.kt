@@ -15,10 +15,17 @@ class WorldPlugin(godot: Godot) : GodotPlugin(godot) {
     @Volatile private var ready = false
     @Volatile private var pendingWorld: String? = null
     @Volatile private var chase = false
+    @Volatile private var style = "armour"
 
     override fun getPluginName() = "VibeBike"
 
-    override fun getPluginSignals() = setOf(OPEN_WORLD, RIDE_UPDATE, SET_CHASE)
+    override fun getPluginSignals() = setOf(OPEN_WORLD, RIDE_UPDATE, SET_CHASE, SET_STYLE)
+
+    /** Rider design (see res://cyclist.gd STYLES). */
+    fun setStyle(name: String) {
+        style = name
+        if (ready) emitSignal(SET_STYLE.name, name)
+    }
 
     /** Load the world in [dir] (now, or as soon as the scene is ready). */
     fun openWorld(dir: String) {
@@ -41,6 +48,7 @@ class WorldPlugin(godot: Godot) : GodotPlugin(godot) {
         ready = true
         pendingWorld?.let { emitSignal(OPEN_WORLD.name, it) }
         emitSignal(SET_CHASE.name, chase)
+        emitSignal(SET_STYLE.name, style)
     }
 
     companion object {
@@ -49,5 +57,6 @@ class WorldPlugin(godot: Godot) : GodotPlugin(godot) {
             "ride_update", java.lang.Double::class.java, java.lang.Double::class.java, java.lang.Double::class.java,
         )
         private val SET_CHASE = SignalInfo("set_chase", java.lang.Boolean::class.java)
+        private val SET_STYLE = SignalInfo("set_style", String::class.java)
     }
 }

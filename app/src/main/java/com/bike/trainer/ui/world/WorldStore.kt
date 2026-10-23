@@ -235,9 +235,14 @@ object WorldStore {
                     post(onProgress, Progress("Building: $step…", 0.75f))
                 }
             }
-        } catch (e: Exception) {
+        } catch (e: kotlinx.coroutines.CancellationException) {
             tmp.deleteRecursively()
-            return@withContext Result("World build failed: ${e.message}", status(context, route))
+            throw e
+        } catch (e: Throwable) {
+            // Includes OutOfMemoryError: report it instead of crashing the app.
+            tmp.deleteRecursively()
+            val why = if (e is OutOfMemoryError) "ran out of memory" else (e.message ?: e.javaClass.simpleName)
+            return@withContext Result("World build failed: $why", status(context, route))
         }
 
         // 3. Swap in the new world.

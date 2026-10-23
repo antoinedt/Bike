@@ -9,6 +9,8 @@ extends Node3D
 
 const Props = preload("res://props.gd")
 const Cyclist = preload("res://cyclist.gd")
+## Streets are drawn this far above the terrain (SceneBuilder's asphalt lift + margin).
+const ROAD_LIFT := 0.11
 
 var toon_shader: Shader = preload("res://shaders/toon.gdshader")
 var ink_shader: Shader = preload("res://shaders/ink_line.gdshader")
@@ -20,6 +22,8 @@ var route_step := 5.0
 var chunks_meta := []
 var loaded := {}          # chunk index -> Node3D
 var chunk_len := 400.0
+var chunk_samples := {}   # chunk index -> route points (every 50 m) it was built around
+var last_chunk_check := 0
 
 var distance := 0.0       # latest distance from the app
 var speed := 0.0          # m/s
@@ -53,6 +57,8 @@ func _ready() -> void:
 	props = Props.new()
 	add_child(props)
 	rider = Cyclist.new()
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--style="): rider.style = a.substr(8)
 	add_child(rider)
 
 	for a in OS.get_cmdline_user_args():
@@ -73,6 +79,7 @@ func _ready() -> void:
 		plugin.connect("open_world", open_world)
 		plugin.connect("ride_update", ride_update)
 		plugin.connect("set_chase", func(c): chase = c)
+		plugin.connect("set_style", set_rider_style)
 		plugin.call("worldReady")
 	if world_dir != "":
 		open_world(world_dir)
@@ -148,7 +155,24 @@ func open_world(dir: String) -> void:
 	route = PackedVector3Array()
 	for i in range(0, r.size(), 3):
 		route.append(Vector3(r[i], r[i + 1], r[i + 2]))
+	chunk_samples.clear()
+	for meta in chunks_meta:
+		var pts := PackedVector3Array()
+		var d := float(meta["d0"])
+		while d <= float(meta["d1"]):
+			pts.append(_route_at(d))
+			d += 50.0
+		chunk_samples[int(meta["i"])] = pts
 	_update_chunks(true)
+
+
+## Swap the rider for another design (see cyclist.gd STYLES).
+func set_rider_style(name: String) -> void:
+	if rider and rider.style == name: return
+	if rider: rider.queue_free()
+	rider = Cyclist.new()
+	rider.style = name
+	add_child(rider)
 
 
 func ride_update(d: float, v: float, cad: float) -> void:
@@ -165,11 +189,20 @@ func _route_at(d: float) -> Vector3:
 	return route[i].lerp(route[min(i + 1, route.size() - 1)], f - i)
 
 
+## Chunks are loaded by distance to the rider, not by order along the route: a
+## street is stored with the first pass of the route near it, so loops and
+## out-and-back routes need the chunk of that earlier pass when they come back.
 func _update_chunks(force := false) -> void:
-	var cur := int(floor(render_d / chunk_len))
+	var now := Time.get_ticks_msec()
+	if not force and now - last_chunk_check < 500: return
+	last_chunk_check = now
+	var here := _route_at(render_d)
 	for meta in chunks_meta:
 		var i := int(meta["i"])
-		var want := i >= cur - 1 and i <= cur + 2
+		var dist := INF
+		for q in chunk_samples.get(i, PackedVector3Array()):
+			dist = minf(dist, Vector2(q.x - here.x, q.z - here.z).length())
+		var want := dist < (650.0 if loaded.has(i) else 500.0)
 		if want and not loaded.has(i):
 			var node := _load_chunk(i)
 			if node: loaded[i] = node
@@ -273,7 +306,7 @@ func _process(delta: float) -> void:
 	ahead.y = 0.0
 	if ahead.length() > 0.1:
 		heading = heading.slerp(ahead.normalized(), clampf(delta * 4.0, 0.0, 1.0)) if shot_path == "" else ahead.normalized()
-	rider.transform = Transform3D(Basis.looking_at(heading, Vector3.UP), p)
+	rider.transform = Transform3D(Basis.looking_at(heading, Vector3.UP), p + Vector3(0, ROAD_LIFT, 0))
 	rider.animate(delta if shot_path == "" else 0.3, speed, cadence)
 
 	# Camera behind the rider: close (rider view) or higher and further (chase).

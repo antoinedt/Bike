@@ -235,6 +235,7 @@ fun RideScreen(
                 // The Godot view sits behind the UI; this area stays transparent.
                 DisposableEffect(worldDir) {
                     com.bike.trainer.ui.world.WorldHost.show(worldDir!!)
+                    com.bike.trainer.ui.world.WorldHost.setStyle(appConfig?.riderStyle ?: "armour")
                     onDispose {
                         com.bike.trainer.ui.world.WorldHost.hide()
                         if (ServiceLocator.sceneView === com.bike.trainer.ui.world.WorldHost.renderView()) {

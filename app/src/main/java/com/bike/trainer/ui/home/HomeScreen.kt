@@ -354,6 +354,9 @@ fun HomeScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 } else if (r != null) {
+                    RiderPicker(appConfig?.riderStyle ?: "armour") { st ->
+                        scope.launch { ServiceLocator.appConfigRepository.setRiderStyle(st) }
+                    }
                     TextButton(onClick = { buildWorldFor = r }) {
                         Icon(Icons.Filled.Terrain, contentDescription = null)
                         val ws = worldStatus
@@ -507,6 +510,29 @@ fun HomeScreen(
             if (selectedRoute === route) missingTiles = remaining
             stylizeFor = null
         })
+    }
+}
+
+/** The 3D World rider design. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RiderPicker(current: String, onPick: (String) -> Unit) {
+    val options = listOf("armour" to "Armoured", "pro" to "Pro racer", "city" to "City rider", "chibi" to "Chibi")
+    var open by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(expanded = open, onExpandedChange = { open = !open }) {
+        OutlinedTextField(
+            value = options.firstOrNull { it.first == current }?.second ?: "Armoured",
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("Rider") },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = open) },
+            modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
+        )
+        ExposedDropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            options.forEach { (k, label) ->
+                DropdownMenuItem(text = { Text(label) }, onClick = { open = false; onPick(k) })
+            }
+        }
     }
 }
 
