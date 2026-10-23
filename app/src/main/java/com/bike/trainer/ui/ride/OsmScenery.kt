@@ -334,7 +334,6 @@ object BuildingMesher {
      */
     fun add(
         out: FloatList, f: OsmFeature, ground: (Double, Double) -> Double?, light: FloatArray, seed: Int,
-        photos: PhotoFrames? = null,
     ): Boolean {
         val rawHeight = f.height ?: 9.0
         if (rawHeight <= f.minHeight + 0.5) return false
@@ -368,7 +367,6 @@ object BuildingMesher {
                 val ox = -dy / len; val oy = dx / len
                 val dot = ox * light[0] + (-oy) * light[2]
                 val shade = (0.62 + 0.42 * max(0.0, dot)).toFloat()
-                if (photos != null && photoWall(out, photos, ax, ay, bx, by, len, ox, oy, base, bottom, top, shade)) continue
                 val r = wr * shade; val g = wg * shade; val b = wb * shade
                 out.vertex(ax, bottom, -ay, r, g, b)
                 out.vertex(bx, bottom, -by, r, g, b)
@@ -389,54 +387,6 @@ object BuildingMesher {
         }
         return any
     }
-
-    /**
-     * A wall seen in the Street View photos: split into ~4 m × one-storey cells,
-     * each flat-coloured with the real (posterised) colour at that spot. Cells the
-     * photos don't reach take the colour of the cell below. False = not seen.
-     */
-    private fun photoWall(
-        out: FloatList, photos: PhotoFrames,
-        ax: Double, ay: Double, bx: Double, by: Double, len: Double,
-        nx: Double, ny: Double, base: Double, bottom: Double, top: Double, shade: Float,
-    ): Boolean {
-        val tx = (bx - ax) / len; val ty = (by - ay) / len
-        val mx = (ax + bx) / 2; val my = (ay + by) / 2
-        val probeH = base + min(4.0, (top - base) / 2)
-        val wallColor = photos.colorAt(mx, my, probeH, nx, ny, tx, ty, len / 2, 1.5) ?: return false
-        val cols = (len / CELL_W).toInt().coerceIn(1, 24)
-        val rows = ((top - base) / CELL_H).toInt().coerceIn(1, 14)
-        val cw = len / cols
-        val rh = (top - base) / rows
-        for (c in 0 until cols) {
-            var below: Int? = null
-            for (r in 0 until rows) {
-                val s0 = c * cw; val s1 = s0 + cw
-                val h0 = if (r == 0) bottom else base + r * rh
-                val h1 = base + (r + 1) * rh
-                val cx = ax + tx * (s0 + cw / 2); val cy = ay + ty * (s0 + cw / 2)
-                val col = photos.colorAt(cx, cy, base + (r + 0.5) * rh, nx, ny, tx, ty, cw / 2, rh / 2)
-                    ?: below
-                    ?: wallColor
-                below = col
-                val rr = Color.red(col) / 255f * shade
-                val gg = Color.green(col) / 255f * shade
-                val bb = Color.blue(col) / 255f * shade
-                val x0 = ax + tx * s0; val y0 = ay + ty * s0
-                val x1 = ax + tx * s1; val y1 = ay + ty * s1
-                out.vertex(x0, h0, -y0, rr, gg, bb)
-                out.vertex(x1, h0, -y1, rr, gg, bb)
-                out.vertex(x1, h1, -y1, rr, gg, bb)
-                out.vertex(x0, h0, -y0, rr, gg, bb)
-                out.vertex(x1, h1, -y1, rr, gg, bb)
-                out.vertex(x0, h1, -y0, rr, gg, bb)
-            }
-        }
-        return true
-    }
-
-    private const val CELL_W = 4.0
-    private const val CELL_H = 3.2
 
     fun signedArea(ring: DoubleArray, n: Int): Double {
         var s = 0.0

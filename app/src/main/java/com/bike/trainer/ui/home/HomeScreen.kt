@@ -84,6 +84,7 @@ import com.bike.trainer.session.WorkoutLibrary
 import com.bike.trainer.ui.theme.workoutZoneColor
 import com.bike.trainer.ui.components.SectionCard
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -173,8 +174,10 @@ fun HomeScreen(
                 selectedRoute = route
                 val frames = withContext(Dispatchers.IO) { StreetViewCache.loadFor(context, route) }
                 svFrames = frames
-                missingTiles = withContext(Dispatchers.IO) { TerrainTiles.missing(context, route).let { it.first + it.second } } +
-                    (frames?.unlocatedCount ?: 0)
+                missingTiles = withContext(Dispatchers.IO) {
+                    TerrainTiles.missing(context, route).let { it.first + it.second } +
+                        (frames?.let { it.unlocatedCount + com.bike.trainer.ui.ride.PhotoFrames.unpainted(context, it).size } ?: 0)
+                }
             }
         }
     }
@@ -363,8 +366,8 @@ fun HomeScreen(
                             onCheckedChange = { on -> scope.launch { ServiceLocator.appConfigRepository.setPhotoTexture(on) } },
                         )
                         Text(
-                            if (frames != null) "Colour it from my Street View photos (${frames.imageCount})"
-                            else "Colour from Street View photos — prefetch them first",
+                            if (frames != null) "Paint it from my Street View photos (${frames.imageCount})"
+                            else "Paint from Street View photos — prefetch them first",
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     }
@@ -472,7 +475,9 @@ private fun StylizeDialog(route: Route, frames: StreetViewManifest?, onDismiss: 
     var missingPair by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     // Street View frames whose real camera position still needs a (free) lookup.
     var unlocated by remember { mutableStateOf(frames?.unlocatedCount ?: 0) }
-    val missing = missingPair?.let { it.first + it.second + unlocated }
+    // Street View frames not yet turned into paintings.
+    var unpainted by remember { mutableStateOf(0) }
+    val missing = missingPair?.let { it.first + it.second + unlocated + unpainted }
     var running by remember { mutableStateOf(false) }
     var progress by remember { mutableStateOf<TerrainTiles.Progress?>(null) }
     var status by remember { mutableStateOf<String?>(null) }
@@ -484,6 +489,7 @@ private fun StylizeDialog(route: Route, frames: StreetViewManifest?, onDismiss: 
         }
         total = t
         missingPair = m
+        unpainted = frames?.let { f -> withContext(Dispatchers.IO) { com.bike.trainer.ui.ride.PhotoFrames.unpainted(context, f).size } } ?: 0
     }
     LaunchedEffect(route) { refresh() }
 
@@ -494,9 +500,9 @@ private fun StylizeDialog(route: Route, frames: StreetViewManifest?, onDismiss: 
             Column {
                 Text(
                     "Builds a 3D model of ${route.name} from real terrain and OpenStreetMap " +
-                        "(buildings, streets, parks, forests, water); façades and the road take " +
-                        "their real colours from your prefetched Street View photos. Downloads the " +
-                        "map data once (free, no key) so the ride works offline.",
+                        "(buildings, streets, parks, forests, water), then paints your prefetched " +
+                        "Street View photos onto it as an illustration. Downloads the map data once " +
+                        "(free, no key) so the ride works offline.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Spacer(Modifier.height(10.dp))
@@ -523,6 +529,13 @@ private fun StylizeDialog(route: Route, frames: StreetViewManifest?, onDismiss: 
                     if (unlocated > 0) {
                         Text(
                             "$unlocated Street View photos to align with the 3D model (free lookups)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (unpainted > 0) {
+                        Text(
+                            "$unpainted Street View photos to paint (done on the phone, no download)",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -555,6 +568,15 @@ private fun StylizeDialog(route: Route, frames: StreetViewManifest?, onDismiss: 
                             unlocated = StreetViewPrefetcher.locate(
                                 context, route, com.bike.trainer.BuildConfig.MAPS_API_KEY,
                             ) { done, total -> progress = TerrainTiles.Progress(done, total, 0) }
+                        }
+                        // Paint every photo now so the ride never waits for it.
+                        frames?.let { f ->
+                            val todo = withContext(Dispatchers.IO) { com.bike.trainer.ui.ride.PhotoFrames.unpainted(context, f) }
+                            todo.forEachIndexed { i, file ->
+                                if (!isActive) return@forEachIndexed
+                                withContext(Dispatchers.Default) { com.bike.trainer.ui.ride.PhotoFrames.painted(file)?.recycle() }
+                                progress = TerrainTiles.Progress(i + 1, todo.size, 0)
+                            }
                         }
                         running = false
                         refresh()

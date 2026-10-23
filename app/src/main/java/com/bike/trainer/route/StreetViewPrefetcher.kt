@@ -94,6 +94,8 @@ object StreetViewPrefetcher {
                     } else {
                         camLat = pano.lat; camLon = pano.lon
                         val dest = freshFile(dir)
+                        // A reused file name must not inherit an old painted copy.
+                        paintedCopy(dest).delete()
                         if (downloadImage(p.lat, p.lon, headingDeg, apiKey, dest)) {
                             // Probe Street View depth (undocumented endpoint) and stash it
                             // beside the frame for the depth-reprojection renderer.
@@ -125,7 +127,10 @@ object StreetViewPrefetcher {
 
         // Drop any old frames the new manifest no longer references.
         dir.listFiles()?.forEach { f ->
-            if (f.name != "manifest.json" && f.name !in referenced) f.delete()
+            if (f.isFile && f.name != "manifest.json" && f.name !in referenced) {
+                f.delete()
+                paintedCopy(f).delete()
+            }
         }
 
         if (withImage == 0) {
@@ -141,6 +146,9 @@ object StreetViewPrefetcher {
         StreetViewCache.save(context, manifest)
         Result.Success(manifest, depthCount)
     }
+
+    /** The illustrated copy the Stylized scenery keeps beside a frame (see PhotoFrames). */
+    private fun paintedCopy(frame: File) = File(File(frame.parentFile, "painted"), frame.nameWithoutExtension + ".jpg")
 
     /** A cache filename that doesn't collide with frames kept from a previous fetch. */
     private fun freshFile(dir: File): File {

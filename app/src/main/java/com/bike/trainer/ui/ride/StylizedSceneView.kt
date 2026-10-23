@@ -42,9 +42,9 @@ import kotlin.math.abs
  * from DEM tiles, the ground painted with OpenStreetMap land use / water / streets,
  * extruded OSM buildings and trees where the map has woods and parks (see
  * TerrainTiles / OsmTiles / "Stylize"), with the route as the road you ride. When
- * the route has prefetched Street View frames, building façades (as a grid of
- * storey-sized cells) and the road take their real colours from those photos,
- * posterised into an illustrated look. Rendered
+ * the route has prefetched Street View frames, those real photos are projected onto
+ * that geometry from where they were taken (blending the frame behind and ahead),
+ * so the scene looks like the real street while moving in true 3D. Rendered
  * continuously and extrapolated between engine ticks so motion stays smooth.
  *
  * @param chase true = camera behind and above the rider, false = rider's-eye view.
@@ -56,14 +56,14 @@ fun StylizedSceneView(
     speedKmh: Double,
     chase: Boolean,
     modifier: Modifier = Modifier,
-    /** Prefetched Street View frames to take the real colours from (null = none). */
+    /** Prefetched Street View frames to project onto the 3D scenery (null = none). */
     photos: StreetViewManifest? = null,
 ) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val renderer = remember(route, photos) {
         val frames = photos?.let { m ->
-            PhotoFrames(context.applicationContext, route, m).takeIf { !it.isEmpty }
+            PhotoFrames(context.applicationContext, route, m).takeIf { it.frames.isNotEmpty() }
         }
         StylizedRenderer(context.applicationContext, route, frames)
     }
@@ -154,6 +154,13 @@ private class StylizedRenderer(
     private val viewM = FloatArray(16)
     private val mvp = FloatArray(16)
 
+    // Photo projection state (GL thread).
+    private val photoTex = HashMap<Int, Int>()   // frame index -> texture
+    private val freeTex = ArrayList<Int>()
+    private val matA = FloatArray(16)
+    private val matB = FloatArray(16)
+    private val dome = FloatList(64 * 6 * FloatList.STRIDE)
+
     fun update(dist: Double, speedMps: Double, chase: Boolean) {
         sampleDist = dist
         sampleSpeed = speedMps
@@ -164,17 +171,19 @@ private class StylizedRenderer(
     fun release() {
         released = true
         builder.shutdownNow()
-        // Photo bitmaps belong to the builder thread; let it finish before freeing.
-        photos?.let { p -> Thread { runCatching { builder.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS) }; p.release() }.start() }
+        photos?.release()
     }
 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
         program = link(VERTEX, FRAGMENT)
         skyProgram = link(SKY_VERTEX, SKY_FRAGMENT)
         GLES20.glGenBuffers(MESHES, buffers, 0)
-        val t = IntArray(1)
-        GLES20.glGenTextures(1, t, 0)
+        val t = IntArray(1 + PHOTO_TEXTURES)
+        GLES20.glGenTextures(t.size, t, 0)
         groundTex = t[0]
+        photoTex.clear()
+        freeTex.clear()
+        for (i in 1 until t.size) freeTex.add(t[i])
         uploaded = false
     }
 
@@ -211,7 +220,9 @@ private class StylizedRenderer(
         val back = 12.0 * camChase
         val p = route.pointAt(renderDist - back)
         val ground = w.heightAt(p.x, p.y)
-        val wantEye = (ground ?: eyeY.takeIf { !it.isNaN() } ?: 0.0) + 0.3 + 1.6 + 4.5 * camChase
+        // With photos, sit at the Street View camera height so the images line up.
+        val eyeHeight = if (photos != null) PhotoFrames.CAMERA_HEIGHT else 1.9
+        val wantEye = (ground ?: eyeY.takeIf { !it.isNaN() } ?: 0.0) + eyeHeight + 4.5 * camChase
         eyeY = if (eyeY.isNaN()) wantEye else eyeY + (wantEye - eyeY) * (dt * 5.0).coerceAtMost(1.0)
         // Look at the average of a few points ahead: steadies the heading on noisy GPX.
         var lx = 0.0; var ly = 0.0; var lh = 0.0; var nLook = 0
@@ -251,17 +262,130 @@ private class StylizedRenderer(
         GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, groundTex)
 
+        val photo = bindPhotos(w)
+        // Uploading a photo rebinds unit 0: put the ground texture back.
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, groundTex)
+        setPhoto(photo, dome = false)
+
+        if (photo) {
+            // Far ring around the camera: catches the photo's sky and distant skyline.
+            setPhoto(true, dome = true)
+            drawDome(p.x, eyeY, p.y)
+            setPhoto(true, dome = false)
+        }
         GLES20.glUniform1f(GLES20.glGetUniformLocation(program, "uUseTex"), if (hasGround) 1f else 0f)
         drawMesh(0) // terrain (painted with the real land use)
         GLES20.glUniform1f(GLES20.glGetUniformLocation(program, "uUseTex"), 0f)
-        drawMesh(1) // trees
+        // The photos already show the real trees and lane markings.
+        if (!photo) drawMesh(1) // trees
         drawMesh(4) // buildings
         GLES20.glEnable(GLES20.GL_POLYGON_OFFSET_FILL)
         GLES20.glPolygonOffset(-1f, -2f)
         drawMesh(2) // road
-        GLES20.glPolygonOffset(-2f, -4f)
-        drawMesh(3) // markings
+        if (!photo) {
+            GLES20.glPolygonOffset(-2f, -4f)
+            drawMesh(3) // markings
+        }
         GLES20.glDisable(GLES20.GL_POLYGON_OFFSET_FILL)
+    }
+
+    /**
+     * Pick the Street View frames behind / ahead of the rider, make sure their
+     * images are on the GPU, and set the projector uniforms. False = no photo now.
+     */
+    private fun bindPhotos(w: WorldMesh): Boolean {
+        val ph = photos ?: return false
+        val (ia, ib) = ph.around(renderDist)
+        // Decode ahead so frames are ready before we reach them.
+        val first = ia ?: ib ?: return false
+        for (k in first..first + 4) ph.request(k)
+        ph.trim(first - 2, first + 8)
+
+        fun ready(i: Int?, mat: FloatArray): Int? {
+            if (i == null) return null
+            val f = ph.frames[i]
+            val g = w.heightAt(f.x, f.y) ?: return null
+            val tex = photoTex[i] ?: run {
+                val bmp = ph.bitmap(i) ?: return null
+                if (bmp.isRecycled) return null
+                val t = freeTex.removeLastOrNull() ?: evictPhoto(keep = setOfNotNull(ia, ib)) ?: return null
+                GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, t)
+                GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
+                GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
+                GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
+                GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
+                GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bmp, 0)
+                photoTex[i] = t
+                t
+            }
+            ph.matrix(i, g, mat)
+            return tex
+        }
+
+        val ta = ready(ia, matA)
+        val tb = ready(ib, matB)
+        if (ta == null && tb == null) return false
+        val blend = if (ta != null && tb != null) {
+            val da = ph.frames[ia!!].distance
+            val db = ph.frames[ib!!].distance
+            val t = ((renderDist - da) / (db - da).coerceAtLeast(0.01)).coerceIn(0.0, 1.0)
+            (t * t * (3 - 2 * t)).toFloat()
+        } else if (tb != null) 1f else 0f
+
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE1)
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, ta ?: tb!!)
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE2)
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, tb ?: ta!!)
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
+        GLES20.glUniform1i(GLES20.glGetUniformLocation(program, "uPhotoA"), 1)
+        GLES20.glUniform1i(GLES20.glGetUniformLocation(program, "uPhotoB"), 2)
+        GLES20.glUniformMatrix4fv(GLES20.glGetUniformLocation(program, "uMatA"), 1, false, if (ta != null) matA else matB, 0)
+        GLES20.glUniformMatrix4fv(GLES20.glGetUniformLocation(program, "uMatB"), 1, false, if (tb != null) matB else matA, 0)
+        GLES20.glUniform1f(GLES20.glGetUniformLocation(program, "uBlend"), blend)
+        return true
+    }
+
+    /** Free the texture of a frame we've ridden past. */
+    private fun evictPhoto(keep: Set<Int>): Int? {
+        val victim = photoTex.keys.filter { it !in keep }.minOrNull() ?: return null
+        return photoTex.remove(victim)
+    }
+
+    private fun setPhoto(on: Boolean, dome: Boolean) {
+        GLES20.glUniform1f(GLES20.glGetUniformLocation(program, "uPhotoOn"), if (on) 1f else 0f)
+        GLES20.glUniform1f(GLES20.glGetUniformLocation(program, "uDome"), if (dome) 1f else 0f)
+    }
+
+    /** A tall ring 1.8 km around the camera, rebuilt each frame (a few hundred vertices). */
+    private fun drawDome(cx: Double, cy: Double, cz: Double) {
+        dome.clear()
+        val r = 1800.0
+        val lo = cy - 400.0
+        val hi = cy + 1500.0
+        val segs = 48
+        for (s in 0 until segs) {
+            val a0 = 2 * Math.PI * s / segs
+            val a1 = 2 * Math.PI * (s + 1) / segs
+            val x0 = cx + kotlin.math.cos(a0) * r; val y0 = cz + kotlin.math.sin(a0) * r
+            val x1 = cx + kotlin.math.cos(a1) * r; val y1 = cz + kotlin.math.sin(a1) * r
+            dome.vertex(x0, lo, -y0, HORIZON[0], HORIZON[1], HORIZON[2])
+            dome.vertex(x1, lo, -y1, HORIZON[0], HORIZON[1], HORIZON[2])
+            dome.vertex(x1, hi, -y1, HORIZON[0], HORIZON[1], HORIZON[2])
+            dome.vertex(x0, lo, -y0, HORIZON[0], HORIZON[1], HORIZON[2])
+            dome.vertex(x1, hi, -y1, HORIZON[0], HORIZON[1], HORIZON[2])
+            dome.vertex(x0, hi, -y0, HORIZON[0], HORIZON[1], HORIZON[2])
+        }
+        val a = dome.toArray()
+        GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, buffers[DOME])
+        val fb = ByteBuffer.allocateDirect(a.size * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
+        fb.put(a).position(0)
+        GLES20.glBufferData(GLES20.GL_ARRAY_BUFFER, a.size * 4, fb, GLES20.GL_STREAM_DRAW)
+        counts[DOME] = a.size / FloatList.STRIDE
+        // Behind everything: never occludes real geometry.
+        GLES20.glDepthMask(false)
+        drawMesh(DOME)
+        GLES20.glDepthMask(true)
     }
 
     private fun maybeRebuild() {
@@ -276,7 +400,7 @@ private class StylizedRenderer(
         runCatching {
             builder.execute {
                 try {
-                    val mesh = WorldBuilder.build(field, osm, photos, route, (rider + 1100.0).coerceAtMost(route.totalDistance), rider)
+                    val mesh = WorldBuilder.build(field, osm, route, (rider + 1100.0).coerceAtMost(route.totalDistance), rider)
                     if (!released) pending.set(mesh)
                 } catch (_: Throwable) {
                     // Leave the previous window up; next frame will retry.
@@ -290,7 +414,7 @@ private class StylizedRenderer(
 
     private fun upload(w: WorldMesh) {
         val arrays = arrayOf(w.terrain, w.trees, w.road, w.markings, w.buildings)
-        for (i in 0 until MESHES) {
+        for (i in arrays.indices) {
             val a = arrays[i]
             counts[i] = a.size / FloatList.STRIDE
             GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, buffers[i])
@@ -375,7 +499,9 @@ private class StylizedRenderer(
     }
 
     companion object {
-        private const val MESHES = 5
+        private const val MESHES = 6
+        private const val DOME = 5
+        private const val PHOTO_TEXTURES = 4
         private val HORIZON = floatArrayOf(0.80f, 0.88f, 0.94f)
         private val ZENITH = floatArrayOf(0.30f, 0.55f, 0.85f)
 
@@ -393,14 +519,20 @@ private class StylizedRenderer(
             uniform vec3 uTexRect;
             attribute vec3 aPos;
             attribute vec3 aCol;
+            uniform mat4 uMatA;
+            uniform mat4 uMatB;
             attribute float aShade;
             varying vec3 vCol;
             varying float vDist;
             varying float vShade;
             varying vec2 vUv;
+            varying vec4 vPA;
+            varying vec4 vPB;
             void main() {
                 vCol = aCol;
                 vShade = aShade;
+                vPA = uMatA * vec4(aPos, 1.0);
+                vPB = uMatB * vec4(aPos, 1.0);
                 vDist = distance(aPos, uEye);
                 vUv = vec2((aPos.x - uTexRect.x) / uTexRect.z, (-aPos.z - uTexRect.y) / uTexRect.z);
                 gl_Position = uMvp * vec4(aPos, 1.0);
@@ -416,10 +548,29 @@ private class StylizedRenderer(
             uniform vec2 uFogRange;
             uniform sampler2D uTex;
             uniform float uUseTex;
+            uniform sampler2D uPhotoA;
+            uniform sampler2D uPhotoB;
+            uniform float uPhotoOn;
+            uniform float uDome;
+            uniform float uBlend;
             varying vec3 vCol;
             varying float vDist;
             varying float vShade;
             varying vec2 vUv;
+            varying vec4 vPA;
+            varying vec4 vPB;
+
+            // Colour of a Street View frame projected onto this point; alpha = coverage
+            // (0 outside the photo, soft towards its edges).
+            vec4 projected(sampler2D s, vec4 c) {
+                if (c.w <= 0.05) return vec4(0.0);
+                vec2 uv = c.xy / c.w * 0.5 + 0.5;
+                vec2 e = min(uv, 1.0 - uv);
+                float w = clamp(min(e.x, e.y) / 0.04, 0.0, 1.0);
+                if (w <= 0.0) return vec4(0.0);
+                return vec4(texture2D(s, vec2(uv.x, 1.0 - uv.y)).rgb, w);
+            }
+
             void main() {
                 vec3 c = vCol;
                 if (uUseTex > 0.5) {
@@ -428,7 +579,24 @@ private class StylizedRenderer(
                     c = vCol * (1.0 - t.a) + t.rgb * vShade;
                 }
                 float f = clamp((vDist - uFogRange.x) / (uFogRange.y - uFogRange.x), 0.0, 1.0);
-                gl_FragColor = vec4(mix(c, uFog, f), 1.0);
+                vec3 base = mix(c, uFog, f);
+                if (uPhotoOn > 0.5) {
+                    vec4 a = projected(uPhotoA, vPA);
+                    vec4 b = projected(uPhotoB, vPB);
+                    float wa = a.a * (1.0 - uBlend);
+                    float wb = b.a * uBlend;
+                    // Where only one frame sees this point, it takes over.
+                    if (b.a <= 0.0) wa = a.a;
+                    if (a.a <= 0.0) wb = b.a;
+                    float sum = wa + wb;
+                    if (sum > 0.001) {
+                        vec3 photo = (a.rgb * wa + b.rgb * wb) / sum;
+                        gl_FragColor = vec4(mix(base, photo, max(a.a, b.a)), 1.0);
+                        return;
+                    }
+                    if (uDome > 0.5) discard;
+                }
+                gl_FragColor = vec4(base, 1.0);
             }
         """
         private const val SKY_VERTEX = """
