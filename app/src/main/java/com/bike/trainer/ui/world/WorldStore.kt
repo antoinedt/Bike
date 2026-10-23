@@ -30,15 +30,25 @@ import kotlin.coroutines.coroutineContext
  * 3. Stores the result in filesDir/worlds/<route>/ for the ride (fully offline).
  */
 object WorldStore {
-    private const val SECTION_METERS = 1500.0
-    private const val CORRIDOR_METERS = 320
+    private const val SECTION_METERS = 1000.0
+    private const val CORRIDOR_METERS = 320.0
+    private const val MAIN_SERVER = "https://overpass-api.de/api/"
     private val ENDPOINTS = listOf(
-        "https://overpass-api.de/api/interpreter",
-        "https://overpass.kumi.systems/api/interpreter",
+        MAIN_SERVER + "interpreter",
         "https://overpass.private.coffee/api/interpreter",
+        "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
     )
-    private const val KEYS =
-        "^(building|building:part|highway|railway|waterway|landuse|natural|leisure|amenity|barrier|emergency|public_transport|area:highway|water)$"
+
+    /**
+     * What the world uses, as tag-indexed statements (fast for the server, unlike a
+     * "any of these keys" regex). Run inside a global bounding box.
+     */
+    private const val FILTERS =
+        "nwr[\"building\"];nwr[\"building:part\"];way[\"highway\"];" +
+            "node[\"highway\"~\"^(street_lamp|bus_stop|traffic_signals)$\"];node[\"crossing\"=\"traffic_signals\"];" +
+            "way[\"railway\"];way[\"waterway\"];nwr[\"landuse\"];nwr[\"natural\"];nwr[\"leisure\"];" +
+            "nwr[\"amenity\"~\"^(parking|bench|bicycle_parking|waste_basket)$\"];node[\"barrier\"=\"bollard\"];" +
+            "node[\"emergency\"=\"fire_hydrant\"];nwr[\"public_transport\"=\"platform\"];nwr[\"area:highway\"];nwr[\"water\"];"
 
     private val http by lazy {
         OkHttpClient.Builder()
@@ -100,7 +110,7 @@ object WorldStore {
             coroutineContext.ensureActive()
             val label = "Map data ${s + 1}/$sections"
             post(onProgress, Progress(label, 0.6f * s / sections))
-            val key = "$fp|$s|$CORRIDOR_METERS"
+            val key = "$fp|$s|${SECTION_METERS.toInt()}|${CORRIDOR_METERS.toInt()}"
             val keyFile = File(osmDir, "section_$s.key")
             val cached = if (keyFile.exists() && keyFile.readText().startsWith("$key|")) {
                 val n = keyFile.readText().substringAfterLast('|').toIntOrNull() ?: 0
@@ -181,20 +191,21 @@ object WorldStore {
         main.post { cb(p) }
     }
 
-    /** Overpass QL: everything we draw within the corridor around this route section. */
+    /** Overpass QL: everything we draw, in the bounding box of this route section + corridor. */
     private fun query(route: Route, d0: Double, d1: Double): String {
-        val coords = StringBuilder()
+        var minLat = 90.0; var maxLat = -90.0; var minLon = 180.0; var maxLon = -180.0
         var d = d0
         while (true) {
             val p = route.pointAt(d.coerceAtMost(route.totalDistance))
-            if (coords.isNotEmpty()) coords.append(',')
-            coords.append(String.format(Locale.US, "%.6f,%.6f", p.lat, p.lon))
+            minLat = minOf(minLat, p.lat); maxLat = maxOf(maxLat, p.lat)
+            minLon = minOf(minLon, p.lon); maxLon = maxOf(maxLon, p.lon)
             if (d >= d1 || d >= route.totalDistance) break
-            d += 80.0
+            d += 25.0
         }
-        return "[out:json][timeout:150];" +
-            "nwr(around:$CORRIDOR_METERS,$coords)[~\"$KEYS\"~\".\"];" +
-            "out geom;"
+        val dLat = CORRIDOR_METERS / 111_320.0
+        val dLon = dLat / kotlin.math.cos(Math.toRadians((minLat + maxLat) / 2)).coerceAtLeast(0.1)
+        val bbox = String.format(Locale.US, "%.6f,%.6f,%.6f,%.6f", minLat - dLat, minLon - dLon, maxLat + dLat, maxLon + dLon)
+        return "[out:json][timeout:120][bbox:$bbox];($FILTERS);out geom;"
     }
 
     private sealed interface Answer {
@@ -204,19 +215,41 @@ object WorldStore {
     }
 
     /**
-     * One Overpass request with patient retries across mirrors: busy servers (429 /
-     * 503) get increasingly long pauses; a server-side timeout or out-of-memory
-     * means the area is too big for one request.
+     * Seconds until the main server gives us a query slot (it rations slots per
+     * user and publishes when the next one frees up), or 0 if one is free now.
+     */
+    private fun slotWait(): Int = runCatching {
+        http.newCall(Request.Builder().url(MAIN_SERVER + "status").header("User-Agent", UA).build()).execute().use { r ->
+            val text = r.body?.string().orEmpty()
+            if (Regex("(\\d+) slots? available now").containsMatchIn(text)) 0
+            else Regex("in (\\d+) seconds").findAll(text).map { it.groupValues[1].toInt() }.minOrNull() ?: 0
+        }
+    }.getOrDefault(0)
+
+    private const val UA = "VibeBike/1.0 (indoor cycling app)"
+
+    /**
+     * One Overpass request with patient retries across mirrors. For the main server
+     * we first wait for our query slot; busy mirrors get increasingly long pauses; a
+     * server-side timeout / out-of-memory means the area is too big for one request.
      */
     private suspend fun overpass(q: String, note: (String) -> Unit): Answer {
-        val waits = longArrayOf(15_000, 40_000, 90_000)
+        val waits = longArrayOf(20_000, 45_000, 90_000)
+        val codes = LinkedHashSet<String>()
         for (round in 0..waits.size) {
             var tooBig = 0
             for (url in ENDPOINTS) {
                 coroutineContext.ensureActive()
+                if (url.startsWith(MAIN_SERVER)) {
+                    val wait = slotWait().coerceAtMost(180)
+                    if (wait > 0) {
+                        note("waiting ${wait}s for a free server slot")
+                        delay(wait * 1000L + 500)
+                    }
+                }
                 val (code, text) = runCatching {
                     val req = Request.Builder().url(url)
-                        .header("User-Agent", "VibeBike/1.0 (indoor cycling app)")
+                        .header("User-Agent", UA)
                         .post(FormBody.Builder().add("data", q).build())
                         .build()
                     http.newCall(req).execute().use { resp -> resp.code to resp.body?.string() }
@@ -227,10 +260,11 @@ object WorldStore {
                 } else if (code == 504 || (text != null && text.contains("runtime error"))) {
                     tooBig++
                 }
+                codes.add(java.net.URI(url).host.substringBefore(".overpass").removePrefix("www.") + ":" + (if (code < 0) "no connection" else code.toString()))
             }
             if (tooBig > 0) return Answer.TooBig
             if (round < waits.size) {
-                note("servers busy, retrying in ${waits[round] / 1000} s")
+                note("servers busy (${codes.joinToString()}), retrying in ${waits[round] / 1000}s")
                 delay(waits[round])
             }
         }
