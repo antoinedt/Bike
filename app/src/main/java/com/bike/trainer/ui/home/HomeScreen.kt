@@ -144,7 +144,7 @@ fun HomeScreen(
     var stylizeFor by remember { mutableStateOf<Route?>(null) }
     var sceneryMenu by remember { mutableStateOf(false) }
     var buildWorldFor by remember { mutableStateOf<Route?>(null) }
-    var worldBuilt by remember { mutableStateOf<Boolean?>(null) }
+    var worldStatus by remember { mutableStateOf<com.bike.trainer.ui.world.WorldStore.Status?>(null) }
     // Selected GPX parsed, and how many of its terrain tiles are still missing.
     var selectedRoute by remember { mutableStateOf<Route?>(null) }
     var missingTiles by remember { mutableStateOf<Int?>(null) }
@@ -172,7 +172,7 @@ fun HomeScreen(
             if (route != null && file == selectedGpx) {
                 selectedStats = route.totalDistance / 1000.0 to route.totalAscent
                 selectedRoute = route
-                worldBuilt = withContext(Dispatchers.IO) { com.bike.trainer.ui.world.WorldStore.isBuilt(context, route) }
+                worldStatus = withContext(Dispatchers.IO) { com.bike.trainer.ui.world.WorldStore.status(context, route) }
                 val frames = withContext(Dispatchers.IO) { StreetViewCache.loadFor(context, route) }
                 svFrames = frames
                 missingTiles = withContext(Dispatchers.IO) {
@@ -356,7 +356,14 @@ fun HomeScreen(
                 } else if (r != null) {
                     TextButton(onClick = { buildWorldFor = r }) {
                         Icon(Icons.Filled.Terrain, contentDescription = null)
-                        Text(if (worldBuilt == true) "  World built ✓ (rebuild…)" else "  Build world…")
+                        val ws = worldStatus
+                        Text(
+                            when {
+                                ws == null -> "  Build world…"
+                                ws.complete -> "  World built ✓ (rebuild…)"
+                                else -> "  World partly built (${ws.done}/${ws.total}) — finish…"
+                            }
+                        )
                     }
                 }
             }
@@ -490,8 +497,8 @@ fun HomeScreen(
         PrefetchDialog(file = file, onDismiss = { prefetchFor = null })
     }
     buildWorldFor?.let { route ->
-        BuildWorldDialog(route = route, onDismiss = { built ->
-            if (selectedRoute === route && built) worldBuilt = true
+        BuildWorldDialog(route = route, onDismiss = { st ->
+            if (selectedRoute === route && st != null) worldStatus = st
             buildWorldFor = null
         })
     }
@@ -505,13 +512,13 @@ fun HomeScreen(
 
 /** Builds a route's offline cel-shaded 3D world (map data download + build on the phone). */
 @Composable
-private fun BuildWorldDialog(route: Route, onDismiss: (built: Boolean) -> Unit) {
+private fun BuildWorldDialog(route: Route, onDismiss: (com.bike.trainer.ui.world.WorldStore.Status?) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var running by remember { mutableStateOf(false) }
     var progress by remember { mutableStateOf<com.bike.trainer.ui.world.WorldStore.Progress?>(null) }
     var status by remember { mutableStateOf<String?>(null) }
-    var built by remember { mutableStateOf(false) }
+    var built by remember { mutableStateOf<com.bike.trainer.ui.world.WorldStore.Status?>(null) }
     var job by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     AlertDialog(
         onDismissRequest = { if (!running) onDismiss(built) },
@@ -543,13 +550,20 @@ private fun BuildWorldDialog(route: Route, onDismiss: (built: Boolean) -> Unit) 
                     running = true
                     status = null
                     job = scope.launch {
-                        val err = com.bike.trainer.ui.world.WorldStore.build(context, route) { progress = it }
+                        val result = com.bike.trainer.ui.world.WorldStore.build(context, route) { progress = it }
                         running = false
-                        built = err == null
-                        status = err ?: "Done — pick \"3D World\" and start the ride"
+                        built = result.status
+                        val st = result.status
+                        status = when {
+                            result.error != null -> result.error
+                            st != null && !st.complete ->
+                                "Built ${st.done} of ${st.total} sections — the rest of the route has terrain only. " +
+                                    "Tap Build again later to download the missing parts."
+                            else -> "Done — pick \"3D World\" and start the ride"
+                        }
                     }
                 },
-            ) { Text(if (built) "Rebuild" else "Build") }
+            ) { Text(if (built?.complete == true) "Rebuild" else "Build") }
         },
         dismissButton = {
             TextButton(onClick = {
