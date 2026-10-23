@@ -247,7 +247,9 @@ fun RideScreen(
                     ServiceLocator.sceneView = com.bike.trainer.ui.world.WorldHost.renderView()
                 }
                 SideEffect {
-                    com.bike.trainer.ui.world.WorldHost.update(state.lapPositionMeters, state.speedKmh / 3.6)
+                    com.bike.trainer.ui.world.WorldHost.update(
+                        state.lapPositionMeters, state.speedKmh / 3.6, state.cadenceRpm.toDouble(),
+                    )
                     com.bike.trainer.ui.world.WorldHost.setChase(!streetLevel)
                 }
             } else if (google3d) {
@@ -338,7 +340,8 @@ fun RideScreen(
             }
             // Animated rider, shown only over Street View where it reads as a
             // real cyclist on the road (the chase/map view has its own framing).
-            if (googleStreet || ownScenery) {
+            // (The 3D World draws its own cel-shaded rider.)
+            if ((googleStreet || ownScenery) && !world) {
                 CyclistView(
                     speedKmh = state.speedKmh,
                     cadenceRpm = state.cadenceRpm,

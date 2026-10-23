@@ -8,6 +8,7 @@ extends Node3D
 ## command-line user args:  -- --world=<dir> --d=<metres> [--chase] [--shot=<png>]
 
 const Props = preload("res://props.gd")
+const Cyclist = preload("res://cyclist.gd")
 
 var toon_shader: Shader = preload("res://shaders/toon.gdshader")
 var ink_shader: Shader = preload("res://shaders/ink_line.gdshader")
@@ -22,6 +23,9 @@ var chunk_len := 400.0
 
 var distance := 0.0       # latest distance from the app
 var speed := 0.0          # m/s
+var cadence := 0.0        # rpm
+var rider: Node3D
+var heading := Vector3.FORWARD
 var sample_time := 0.0
 var render_d := 0.0
 var chase := false
@@ -32,6 +36,7 @@ var props: Props
 var shot_path := ""
 var shot_frames := 0
 var debug_noshadow := false
+var debug_side := false
 
 var mat_ground: ShaderMaterial
 var mat_walls: ShaderMaterial
@@ -47,13 +52,18 @@ func _ready() -> void:
 	mat_ink.shader = ink_shader
 	props = Props.new()
 	add_child(props)
+	rider = Cyclist.new()
+	add_child(rider)
 
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--world="): world_dir = a.substr(8)
 		elif a.begins_with("--d="): distance = float(a.substr(4)); render_d = distance
 		elif a == "--chase": chase = true; chase_k = 1.0
+		elif a.begins_with("--v="): speed = float(a.substr(4))
+		elif a.begins_with("--cad="): cadence = float(a.substr(6))
 		elif a.begins_with("--shot="): shot_path = a.substr(7)
 		elif a == "--noshadow": debug_noshadow = true
+		elif a == "--side": debug_side = true
 
 	if debug_noshadow:
 		for c in get_children():
@@ -141,9 +151,10 @@ func open_world(dir: String) -> void:
 	_update_chunks(true)
 
 
-func ride_update(d: float, v: float) -> void:
+func ride_update(d: float, v: float, cad: float) -> void:
 	distance = d
 	speed = v
+	cadence = cad
 	sample_time = Time.get_ticks_msec() / 1000.0
 
 
@@ -256,15 +267,24 @@ func _process(delta: float) -> void:
 	else: render_d += (target - render_d) * clampf(delta * 6.0, 0.0, 1.0)
 	chase_k += ((1.0 if chase else 0.0) - chase_k) * clampf(delta * 3.0, 0.0, 1.0)
 
-	var back := 9.0 * chase_k
-	var p := _route_at(render_d - back)
-	var look := Vector3.ZERO
-	for k in range(1, 5): look += _route_at(render_d + 10.0 + k * 8.0)
-	look /= 4.0
-	var eye := p + Vector3(0, 1.7 + 3.0 * chase_k, 0)
-	look.y = look.y + 1.2
-	if eye.distance_to(look) > 0.5:
-		cam.look_at_from_position(eye, look, Vector3.UP)
+	# The rider on the road, facing along the (smoothed) route direction.
+	var p := _route_at(render_d)
+	var ahead := _route_at(render_d + 6.0) - _route_at(render_d - 2.0)
+	ahead.y = 0.0
+	if ahead.length() > 0.1:
+		heading = heading.slerp(ahead.normalized(), clampf(delta * 4.0, 0.0, 1.0)) if shot_path == "" else ahead.normalized()
+	rider.transform = Transform3D(Basis.looking_at(heading, Vector3.UP), p)
+	rider.animate(delta if shot_path == "" else 0.3, speed, cadence)
+
+	# Camera behind the rider: close (rider view) or higher and further (chase).
+	# A slight three-quarter view from behind so bike, legs and arms all read.
+	var side := heading.cross(Vector3.UP).normalized()
+	var eye := p - heading * lerpf(3.4, 7.5, chase_k) + side * lerpf(0.7, 1.4, chase_k) + Vector3.UP * lerpf(2.0, 3.8, chase_k)
+	var look := p + heading * lerpf(6.0, 9.0, chase_k) + Vector3.UP * lerpf(0.9, 0.6, chase_k)
+	if debug_side:
+		eye = p + side * 3.0 + Vector3.UP * 1.0
+		look = p + Vector3.UP * 0.8
+	cam.look_at_from_position(eye, look, Vector3.UP)
 	_update_chunks()
 
 	if shot_path != "":

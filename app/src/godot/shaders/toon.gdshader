@@ -10,6 +10,7 @@ uniform vec3 shadow_tint : source_color = vec3(0.62, 0.66, 0.90);
 uniform vec3 glass : source_color = vec3(0.27, 0.37, 0.52);
 uniform vec3 glass_hi : source_color = vec3(0.58, 0.72, 0.86);
 uniform float halftone = 1.0;
+uniform vec3 tint : source_color = vec3(1.0); // flat colour for untextured parts (e.g. the cyclist)
 
 varying vec2 facade;
 varying vec2 info;
@@ -41,7 +42,7 @@ vec3 windows(vec3 wall) {
 
 void fragment() {
 	// Vertex / instance colours are authored in sRGB.
-	vec3 c = pow(COLOR.rgb, vec3(2.2));
+	vec3 c = pow(COLOR.rgb, vec3(2.2)) * tint;
 	if (mode == 1) c = texture(albedo_tex, UV).rgb;
 	if (mode == 2) c = windows(c);
 	ALBEDO = c;

@@ -67,7 +67,8 @@ object WorldHost {
         box.layoutParams = lp
     }
 
-    fun update(distanceMeters: Double, speedMps: Double) = plugin?.update(distanceMeters, speedMps)
+    fun update(distanceMeters: Double, speedMps: Double, cadenceRpm: Double) =
+        plugin?.update(distanceMeters, speedMps, cadenceRpm)
 
     fun setChase(on: Boolean) = plugin?.setChase(on)
 

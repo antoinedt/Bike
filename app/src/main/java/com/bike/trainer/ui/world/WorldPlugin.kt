@@ -26,8 +26,8 @@ class WorldPlugin(godot: Godot) : GodotPlugin(godot) {
         if (ready) emitSignal(OPEN_WORLD.name, dir)
     }
 
-    fun update(distanceMeters: Double, speedMps: Double) {
-        if (ready) emitSignal(RIDE_UPDATE.name, distanceMeters, speedMps)
+    fun update(distanceMeters: Double, speedMps: Double, cadenceRpm: Double) {
+        if (ready) emitSignal(RIDE_UPDATE.name, distanceMeters, speedMps, cadenceRpm)
     }
 
     fun setChase(on: Boolean) {
@@ -45,7 +45,9 @@ class WorldPlugin(godot: Godot) : GodotPlugin(godot) {
 
     companion object {
         private val OPEN_WORLD = SignalInfo("open_world", String::class.java)
-        private val RIDE_UPDATE = SignalInfo("ride_update", java.lang.Double::class.java, java.lang.Double::class.java)
+        private val RIDE_UPDATE = SignalInfo(
+            "ride_update", java.lang.Double::class.java, java.lang.Double::class.java, java.lang.Double::class.java,
+        )
         private val SET_CHASE = SignalInfo("set_chase", java.lang.Boolean::class.java)
     }
 }
