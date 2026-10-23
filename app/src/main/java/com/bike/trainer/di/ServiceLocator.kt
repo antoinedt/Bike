@@ -42,7 +42,7 @@ object ServiceLocator {
     @Volatile
     var scenery: String = com.bike.trainer.data.Scenery.STREET_VIEW
 
-    /** Stylized ride: project prefetched Street View photos onto the 3D model. */
+    /** Stylized ride: colour the 3D model from prefetched Street View photos. */
     @Volatile
     var photoTexture: Boolean = true
 

@@ -39,7 +39,7 @@ data class AppConfig(
     val gearDownField: Int = 2,
     /** Ride scenery: [Scenery.STREET_VIEW], [Scenery.GOOGLE_3D] or [Scenery.STYLIZED]. */
     val scenery: String = Scenery.STREET_VIEW,
-    /** Stylized: project the route's prefetched Street View photos onto the 3D model. */
+    /** Stylized: colour façades / road from the route's prefetched Street View photos. */
     val photoTexture: Boolean = true,
 ) {
     val mapConfigured: Boolean get() = mapTilesKey.isNotBlank()

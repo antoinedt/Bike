@@ -363,8 +363,8 @@ fun HomeScreen(
                             onCheckedChange = { on -> scope.launch { ServiceLocator.appConfigRepository.setPhotoTexture(on) } },
                         )
                         Text(
-                            if (frames != null) "Use my Street View photos (${frames.imageCount})"
-                            else "Use Street View photos — prefetch them first",
+                            if (frames != null) "Colour it from my Street View photos (${frames.imageCount})"
+                            else "Colour from Street View photos — prefetch them first",
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     }
@@ -494,9 +494,9 @@ private fun StylizeDialog(route: Route, frames: StreetViewManifest?, onDismiss: 
             Column {
                 Text(
                     "Builds a 3D model of ${route.name} from real terrain and OpenStreetMap " +
-                        "(buildings, streets, parks, forests, water) — your prefetched Street View " +
-                        "photos are then projected onto it. Downloads the map data once (free, " +
-                        "no key) so the ride works offline.",
+                        "(buildings, streets, parks, forests, water); façades and the road take " +
+                        "their real colours from your prefetched Street View photos. Downloads the " +
+                        "map data once (free, no key) so the ride works offline.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Spacer(Modifier.height(10.dp))

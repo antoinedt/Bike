@@ -3,34 +3,47 @@ package com.bike.trainer.ui.ride
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Color
 import android.opengl.Matrix
 import com.bike.trainer.route.LocalProjection
 import com.bike.trainer.route.Route
 import com.bike.trainer.route.StreetViewCache
 import com.bike.trainer.route.StreetViewManifest
 import java.io.File
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.Executors
 import kotlin.math.atan
 import kotlin.math.cos
+import kotlin.math.floor
+import kotlin.math.hypot
+import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.tan
 
 /**
- * The prefetched Street View frames of a route, used as photo projectors over the
- * 3D scenery: each frame is a camera at the spot Google took it (≈2.5 m up, facing
- * along the route, 85° horizontal field of view, 4:3) whose image is projected
- * onto the terrain / buildings / road. Frames are decoded ahead on a worker thread.
+ * Colour sampler built from a route's prefetched Street View frames. Each frame is
+ * a camera at the spot Google took it (≈2.5 m up, facing along the route, 85°
+ * horizontal FOV, 4:3); the 3D scenery asks "what colour is the real world at this
+ * point?" and gets the averaged photo colour of the best frame seeing it, slightly
+ * posterised so the result reads as an illustration rather than a photo.
+ * Only used from the world-builder thread.
  */
 class PhotoFrames(context: Context, route: Route, manifest: StreetViewManifest) {
 
-    class Frame(val distance: Double, val file: File, val x: Double, val y: Double, val heading: Double)
+    private class Frame(val distance: Double, val file: File, val x: Double, val y: Double, val heading: Double) {
+        var ground = Double.NaN
+        val matrix = FloatArray(16)
+    }
 
-    val frames: List<Frame>
-    private val bitmaps = ConcurrentHashMap<Int, Bitmap>()
-    private val loading = ConcurrentHashMap.newKeySet<Int>()
-    private val loader = Executors.newSingleThreadExecutor { r -> Thread(r, "sv-frames").apply { isDaemon = true } }
-    @Volatile private var released = false
+    private val frames: List<Frame>
+    private val buckets = HashMap<Long, MutableList<Int>>()
+    private val cache = object : LinkedHashMap<Int, Bitmap?>(64, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Int, Bitmap?>?): Boolean {
+            if (size > CACHE_FRAMES) { eldest?.value?.recycle(); return true }
+            return false
+        }
+    }
+    private val vec = FloatArray(4)
+    private val clip = FloatArray(4)
+    private val out = FloatArray(2)
 
     init {
         val proj = LocalProjection(route)
@@ -43,84 +56,128 @@ class PhotoFrames(context: Context, route: Route, manifest: StreetViewManifest) 
             val y = if (s.lat != null) proj.y(s.lat) else p.y
             // The image was requested facing the route heading at that distance.
             Frame(s.distance, f, x, y, p.heading)
-        }.sortedBy { it.distance }
-    }
-
-    /** Indices of the frames just behind and just ahead of [d] (null = none usable). */
-    fun around(d: Double): Pair<Int?, Int?> {
-        if (frames.isEmpty()) return null to null
-        var lo = 0
-        var hi = frames.size - 1
-        var a = -1
-        while (lo <= hi) {
-            val mid = (lo + hi) ushr 1
-            if (frames[mid].distance <= d) { a = mid; lo = mid + 1 } else hi = mid - 1
         }
-        val b = a + 1
-        val ia = a.takeIf { it >= 0 && d - frames[it].distance < MAX_GAP }
-        val ib = b.takeIf { it < frames.size && frames[it].distance - d < MAX_GAP }
-        return ia to ib
+        frames.forEachIndexed { i, f -> buckets.getOrPut(key(f.x, f.y)) { ArrayList() }.add(i) }
     }
 
-    /** Decoded image for frame [i], or null while it's still loading (then queued). */
-    fun bitmap(i: Int): Bitmap? {
-        bitmaps[i]?.let { return it }
-        request(i)
-        return null
-    }
+    val isEmpty: Boolean get() = frames.isEmpty()
 
-    /** Queue decoding of frame [i]; also drop images far from the current position. */
-    fun request(i: Int) {
-        if (i !in frames.indices || released || bitmaps.containsKey(i) || !loading.add(i)) return
-        runCatching {
-            loader.execute {
-                try {
-                    if (!released) BitmapFactory.decodeFile(frames[i].file.path)?.let { bitmaps[i] = it }
-                } finally {
-                    loading.remove(i)
-                }
-            }
-        }.onFailure { loading.remove(i) }
-    }
-
-    fun trim(keepFrom: Int, keepTo: Int) {
-        bitmaps.keys.filter { it < keepFrom || it > keepTo }.forEach { k -> bitmaps.remove(k)?.recycle() }
+    /** Place the frame cameras on the given ground (call once per world window). */
+    fun placeOn(ground: (Double, Double) -> Double?) {
+        val view = FloatArray(16)
+        val proj = FloatArray(16)
+        Matrix.perspectiveM(proj, 0, VFOV_DEG, ASPECT, 0.5f, 2000f)
+        for (f in frames) {
+            val g = ground(f.x, f.y) ?: continue
+            if (g == f.ground) continue
+            f.ground = g
+            val ey = (g + CAMERA_HEIGHT).toFloat()
+            val ex = f.x.toFloat()
+            val ez = (-f.y).toFloat()
+            Matrix.setLookAtM(
+                view, 0, ex, ey, ez,
+                ex + sin(f.heading).toFloat(), ey, ez - cos(f.heading).toFloat(),
+                0f, 1f, 0f,
+            )
+            Matrix.multiplyMM(f.matrix, 0, proj, 0, view, 0)
+        }
     }
 
     /**
-     * View-projection matrix of frame [i]'s camera in GL space (X = east, Y = up,
-     * Z = -north), with its eye at [groundY] + camera height.
+     * Average real colour of a small surface patch: centre ([x], [y] north, [h] up)
+     * spanning [halfW] metres along ([tx], [ty]) and [halfH] metres vertically,
+     * facing ([nx], [ny]) (zero normal = facing up, e.g. the road). Null when no
+     * nearby frame sees it.
      */
-    fun matrix(i: Int, groundY: Double, out: FloatArray) {
-        val f = frames[i]
-        val ey = (groundY + CAMERA_HEIGHT).toFloat()
-        val ex = f.x.toFloat()
-        val ez = (-f.y).toFloat()
-        val view = FloatArray(16)
-        val proj = FloatArray(16)
-        Matrix.setLookAtM(
-            view, 0, ex, ey, ez,
-            ex + sin(f.heading).toFloat(), ey, ez - cos(f.heading).toFloat(),
-            0f, 1f, 0f,
-        )
-        Matrix.perspectiveM(proj, 0, VFOV_DEG, ASPECT, 0.5f, 6000f)
-        Matrix.multiplyMM(out, 0, proj, 0, view, 0)
+    fun colorAt(
+        x: Double, y: Double, h: Double,
+        nx: Double, ny: Double,
+        tx: Double, ty: Double, halfW: Double, halfH: Double,
+    ): Int? {
+        var best = -1
+        var bestScore = Double.MAX_VALUE
+        val bx = floor(x / BUCKET).toInt()
+        val by = floor(y / BUCKET).toInt()
+        for (i in bx - 1..bx + 1) for (j in by - 1..by + 1) {
+            buckets[HeightField.key(i, j)]?.forEach { k ->
+                val f = frames[k]
+                if (f.ground.isNaN()) return@forEach
+                val dx = f.x - x; val dy = f.y - y
+                val d = hypot(dx, dy)
+                if (d > MAX_RANGE || d < 1.0) return@forEach
+                // Facing: walls must face the camera; a frontal view gives truer colours.
+                val facing = if (nx == 0.0 && ny == 0.0) 1.0 else (dx * nx + dy * ny) / d
+                if (facing < 0.15) return@forEach
+                if (!project(f, x, y, h)) return@forEach
+                if (out[0] !in 0.03f..0.97f || out[1] !in 0.03f..0.97f) return@forEach
+                val score = d / facing
+                if (score < bestScore) { bestScore = score; best = k }
+            }
+        }
+        if (best < 0) return null
+        val f = frames[best]
+        val bmp = bitmap(best) ?: return null
+        // Average a 4×4 grid across the patch as the photo sees it.
+        var r = 0; var g = 0; var b = 0; var n = 0
+        for (u in 0..3) for (v in 0..3) {
+            val su = (u / 3.0 - 0.5) * 2 * halfW * 0.8
+            val sv = (v / 3.0 - 0.5) * 2 * halfH * 0.8
+            if (!project(f, x + tx * su, y + ty * su, h + sv)) continue
+            val px = (out[0] * bmp.width).toInt()
+            val py = ((1f - out[1]) * bmp.height).toInt()
+            if (px !in 0 until bmp.width || py !in 0 until bmp.height) continue
+            val c = bmp.getPixel(px, py)
+            r += Color.red(c); g += Color.green(c); b += Color.blue(c); n++
+        }
+        if (n == 0) return null
+        return stylize(r / n, g / n, b / n)
+    }
+
+    /** Project a local point into frame [f]: out[0..1] = image uv (0..1, v up). */
+    private fun project(f: Frame, x: Double, y: Double, h: Double): Boolean {
+        vec[0] = x.toFloat(); vec[1] = h.toFloat(); vec[2] = (-y).toFloat(); vec[3] = 1f
+        Matrix.multiplyMV(clip, 0, f.matrix, 0, vec, 0)
+        if (clip[3] <= 0.1f) return false
+        out[0] = clip[0] / clip[3] * 0.5f + 0.5f
+        out[1] = clip[1] / clip[3] * 0.5f + 0.5f
+        return true
+    }
+
+    private fun bitmap(i: Int): Bitmap? {
+        if (cache.containsKey(i)) return cache[i]
+        val opts = BitmapFactory.Options().apply { inSampleSize = 2 }
+        val bmp = runCatching { BitmapFactory.decodeFile(frames[i].file.path, opts) }.getOrNull()
+        cache[i] = bmp
+        return bmp
     }
 
     fun release() {
-        released = true
-        loader.shutdownNow()
-        // Not recycled here: the GL thread may still be uploading one; GC frees them.
-        bitmaps.clear()
+        cache.values.forEach { it?.recycle() }
+        cache.clear()
     }
+
+    private fun key(x: Double, y: Double) = HeightField.key(floor(x / BUCKET).toInt(), floor(y / BUCKET).toInt())
 
     companion object {
         /** Street View car camera height above the road. */
         const val CAMERA_HEIGHT = 2.5
-        /** A frame further than this from the rider isn't used (coverage gap). */
-        private const val MAX_GAP = 60.0
+        private const val BUCKET = 50.0
+        /** Only trust frames this close: further away the photo detail is mush. */
+        private const val MAX_RANGE = 60.0
+        private const val CACHE_FRAMES = 40
         private const val ASPECT = 640f / 480f
         /** Vertical FOV of the 85°-horizontal, 4:3 frames requested by the prefetcher. */
         private val VFOV_DEG = Math.toDegrees(2 * atan(tan(Math.toRadians(85.0 / 2)) / ASPECT)).toFloat()
+        private const val LEVELS = 10.0
+
+        /** Illustration look: a touch more saturation, then posterise. */
+        fun stylize(r: Int, g: Int, b: Int): Int {
+            val l = (r + g + b) / 3.0
+            fun ch(c: Int): Int {
+                val boosted = (l + (c - l) * 1.25).coerceIn(0.0, 255.0)
+                return ((boosted / 255.0 * LEVELS).roundToInt() / LEVELS * 255.0).roundToInt().coerceIn(0, 255)
+            }
+            return Color.rgb(ch(r), ch(g), ch(b))
+        }
     }
 }

@@ -205,7 +205,10 @@ object WorldBuilder {
         for (i in 0..2) l[i] /= m
     }
 
-    fun build(field: HeightField, osm: OsmSource, route: Route, centerDist: Double, riderDist: Double): WorldMesh {
+    fun build(
+        field: HeightField, osm: OsmSource, photos: PhotoFrames?,
+        route: Route, centerDist: Double, riderDist: Double,
+    ): WorldMesh {
         val s = WorldMesh.SPACING
         val n = WorldMesh.CELLS
         val c = route.pointAt(centerDist)
@@ -219,6 +222,9 @@ object WorldBuilder {
         val shell = WorldMesh(
             FloatArray(0), FloatArray(0), FloatArray(0), FloatArray(0), FloatArray(0), null, ox, oy, n, heights,
         )
+
+        // Street View cameras stand on this window's ground.
+        photos?.placeOn { x, y -> shell.heightAt(x, y) }
 
         // ---- Real map data for this window ----
         val win = osm.window(ox, oy, ox + n * s, oy + n * s)
@@ -259,6 +265,7 @@ object WorldBuilder {
         // ---- Road ribbon + markings (heights from the rendered surface) ----
         val road = FloatList(rx.size * 42)
         val marks = FloatList(rx.size * 84)
+        val roadColors = roadColors(photos, shell, rx, ry)
         for (k in 0 until rx.size - 1) {
             val ax = rx[k]; val ay = ry[k]; val bx = rx[k + 1]; val by = ry[k + 1]
             val dx = bx - ax; val dy = by - ay
@@ -266,7 +273,7 @@ object WorldBuilder {
             if (len < 0.01) continue
             // Right-hand vector of the travel direction.
             val px = dy / len; val py = -dx / len
-            strip(road, shell, ax, ay, bx, by, px, py, -ROAD_HALF_WIDTH, ROAD_HALF_WIDTH, ROAD_LIFT, ROAD_RGB)
+            strip(road, shell, ax, ay, bx, by, px, py, -ROAD_HALF_WIDTH, ROAD_HALF_WIDTH, ROAD_LIFT, roadColors?.get(k) ?: ROAD_RGB)
             strip(marks, shell, ax, ay, bx, by, px, py, -3.2, -2.95, ROAD_LIFT + 0.04, LINE_RGB)
             strip(marks, shell, ax, ay, bx, by, px, py, 2.95, 3.2, ROAD_LIFT + 0.04, LINE_RGB)
             // Dashed centre line: 4 of every 12 metres.
@@ -308,7 +315,7 @@ object WorldBuilder {
             // Never let the road run through a building (GPS tracks can drift).
             if (routeInside(f, rx, ry, roadBuckets)) continue
             val seed = (floor(cx).toInt() * 73856093) xor (floor(cy).toInt() * 19349663)
-            if (BuildingMesher.add(buildings, f, { x, y -> shell.heightAt(x, y) }, light, seed)) placed++
+            if (BuildingMesher.add(buildings, f, { x, y -> shell.heightAt(x, y) }, light, seed, photos)) placed++
         }
 
         // ---- Trees: where the map has woods / parks (or roadside forest without data) ----
@@ -353,6 +360,39 @@ object WorldBuilder {
             terrain.toArray(), trees.toArray(), road.toArray(), marks.toArray(), buildings.toArray(),
             painter?.texture, ox, oy, n, heights,
         )
+    }
+
+    /**
+     * Real road-surface colour per segment from the Street View photos (smoothed
+     * along the road so it doesn't flicker segment to segment), or null without photos.
+     */
+    private fun roadColors(photos: PhotoFrames?, shell: WorldMesh, rx: List<Double>, ry: List<Double>): List<FloatArray?>? {
+        if (photos == null || rx.size < 2) return null
+        val raw = arrayOfNulls<IntArray>(rx.size)
+        for (k in 0 until rx.size - 1) {
+            val dx = rx[k + 1] - rx[k]; val dy = ry[k + 1] - ry[k]
+            val len = hypot(dx, dy)
+            if (len < 0.01) continue
+            val h = shell.heightAt(rx[k], ry[k]) ?: continue
+            // Sample across the lane (perpendicular), at road level.
+            val c = photos.colorAt(rx[k], ry[k], h + ROAD_LIFT, 0.0, 0.0, dy / len, -dx / len, 2.5, 0.0) ?: continue
+            raw[k] = intArrayOf(android.graphics.Color.red(c), android.graphics.Color.green(c), android.graphics.Color.blue(c))
+        }
+        return List(rx.size) { k ->
+            var r = 0; var g = 0; var b = 0; var n = 0
+            for (j in k - 4..k + 4) {
+                val c = raw.getOrNull(j) ?: continue
+                r += c[0]; g += c[1]; b += c[2]; n++
+            }
+            if (n == 0) null else {
+                val c = PhotoFrames.stylize(r / n, g / n, b / n)
+                floatArrayOf(
+                    android.graphics.Color.red(c) / 255f,
+                    android.graphics.Color.green(c) / 255f,
+                    android.graphics.Color.blue(c) / 255f,
+                )
+            }
+        }
     }
 
     private fun routeInside(
@@ -521,8 +561,6 @@ class FloatList(initial: Int) {
     }
 
     fun toArray(): FloatArray = data.copyOf(size)
-
-    fun clear() { size = 0 }
 
     companion object {
         const val STRIDE = 7
