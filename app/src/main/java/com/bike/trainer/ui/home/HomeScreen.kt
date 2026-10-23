@@ -67,6 +67,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bike.trainer.data.RiderSettings
+import com.bike.trainer.data.Scenery
 import com.bike.trainer.di.ServiceLocator
 import com.bike.trainer.physics.VirtualGears
 import com.bike.trainer.route.GpxImporter
@@ -102,13 +103,14 @@ fun HomeScreen(
     val settings by settingsRepo.settings.collectAsStateWithLifecycle(initialValue = RiderSettings())
     val activeEntry by profileRepo.active.collectAsStateWithLifecycle(initialValue = null)
     val appConfig by ServiceLocator.appConfigRepository.config.collectAsStateWithLifecycle(initialValue = null)
-    val stylized = appConfig?.stylizedScenery ?: false
+    val scenery = appConfig?.scenery ?: Scenery.STREET_VIEW
+    val stylized = scenery == Scenery.STYLIZED
 
     // Selected workout (null = Freeride). Declared before startRide so it captures it.
     var selectedWorkout by remember { mutableStateOf<Workout?>(null) }
 
     val startRide: (Route, Double, Boolean) -> Unit = { route, startMeters, ignoreHills ->
-        ServiceLocator.stylizedScenery = stylized
+        ServiceLocator.scenery = scenery
         ServiceLocator.activeRide = RideEngine(
             route = route,
             trainer = trainer,
@@ -298,18 +300,32 @@ fun HomeScreen(
                 }
             }
 
-            // ---- Scenery: real Street View imagery, or the generated 3D world ----
+            // ---- Scenery: Street View imagery, Google's 3D city models, or our own 3D world ----
             Spacer(Modifier.height(8.dp))
             Text("Scenery", style = MaterialTheme.typography.labelLarge)
             Spacer(Modifier.height(4.dp))
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                listOf("Street View" to false, "Stylized 3D" to true).forEachIndexed { i, (label, value) ->
+                val options = listOf(
+                    "Street View" to Scenery.STREET_VIEW,
+                    "Google 3D" to Scenery.GOOGLE_3D,
+                    "Stylized" to Scenery.STYLIZED,
+                )
+                options.forEachIndexed { i, (label, value) ->
                     SegmentedButton(
-                        selected = stylized == value,
-                        onClick = { scope.launch { ServiceLocator.appConfigRepository.setStylizedScenery(value) } },
-                        shape = SegmentedButtonDefaults.itemShape(index = i, count = 2),
-                    ) { Text(label) }
+                        selected = scenery == value,
+                        onClick = { scope.launch { ServiceLocator.appConfigRepository.setScenery(value) } },
+                        shape = SegmentedButtonDefaults.itemShape(index = i, count = options.size),
+                    ) { Text(label, maxLines = 1) }
                 }
+            }
+            if (scenery == Scenery.GOOGLE_3D) {
+                Text(
+                    if (randomSelected) "Random routes aren't a real place — they'll use Stylized."
+                    else "Google's real 3D models of buildings, trees and terrain, streamed live. " +
+                        "Needs internet (Google doesn't allow saving it offline).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             if (stylized) {
                 val r = selectedRoute

@@ -38,9 +38,9 @@ object ServiceLocator {
     @Volatile
     var activeRide: RideEngine? = null
 
-    /** Scenery chosen for [activeRide]: true = Stylized 3D world, false = Street View. */
+    /** Scenery chosen for [activeRide] (see [com.bike.trainer.data.Scenery]). */
     @Volatile
-    var stylizedScenery: Boolean = false
+    var scenery: String = com.bike.trainer.data.Scenery.STREET_VIEW
 
     /** Best in-ride screenshot (auto or manual), shown on the recap screen. */
     @Volatile

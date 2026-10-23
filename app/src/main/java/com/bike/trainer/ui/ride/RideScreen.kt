@@ -119,7 +119,12 @@ fun RideScreen(
     var sceneBounds by remember { mutableStateOf<android.graphics.Rect?>(null) }
     // Scenery picked on the start screen: the generated low-poly world replaces
     // Street View / the map entirely (no coverage check, no Google key needed).
-    val stylized = remember { ServiceLocator.stylizedScenery }
+    val chosenScenery = remember { ServiceLocator.scenery }
+    // Google 3D needs a real place (GPX) and the Google key; otherwise use Stylized.
+    val google3d = chosenScenery == com.bike.trainer.data.Scenery.GOOGLE_3D &&
+        engine.route.id != null && com.bike.trainer.BuildConfig.HAS_MAPS_KEY
+    val stylized = !google3d && chosenScenery != com.bike.trainer.data.Scenery.STREET_VIEW
+    val ownScenery = google3d || stylized
     // Prefetched Street View frames for this route, if a valid cache exists.
     val svManifest = remember(engine.route.id) {
         com.bike.trainer.route.StreetViewCache.loadFor(context, engine.route)
@@ -131,7 +136,7 @@ fun RideScreen(
     var svLiveAvailable by remember(engine.route.id) { mutableStateOf<Boolean?>(null) }
     LaunchedEffect(engine.route.id) {
         svLiveAvailable = when {
-            stylized -> false
+            ownScenery -> false
             svManifest != null -> true
             !com.bike.trainer.BuildConfig.HAS_MAPS_KEY -> false
             else -> {
@@ -144,7 +149,7 @@ fun RideScreen(
     }
     // Let the rider know once why a route is on the map rather than Street View.
     LaunchedEffect(svLiveAvailable) {
-        if (!stylized && svLiveAvailable == false && svManifest == null &&
+        if (!ownScenery && svLiveAvailable == false && svManifest == null &&
             com.bike.trainer.BuildConfig.HAS_MAPS_KEY
         ) {
             Toast.makeText(
@@ -157,7 +162,7 @@ fun RideScreen(
     // "Google street view is on screen": street toggle + key + (cached OR confirmed
     // live coverage). Until the coverage check resolves we keep this false so the
     // map shows and the crash-prone panorama is never created.
-    val googleStreet = !stylized && streetLevel && com.bike.trainer.BuildConfig.HAS_MAPS_KEY &&
+    val googleStreet = !ownScenery && streetLevel && com.bike.trainer.BuildConfig.HAS_MAPS_KEY &&
         (svManifest != null || svLiveAvailable == true)
 
     suspend fun captureScene(): Boolean {
@@ -212,7 +217,16 @@ fun RideScreen(
                     )
                 },
         ) {
-            if (stylized) {
+            if (google3d) {
+                Google3DSceneView(
+                    route = engine.route,
+                    distanceMeters = state.lapPositionMeters,
+                    speedKmh = state.speedKmh,
+                    chase = !streetLevel,
+                    apiKey = com.bike.trainer.BuildConfig.MAPS_API_KEY,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else if (stylized) {
                 StylizedSceneView(
                     route = engine.route,
                     distanceMeters = state.lapPositionMeters,
@@ -290,7 +304,7 @@ fun RideScreen(
             }
             // Animated rider, shown only over Street View where it reads as a
             // real cyclist on the road (the chase/map view has its own framing).
-            if (googleStreet || stylized) {
+            if (googleStreet || ownScenery) {
                 CyclistView(
                     speedKmh = state.speedKmh,
                     cadenceRpm = state.cadenceRpm,
@@ -351,7 +365,7 @@ fun RideScreen(
                 }
                 if (showView) {
                     val viewDesc = when {
-                        stylized -> if (streetLevel) "Rider view" else "Chase view"
+                        ownScenery -> if (streetLevel) "Rider view" else "Chase view"
                         !streetLevel -> "Chase view"
                         com.bike.trainer.BuildConfig.HAS_MAPS_KEY -> "Street View"
                         else -> "Ground view"

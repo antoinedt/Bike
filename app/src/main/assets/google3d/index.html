@@ -1,0 +1,129 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<link href="https://cdn.jsdelivr.net/npm/cesium@1.124.0/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/cesium@1.124.0/Build/Cesium/Cesium.js"></script>
+<style>
+  html, body, #scene { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #cfe3f2; }
+  /* Keep Google's required attribution, but small and out of the HUD's way. */
+  .cesium-widget-credits { font-size: 8px !important; opacity: 0.85; }
+</style>
+</head>
+<body>
+<div id="scene"></div>
+<script>
+// Ride camera over Google Photorealistic 3D Tiles. Driven by the app:
+//   setRoute({lat:[], lon:[], ele:[], step}) once, init(key), then update(dist, speedMps, chase)
+// on every engine tick; the camera is extrapolated and eased every frame.
+let viewer = null;
+let route = null;
+let sample = { d: 0, v: 0, t: 0 };
+let renderD = null, chase = 0, chaseTarget = 0, eye = null, heading = null;
+let offset = null, lastSampleAt = 0, lastFrame = 0;
+
+function status(s) { try { Android.onStatus(String(s)); } catch (e) {} }
+
+function setRoute(r) { route = r; renderD = null; }
+
+function update(d, v, c) {
+  sample = { d: d, v: v, t: performance.now() };
+  chaseTarget = c ? 1 : 0;
+}
+
+function at(d) {
+  const n = route.lat.length;
+  if (n < 2) return { lat: route.lat[0], lon: route.lon[0], ele: route.ele[0] };
+  let f = Math.max(0, Math.min(n - 1.0001, d / route.step));
+  const i = Math.floor(f), t = f - i;
+  return {
+    lat: route.lat[i] + (route.lat[i + 1] - route.lat[i]) * t,
+    lon: route.lon[i] + (route.lon[i + 1] - route.lon[i]) * t,
+    ele: route.ele[i] + (route.ele[i + 1] - route.ele[i]) * t,
+  };
+}
+
+function bearing(a, b) {
+  const dx = (b.lon - a.lon) * Math.cos(a.lat * Math.PI / 180);
+  const dy = b.lat - a.lat;
+  return Math.atan2(dx, dy);
+}
+
+function angleLerp(a, b, k) {
+  let d = b - a;
+  while (d > Math.PI) d -= 2 * Math.PI;
+  while (d < -Math.PI) d += 2 * Math.PI;
+  return a + d * k;
+}
+
+function frame() {
+  if (!route || !viewer) return;
+  const now = performance.now();
+  const dt = lastFrame ? Math.min(0.2, (now - lastFrame) / 1000) : 0;
+  lastFrame = now;
+
+  const ahead = Math.min(0.6, (now - sample.t) / 1000);
+  const target = sample.d + sample.v * ahead;
+  renderD = (renderD === null || Math.abs(target - renderD) > 150) ? target
+    : renderD + (target - renderD) * Math.min(1, dt * 6);
+  chase += (chaseTarget - chase) * Math.min(1, dt * 3);
+
+  const p = at(Math.max(0, renderD - 10 * chase));
+  // Average a few points ahead: steadies the heading on noisy GPX.
+  let la = 0, lo = 0;
+  for (let k = 1; k <= 4; k++) { const q = at(renderD + 10 + k * 8); la += q.lat; lo += q.lon; }
+  const look = { lat: la / 4, lon: lo / 4 };
+  const want = (Math.abs(look.lat - p.lat) + Math.abs(look.lon - p.lon) > 1e-7) ? bearing(p, look) : (heading || 0);
+  heading = heading === null ? want : angleLerp(heading, want, Math.min(1, dt * 4));
+
+  // GPX elevations are above sea level, the 3D tiles above the WGS84 ellipsoid:
+  // learn the (slowly varying) offset by sampling the rendered ground.
+  if (now - lastSampleAt > 250 && viewer.scene.sampleHeightSupported) {
+    lastSampleAt = now;
+    let h;
+    try { h = viewer.scene.sampleHeight(Cesium.Cartographic.fromDegrees(p.lon, p.lat)); } catch (e) { h = undefined; }
+    if (h !== undefined && isFinite(h)) {
+      const diff = h - p.ele;
+      if (offset === null) offset = diff;
+      // Ignore roofs / trees / bridges overhead: only accept plausible ground hits.
+      else if (Math.abs(diff - offset) < 20) offset += (diff - offset) * 0.25;
+    }
+  }
+  const ground = p.ele + (offset === null ? 40 : offset);
+  const wantEye = ground + 1.8 + 5 * chase;
+  eye = eye === null ? wantEye : eye + (wantEye - eye) * Math.min(1, dt * 4);
+
+  viewer.camera.setView({
+    destination: Cesium.Cartesian3.fromDegrees(p.lon, p.lat, eye),
+    orientation: { heading: heading, pitch: -0.05 - 0.22 * chase, roll: 0 },
+  });
+}
+
+async function init(key) {
+  try {
+    viewer = new Cesium.Viewer('scene', {
+      globe: false, baseLayer: false, animation: false, timeline: false,
+      baseLayerPicker: false, geocoder: false, homeButton: false, sceneModePicker: false,
+      navigationHelpButton: false, fullscreenButton: false, infoBox: false,
+      selectionIndicator: false,
+    });
+    viewer.scene.screenSpaceCameraController.enableInputs = false;
+    viewer.scene.skyAtmosphere.show = true;
+    viewer.camera.frustum.near = 0.5;
+    viewer.scene.preRender.addEventListener(frame);
+    const tileset = await Cesium.createGooglePhotorealistic3DTileset(
+      { key: key, onlyUsingWithGoogleGeocoder: true },
+      { cacheBytes: 256 * 1024 * 1024, maximumCacheOverflowBytes: 128 * 1024 * 1024 },
+    );
+    viewer.scene.primitives.add(tileset);
+    status('ready');
+  } catch (e) {
+    status('error:' + (e && e.message ? e.message : e));
+  }
+}
+
+if (typeof Cesium === 'undefined') status('error:Could not load the 3D engine (no internet?)');
+</script>
+</body>
+</html>

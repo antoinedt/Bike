@@ -37,10 +37,17 @@ data class AppConfig(
     // ---- Learned gear-controller button mapping (protobuf field numbers) ----
     val gearUpField: Int = 1,
     val gearDownField: Int = 2,
-    /** Ride scenery: true = generated low-poly 3D world, false = Street View. */
-    val stylizedScenery: Boolean = false,
+    /** Ride scenery: [Scenery.STREET_VIEW], [Scenery.GOOGLE_3D] or [Scenery.STYLIZED]. */
+    val scenery: String = Scenery.STREET_VIEW,
 ) {
     val mapConfigured: Boolean get() = mapTilesKey.isNotBlank()
+}
+
+/** What a ride shows. */
+object Scenery {
+    const val STREET_VIEW = "STREET_VIEW"
+    const val GOOGLE_3D = "GOOGLE_3D"
+    const val STYLIZED = "STYLIZED"
 }
 
 class AppConfigRepository(private val dataStore: DataStore<Preferences>) {
@@ -58,7 +65,8 @@ class AppConfigRepository(private val dataStore: DataStore<Preferences>) {
             workoutTolerance = prefs[WORKOUT_TOLERANCE] ?: 0.10f,
             gearUpField = prefs[GEAR_UP_FIELD] ?: 1,
             gearDownField = prefs[GEAR_DOWN_FIELD] ?: 2,
-            stylizedScenery = prefs[STYLIZED_SCENERY] ?: false,
+            scenery = prefs[SCENERY]
+                ?: if (prefs[STYLIZED_SCENERY] == true) Scenery.STYLIZED else Scenery.STREET_VIEW,
         )
     }
 
@@ -96,8 +104,8 @@ class AppConfigRepository(private val dataStore: DataStore<Preferences>) {
         dataStore.edit { it[SHOW_CAPTURE] = show }
     }
 
-    suspend fun setStylizedScenery(stylized: Boolean) {
-        dataStore.edit { it[STYLIZED_SCENERY] = stylized }
+    suspend fun setScenery(scenery: String) {
+        dataStore.edit { it[SCENERY] = scenery }
     }
 
     suspend fun setWorkoutTolerance(value: Float) {
@@ -121,6 +129,7 @@ class AppConfigRepository(private val dataStore: DataStore<Preferences>) {
         val SHOW_VIEW_TOGGLE = booleanPreferencesKey("cfg_show_view_toggle")
         val SHOW_CAPTURE = booleanPreferencesKey("cfg_show_capture")
         val STYLIZED_SCENERY = booleanPreferencesKey("cfg_stylized_scenery")
+        val SCENERY = stringPreferencesKey("cfg_scenery")
         val WORKOUT_TOLERANCE = floatPreferencesKey("cfg_workout_tolerance")
         val GEAR_UP_FIELD = intPreferencesKey("cfg_gear_up_field")
         val GEAR_DOWN_FIELD = intPreferencesKey("cfg_gear_down_field")
