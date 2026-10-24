@@ -190,7 +190,8 @@ object TileOsm {
                 "ice" -> mapOf("natural" to "glacier")
                 else -> null
             }
-            "water" -> if (f.str("brunnel") == "tunnel") null else mapOf("natural" to "water")
+            // (Swimming pools are tagged water in the tiles: leave them out, they read as ponds.)
+            "water" -> if (f.str("brunnel") == "tunnel" || cls == "swimming_pool") null else mapOf("natural" to "water")
             "waterway" -> if (f.str("brunnel") == "tunnel") null else mapOf("waterway" to cls.ifEmpty { "stream" })
             else -> null
         }

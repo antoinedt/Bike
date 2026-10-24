@@ -66,6 +66,7 @@ class SceneBuilder(
         const val VERSION = 3
         /** Street half width + sidewalk, for the room in front of façades (Montreal yards). */
         private const val STREET_HALF = 6.5
+        private val TREES = setOf("tree", "conifer", "maple", "linden", "ash", "locust", "elm", "oak", "poplar", "birch", "small_tree")
         const val CHUNK_LEN = 400.0
         private const val TILE = 160.0
         private const val TEX = 512
@@ -165,6 +166,85 @@ class SceneBuilder(
 
     private fun key(x: Double, y: Double, cell: Double): Long =
         (floor(x / cell).toLong() shl 32) or (floor(y / cell).toLong() and 0xFFFFFFFFL)
+
+    /** Carriageway width of a drivable street (null for paths, rail …). */
+    private fun carriageway(t: Map<String, String>): Double? {
+        val base = when (t["highway"]) {
+            "motorway", "motorway_link" -> 12.0
+            "trunk", "trunk_link" -> 10.0
+            "primary", "primary_link" -> 10.0
+            "secondary", "secondary_link" -> 8.5
+            "tertiary", "tertiary_link" -> 7.5
+            // North American residential streets are wide (parking both sides).
+            "residential", "unclassified" -> if (region == Region.QUEBEC || region == Region.NORTH_AMERICA) 9.0 else 6.0
+            "living_street" -> 5.0
+            "service" -> 3.6
+            "busway" -> 6.5
+            else -> return null
+        }
+        val lanes = t["lanes"]?.toIntOrNull()
+        return parseMeters(t["width"]) ?: lanes?.let { max(base * 0.8, it * 3.1) } ?: base
+    }
+
+    /** Drivable street segments [ax, ay, bx, by, half width] on a 20 m grid (props keep off them). */
+    private val roadGrid: HashMap<Long, MutableList<DoubleArray>> by lazy {
+        val g = HashMap<Long, MutableList<DoubleArray>>()
+        for (w in osm.ways) {
+            if (w.tags["tunnel"] == "yes" || w.tags["area"] == "yes") continue
+            val half = (carriageway(w.tags) ?: continue) / 2
+            for (i in 0 until w.xy.size / 2 - 1) {
+                val seg = doubleArrayOf(w.xy[2 * i], w.xy[2 * i + 1], w.xy[2 * i + 2], w.xy[2 * i + 3], half)
+                val x0 = min(seg[0], seg[2]) - half; val x1 = max(seg[0], seg[2]) + half
+                val y0 = min(seg[1], seg[3]) - half; val y1 = max(seg[1], seg[3]) + half
+                if (nearest((x0 + x1) / 2, (y0 + y1) / 2, PROP_RANGE + 200) == null) continue
+                for (i2 in floor(x0 / CELL).toLong()..floor(x1 / CELL).toLong()) for (j in floor(y0 / CELL).toLong()..floor(y1 / CELL).toLong()) {
+                    g.getOrPut((i2 shl 32) or (j and 0xFFFFFFFFL)) { ArrayList() }.add(seg)
+                }
+            }
+        }
+        g
+    }
+
+    /**
+     * How far (x, y) is outside the nearest carriageway (negative = on the road), and
+     * the point moved onto that road's kerb plus [kerb] metres: [clearance, kx, ky].
+     */
+    private fun roadClearance(x: Double, y: Double, kerb: Double = 0.6): DoubleArray {
+        val list = roadGrid[(floor(x / CELL).toLong() shl 32) or (floor(y / CELL).toLong() and 0xFFFFFFFFL)]
+            ?: return doubleArrayOf(99.0, x, y)
+        var best = 99.0; var kx = x; var ky = y
+        for (s in list) {
+            val dx = s[2] - s[0]; val dy = s[3] - s[1]
+            val l2 = dx * dx + dy * dy
+            val t = if (l2 < 1e-9) 0.0 else (((x - s[0]) * dx + (y - s[1]) * dy) / l2).coerceIn(0.0, 1.0)
+            val px = s[0] + dx * t; val py = s[1] + dy * t
+            val d = hypot(x - px, y - py)
+            val c = d - s[4]
+            if (c < best) {
+                best = c
+                val nx: Double; val ny: Double
+                if (d > 1e-6) { nx = (x - px) / d; ny = (y - py) / d } else { val l = kotlin.math.sqrt(l2).coerceAtLeast(1e-9); nx = -dy / l; ny = dx / l }
+                kx = px + nx * (s[4] + kerb); ky = py + ny * (s[4] + kerb)
+            }
+        }
+        return doubleArrayOf(best, kx, ky)
+    }
+
+    /** Exact distance from the route line (the field lookup is only good to a cell). */
+    private fun routeDistance(x: Double, y: Double): Double {
+        val e = nearest(x, y, PROP_RANGE + 100) ?: return Double.MAX_VALUE
+        val i0 = ((e[0] - 60) / 5).toInt().coerceIn(0, rs.size - 1)
+        val i1 = ((e[0] + 60) / 5).toInt().coerceIn(0, rs.size - 1)
+        var best = Double.MAX_VALUE
+        for (i in i0 until i1) {
+            val a = rs[i]; val b = rs[i + 1]
+            val dx = b[1] - a[1]; val dy = b[2] - a[2]
+            val l2 = dx * dx + dy * dy
+            val t = if (l2 < 1e-9) 0.0 else (((x - a[1]) * dx + (y - a[2]) * dy) / l2).coerceIn(0.0, 1.0)
+            best = min(best, hypot(x - a[1] - dx * t, y - a[2] - dy * t))
+        }
+        return best
+    }
 
     /** (distance along route, distance from route) of the nearest route point, ±10 m. */
     private fun nearest(x: Double, y: Double, maxRange: Double): DoubleArray? {
@@ -379,21 +459,7 @@ class SceneBuilder(
             "cycleway" -> { val w = parseMeters(t["width"]) ?: 2.2; ribbon(xy, w / 2, -w / 2, Lift.PATH, C_CYCLE) }
             "track" -> { val w = parseMeters(t["width"]) ?: 3.0; ribbon(xy, w / 2, -w / 2, Lift.PATH, C_TRACK) }
             else -> {
-                val base = when (hw) {
-                    "motorway", "motorway_link" -> 12.0
-                    "trunk", "trunk_link" -> 10.0
-                    "primary", "primary_link" -> 10.0
-                    "secondary", "secondary_link" -> 8.5
-                    "tertiary", "tertiary_link" -> 7.5
-                    // North American residential streets are wide (parking both sides).
-                    "residential", "unclassified" -> if (region == Region.QUEBEC || region == Region.NORTH_AMERICA) 9.0 else 6.0
-                    "living_street" -> 5.0
-                    "service" -> 3.6
-                    "busway" -> 6.5
-                    else -> return
-                }
-                val lanes = t["lanes"]?.toIntOrNull()
-                val width = parseMeters(t["width"]) ?: lanes?.let { max(base * 0.8, it * 3.1) } ?: base
+                val width = carriageway(t) ?: return
                 val h = width / 2
                 val hasSidewalk = hw in setOf("primary", "secondary", "tertiary", "residential", "unclassified", "living_street", "trunk") &&
                     t["sidewalk"] !in setOf("no", "none", "separate")
@@ -952,7 +1018,20 @@ class SceneBuilder(
     /** Props (small) are gathered for all chunks up front: chunk -> (json, count). */
     private val propBuf = HashMap<Int, Pair<StringBuilder, Int>>()
 
-    private fun prop(type: String, x: Double, y: Double, scale: Double, rot: Double, variant: Int = 0) {
+    private fun prop(type: String, x0: Double, y0: Double, scale: Double, rot: Double, variant: Int = 0) {
+        var x = x0; var y = y0
+        // Nothing stands in the carriageway: signals / stops mapped on the street's
+        // centre line go to the kerb, trees just behind it; bollards there are dropped.
+        if (type != "car") {
+            // (At a junction the kerb of one street is in the other: step out of each in turn.)
+            for (step in 0 until 3) {
+                val c = roadClearance(x, y, if (type in TREES) 1.0 else 0.5)
+                if (c[0] >= 0.3) break
+                if (type == "bollard") return
+                x = c[1]; y = c[2]
+            }
+            if (roadClearance(x, y)[0] < 0.2) return // no room anywhere near
+        }
         val near = nearest(x, y, PROP_RANGE) ?: return
         val idx = chunkIndex(near[0])
         val (sb, count) = propBuf[idx] ?: (StringBuilder() to 0)
@@ -1020,11 +1099,7 @@ class SceneBuilder(
             if (hw !in eligible) continue
             if (t["parking:both"] in setOf("no", "no_parking") || t["parking:lane:both"] in setOf("no", "no_parking", "no_stopping")) continue
             if (t["bridge"] == "yes" || t["tunnel"] == "yes") continue
-            val base = when (hw) {
-                "secondary" -> 8.5; "tertiary" -> 7.5
-                else -> if (region == Region.QUEBEC || region == Region.NORTH_AMERICA) 9.0 else 6.0
-            }
-            val width = parseMeters(t["width"]) ?: t["lanes"]?.toIntOrNull()?.let { max(base * 0.8, it * 3.1) } ?: base
+            val width = carriageway(t) ?: continue
             val sides = if (width >= 8.0) intArrayOf(1, -1) else intArrayOf(if (w.id % 2 == 0L) 1 else -1)
             val n = w.xy.size / 2
             if (n < 2) continue
@@ -1046,11 +1121,11 @@ class SceneBuilder(
                     val nr = nearest(x, y, PROP_RANGE)
                     if (nr != null) for (side in sides) {
                         val h = (Math.round(x * 3.1) * 73856093L) xor (Math.round(y * 2.7) * 19349663L) xor side.toLong()
-                        if (((h ushr 8) and 0xFF) > 178) continue
+                        if (((h ushr 8) and 0xFF) > 95) continue // ~3 in 8 spots taken
                         val off = side * (width / 2 - 1.1)
                         val cx = x + dy * off; val cy = y - dx * off
-                        val cn = nearest(cx, cy, PROP_RANGE) ?: continue
-                        if (cn[1] < 2.2) continue // keep the rider's line clear
+                        // None on the route's own street: the rider's line stays clear.
+                        if (routeDistance(cx, cy) < 8.0) continue
                         prop("car", cx, cy, 1.0, kotlin.math.atan2(dx, -dy) + if ((h and 1L) == 0L) PI else 0.0, ((h ushr 16) and 7).toInt())
                     }
                 }
@@ -1124,8 +1199,9 @@ class SceneBuilder(
         // on the route itself).
         for (p in photoTrees) {
             val x = p[0]; val y = p[1]
-            val nr = nearest(x, y, PROP_RANGE) ?: continue
-            if (nr[1] < 4.0 || inBuilding(x, y)) continue
+            if (nearest(x, y, PROP_RANGE) == null || routeDistance(x, y) < 4.0 || inBuilding(x, y)) continue
+            // A photo guess is only a guess: never on (or right next to) a street.
+            if (roadClearance(x, y)[0] < 1.0) continue
             val near = tGrid[(floor(x / 50).toLong() shl 32) or (floor(y / 50).toLong() and 0xFFFFFFFFL)]
                 ?.any { hypot(it[0] - x, it[1] - y) < 6.0 } ?: false
             if (near) continue
