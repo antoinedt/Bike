@@ -58,7 +58,7 @@ func _crown(lumps: Array, greens: Array, grow := 0.08, squash := 0.9) -> Array:
 	for i in lumps.size():
 		var l: Array = lumps[i]
 		var sp := SphereMesh.new()
-		sp.radius = l[3]; sp.height = l[3] * 2.0 * squash; sp.radial_segments = 8; sp.rings = 5
+		sp.radius = l[3]; sp.height = l[3] * 2.0 * squash; sp.radial_segments = 6; sp.rings = 4
 		parts.append([sp, greens[i % greens.size()], grow, Transform3D(Basis(), Vector3(l[0], l[1], l[2]))])
 	return parts
 

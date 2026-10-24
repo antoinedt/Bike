@@ -41,6 +41,10 @@ data class AppConfig(
     val scenery: String = Scenery.STREET_VIEW,
     /** 3D World rider design: armour, pro, city or chibi (see res://cyclist.gd). */
     val riderStyle: String = "armour",
+    /** 3D World art style: "soft" (low-poly painted, hazy) or "comic" (ink outlines). */
+    val worldLook: String = "soft",
+    /** 3D World light: morning, afternoon or sunset. */
+    val worldTime: String = "afternoon",
     /** Stylized: colour façades / road from the route's prefetched Street View photos. */
     val photoTexture: Boolean = true,
 ) {
@@ -75,6 +79,8 @@ class AppConfigRepository(private val dataStore: DataStore<Preferences>) {
                 ?: if (prefs[STYLIZED_SCENERY] == true) Scenery.STYLIZED else Scenery.STREET_VIEW,
             photoTexture = prefs[PHOTO_TEXTURE] ?: true,
             riderStyle = prefs[RIDER_STYLE] ?: "armour",
+            worldLook = prefs[WORLD_LOOK] ?: "soft",
+            worldTime = prefs[WORLD_TIME] ?: "afternoon",
         )
     }
 
@@ -116,6 +122,10 @@ class AppConfigRepository(private val dataStore: DataStore<Preferences>) {
         dataStore.edit { it[RIDER_STYLE] = style }
     }
 
+    suspend fun setWorldLook(look: String, time: String) {
+        dataStore.edit { it[WORLD_LOOK] = look; it[WORLD_TIME] = time }
+    }
+
     suspend fun setPhotoTexture(on: Boolean) {
         dataStore.edit { it[PHOTO_TEXTURE] = on }
     }
@@ -148,6 +158,8 @@ class AppConfigRepository(private val dataStore: DataStore<Preferences>) {
         val SCENERY = stringPreferencesKey("cfg_scenery")
         val PHOTO_TEXTURE = booleanPreferencesKey("cfg_photo_texture")
         val RIDER_STYLE = stringPreferencesKey("cfg_rider_style")
+        val WORLD_LOOK = stringPreferencesKey("cfg_world_look")
+        val WORLD_TIME = stringPreferencesKey("cfg_world_time")
         val WORKOUT_TOLERANCE = floatPreferencesKey("cfg_workout_tolerance")
         val GEAR_UP_FIELD = intPreferencesKey("cfg_gear_up_field")
         val GEAR_DOWN_FIELD = intPreferencesKey("cfg_gear_down_field")

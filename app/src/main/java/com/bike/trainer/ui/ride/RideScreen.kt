@@ -270,6 +270,7 @@ fun RideScreen(
                 DisposableEffect(worldDir) {
                     com.bike.trainer.ui.world.WorldHost.show(worldDir!!)
                     com.bike.trainer.ui.world.WorldHost.setStyle(appConfig?.riderStyle ?: "armour")
+                    com.bike.trainer.ui.world.WorldHost.setLook(appConfig?.worldLook ?: "soft", appConfig?.worldTime ?: "afternoon")
                     onDispose {
                         com.bike.trainer.ui.world.WorldHost.hide()
                         if (ServiceLocator.sceneView === com.bike.trainer.ui.world.WorldHost.renderView()) {

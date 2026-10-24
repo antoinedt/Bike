@@ -47,13 +47,26 @@ var mat_walls: ShaderMaterial
 var mat_roofs: ShaderMaterial
 var mat_ink: ShaderMaterial
 var mat_rails: ShaderMaterial
+var mat_roads: ShaderMaterial
+
+
+var look := "comic"      # "comic" or "soft"
+var time_of_day := "afternoon"
+var env: Environment
+var sun: DirectionalLight3D
+var sky_mat: ShaderMaterial
 
 
 func _ready() -> void:
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--look="): look = a.substr(7)
+		elif a.begins_with("--time="): time_of_day = a.substr(7)
 	_build_environment()
 	mat_walls = _toon(2)
 	mat_roofs = _toon(0)
 	mat_rails = _toon(3)
+	mat_roads = _toon(0)
+	set_look(look, time_of_day)
 	mat_ink = ShaderMaterial.new()
 	mat_ink.shader = ink_shader
 	props = Props.new()
@@ -82,6 +95,7 @@ func _ready() -> void:
 		plugin.connect("ride_update", ride_update)
 		plugin.connect("set_chase", func(c): chase = c)
 		plugin.connect("set_style", set_rider_style)
+		plugin.connect("set_look", set_look)
 		plugin.call("worldReady")
 	if world_dir != "":
 		open_world(world_dir)
@@ -95,9 +109,10 @@ func _toon(mode: int) -> ShaderMaterial:
 
 
 func _build_environment() -> void:
-	var env := Environment.new()
+	env = Environment.new()
 	var sky := Sky.new()
 	var sm := ShaderMaterial.new()
+	sky_mat = sm
 	sm.shader = sky_shader
 	var noise := FastNoiseLite.new()
 	noise.frequency = 0.012
@@ -120,7 +135,7 @@ func _build_environment() -> void:
 	we.environment = env
 	add_child(we)
 
-	var sun := DirectionalLight3D.new()
+	sun = DirectionalLight3D.new()
 	sun.rotation_degrees = Vector3(-48, -35, 0)
 	sun.light_energy = 1.05
 	sun.light_color = Color(1.0, 0.97, 0.90)
@@ -231,6 +246,47 @@ func _load_chunk(i: int) -> Node3D:
 	return root
 
 
+## The art style: "comic" (ink lines, toon bands, bright) or "soft" (low-poly
+## painted look: no outlines, warm wrapped light, haze), and the time of day.
+func set_look(name: String, tod := "afternoon") -> void:
+	look = name
+	time_of_day = tod
+	var soft := look == "soft"
+	RenderingServer.global_shader_parameter_set("soft_look", 1.0 if soft else 0.0)
+	# Soft look: warmer, lighter asphalt (sun-bleached, like a painted road).
+	if mat_roads: mat_roads.set_shader_parameter("tint", Color(1.18, 1.10, 1.0) if soft else Color.WHITE)
+	for c in loaded.values():
+		for n in c.get_children():
+			if n.name == "ink": n.visible = not soft
+	if not soft:
+		env.ambient_light_color = Color(0.62, 0.68, 0.82); env.ambient_light_energy = 0.35
+		env.tonemap_mode = Environment.TONE_MAPPER_LINEAR
+		env.fog_light_color = Color(0.70, 0.84, 0.96); env.fog_density = 0.0016
+		sun.rotation_degrees = Vector3(-48, -35, 0); sun.light_energy = 1.05; sun.light_color = Color(1.0, 0.97, 0.90)
+		sun.shadow_blur = 0.0
+		RenderingServer.directional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_HARD)
+		return
+	RenderingServer.directional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_LOW)
+	sun.shadow_blur = 1.5
+	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+	env.tonemap_white = 6.0
+	# (sun pitch, yaw, colour, energy, sky fill, haze, sky top, horizon)
+	var p = {
+		"morning": [-22.0, 60.0, Color(1.0, 0.90, 0.78), 1.15, Color(0.62, 0.70, 0.82), Color(0.80, 0.84, 0.88), Color(0.50, 0.66, 0.84), Color(0.88, 0.88, 0.86)],
+		"afternoon": [-50.0, -35.0, Color(1.0, 0.96, 0.88), 1.25, Color(0.60, 0.68, 0.80), Color(0.78, 0.84, 0.90), Color(0.42, 0.62, 0.86), Color(0.84, 0.88, 0.90)],
+		"sunset": [-16.0, -120.0, Color(1.0, 0.74, 0.50), 1.6, Color(0.86, 0.72, 0.70), Color(0.96, 0.82, 0.68), Color(0.62, 0.64, 0.78), Color(1.0, 0.84, 0.66)],
+	}.get(time_of_day, null)
+	if p == null: p = [-50.0, -35.0, Color(1.0, 0.96, 0.88), 1.25, Color(0.60, 0.68, 0.80), Color(0.78, 0.84, 0.90), Color(0.42, 0.62, 0.86), Color(0.84, 0.88, 0.90)]
+	sun.rotation_degrees = Vector3(p[0], p[1], 0)
+	sun.light_color = p[2]; sun.light_energy = p[3]
+	env.ambient_light_color = p[4]; env.ambient_light_energy = 0.95 if time_of_day == "sunset" else 0.75
+	env.fog_light_color = p[5]; env.fog_density = 0.0035
+	sky_mat.set_shader_parameter("soft_top", p[6])
+	sky_mat.set_shader_parameter("soft_horizon", p[7])
+	sky_mat.set_shader_parameter("soft_ground", (p[5] as Color).darkened(0.1))
+	sky_mat.set_shader_parameter("sun_glow", p[2])
+
+
 ## Swap the imported materials for the toon ones by mesh name.
 func _style(n: Node) -> void:
 	if n is MeshInstance3D:
@@ -250,7 +306,7 @@ func _style(n: Node) -> void:
 		elif name.begins_with("rails"):
 			mi.material_override = mat_rails
 		elif name.begins_with("roads"):
-			mi.material_override = mat_roofs
+			mi.material_override = mat_roads
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		else:
 			mi.material_override = mat_roofs
@@ -292,6 +348,8 @@ func _ink(root: Node3D, e: Array) -> void:
 	mi.material_override = mat_ink
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	mi.extra_cull_margin = 16384
+	mi.name = "ink"
+	mi.visible = look != "soft"
 	root.add_child(mi)
 
 

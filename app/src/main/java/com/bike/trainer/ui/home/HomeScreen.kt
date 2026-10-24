@@ -357,6 +357,16 @@ fun HomeScreen(
                     RiderPicker(appConfig?.riderStyle ?: "armour") { st ->
                         scope.launch { ServiceLocator.appConfigRepository.setRiderStyle(st) }
                     }
+                    val look = appConfig?.worldLook ?: "soft"
+                    val time = appConfig?.worldTime ?: "afternoon"
+                    OptionPicker(
+                        "Look", look,
+                        listOf("soft" to "Soft (low-poly, hazy)", "comic" to "Comic (ink outlines)"),
+                    ) { scope.launch { ServiceLocator.appConfigRepository.setWorldLook(it, time) } }
+                    if (look == "soft") OptionPicker(
+                        "Time of day", time,
+                        listOf("morning" to "Morning", "afternoon" to "Afternoon", "sunset" to "Sunset"),
+                    ) { scope.launch { ServiceLocator.appConfigRepository.setWorldLook(look, it) } }
                     val ws = worldStatus
                     val photos = svFrames?.imageCount ?: 0
                     TextButton(onClick = { buildWorldFor = r }) {
@@ -531,6 +541,28 @@ fun HomeScreen(
             if (selectedRoute === route) missingTiles = remaining
             stylizeFor = null
         })
+    }
+}
+
+/** A labelled dropdown of (key, label) options. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun OptionPicker(label: String, current: String, options: List<Pair<String, String>>, onPick: (String) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(expanded = open, onExpandedChange = { open = !open }) {
+        OutlinedTextField(
+            value = options.firstOrNull { it.first == current }?.second ?: options.first().second,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text(label) },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = open) },
+            modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
+        )
+        ExposedDropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            options.forEach { (k, l) ->
+                DropdownMenuItem(text = { Text(l) }, onClick = { open = false; onPick(k) })
+            }
+        }
     }
 }
 

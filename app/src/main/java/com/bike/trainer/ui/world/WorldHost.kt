@@ -80,6 +80,8 @@ object WorldHost {
 
     fun setStyle(name: String) = plugin?.setStyle(name)
 
+    fun setLook(look: String, time: String) = plugin?.setLook(look, time)
+
     fun hide() {
         container?.visibility = View.GONE
     }

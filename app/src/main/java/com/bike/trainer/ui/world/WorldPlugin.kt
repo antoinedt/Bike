@@ -16,10 +16,18 @@ class WorldPlugin(godot: Godot) : GodotPlugin(godot) {
     @Volatile private var pendingWorld: String? = null
     @Volatile private var chase = false
     @Volatile private var style = "armour"
+    @Volatile private var look = "soft"
+    @Volatile private var time = "afternoon"
 
     override fun getPluginName() = "VibeBike"
 
-    override fun getPluginSignals() = setOf(OPEN_WORLD, RIDE_UPDATE, SET_CHASE, SET_STYLE)
+    override fun getPluginSignals() = setOf(OPEN_WORLD, RIDE_UPDATE, SET_CHASE, SET_STYLE, SET_LOOK)
+
+    /** Art style ("soft" / "comic") and time of day (see res://main.gd set_look). */
+    fun setLook(look: String, time: String) {
+        this.look = look; this.time = time
+        if (ready) emitSignal(SET_LOOK.name, look, time)
+    }
 
     /** Rider design (see res://cyclist.gd STYLES). */
     fun setStyle(name: String) {
@@ -49,6 +57,7 @@ class WorldPlugin(godot: Godot) : GodotPlugin(godot) {
         pendingWorld?.let { emitSignal(OPEN_WORLD.name, it) }
         emitSignal(SET_CHASE.name, chase)
         emitSignal(SET_STYLE.name, style)
+        emitSignal(SET_LOOK.name, look, time)
     }
 
     companion object {
@@ -58,5 +67,6 @@ class WorldPlugin(godot: Godot) : GodotPlugin(godot) {
         )
         private val SET_CHASE = SignalInfo("set_chase", java.lang.Boolean::class.java)
         private val SET_STYLE = SignalInfo("set_style", String::class.java)
+        private val SET_LOOK = SignalInfo("set_look", String::class.java, String::class.java)
     }
 }
