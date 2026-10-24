@@ -8,6 +8,7 @@ import kotlin.math.floor
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 import kotlin.math.sqrt
 import kotlin.math.tan
 
@@ -62,7 +63,9 @@ class SceneBuilder(
     }
 
     companion object {
-        const val VERSION = 2
+        const val VERSION = 3
+        /** Street half width + sidewalk, for the room in front of façades (Montreal yards). */
+        private const val STREET_HALF = 6.5
         const val CHUNK_LEN = 400.0
         private const val TILE = 160.0
         private const val TEX = 512
@@ -115,6 +118,7 @@ class SceneBuilder(
         val walls = MeshData()
         val roofs = MeshData()
         val roads = MeshData()
+        val rails = MeshData()
         val edges = FloatArr()
         val props = StringBuilder()
         var propCount = 0
@@ -199,6 +203,7 @@ class SceneBuilder(
             glb.add("walls", cur.walls, "walls")
             glb.add("roofs", cur.roofs, "roofs")
             glb.add("roads", cur.roads, "roads")
+            glb.add("rails", cur.rails, "rails")
             val name = "chunk_%03d".format(index)
             if (!glb.isEmpty()) write("$name.glb", glb.bytes())
             val edges = StringBuilder()
@@ -380,7 +385,8 @@ class SceneBuilder(
                     "primary", "primary_link" -> 10.0
                     "secondary", "secondary_link" -> 8.5
                     "tertiary", "tertiary_link" -> 7.5
-                    "residential", "unclassified" -> 6.0
+                    // North American residential streets are wide (parking both sides).
+                    "residential", "unclassified" -> if (region == Region.QUEBEC || region == Region.NORTH_AMERICA) 9.0 else 6.0
                     "living_street" -> 5.0
                     "service" -> 3.6
                     "busway" -> 6.5
@@ -585,8 +591,12 @@ class SceneBuilder(
         // Style from tags, size, region and the photos.
         val f = facts(area)
         val nLevels = estimateLevels(levels, height - minHeight)
-        val style = if (isPart && t["building"] == null) ArchStyle.BLANK.takeIf { height - minHeight < 4 } ?: ArchStyle.classify(type, t, height, nLevels, footprint, longestSide(ring), region, f)
+        val seed = (id xor (id ushr 17)).toInt() and 0x7FFFFFFF
+        val classified = if (isPart && t["building"] == null) ArchStyle.BLANK.takeIf { height - minHeight < 4 } ?: ArchStyle.classify(type, t, height, nLevels, footprint, longestSide(ring), region, f)
         else ArchStyle.classify(type, t, height, nLevels, footprint, longestSide(ring), region, f)
+        // Montreal without a photo verdict: about a third of the plexes are greystones.
+        val style = if (classified == ArchStyle.PLEX && region == Region.QUEBEC && f?.material == null && seed % 3 == 0) ArchStyle.GREYSTONE else classified
+        val montreal = region == Region.QUEBEC && (style == ArchStyle.PLEX || style == ArchStyle.GREYSTONE)
 
         // Roof shape: tagged, or obvious for houses / churches on simple footprints.
         val tagShape = t["roof:shape"]
@@ -604,7 +614,6 @@ class SceneBuilder(
         }
         val eave = top - roofH
 
-        val seed = (id xor (id ushr 17)).toInt() and 0x7FFFFFFF
         val wall = parseColour(t["building:colour"]) ?: parseColour(t["colour"]) ?: f?.colour ?: style.palette[seed % style.palette.size]
         val roof = parseColour(t["roof:colour"]) ?: if (pitched || radial) ROOF_PITCHED[(seed / 7) % ROOF_PITCHED.size] else ROOF_FLAT[(seed / 7) % ROOF_FLAT.size]
         val shop = t.containsKey("shop") || type in setOf("retail", "commercial", "supermarket", "kiosk")
@@ -613,7 +622,9 @@ class SceneBuilder(
         // Walls (one quad per edge). UVs in bays / floors for the façade shader:
         // UV1 = (style id, wall length in bays); colour alpha < 1 = shopfront ground floor.
         val w = chunk.walls
-        val detail = Details(w) { ax, ah, ay, bx, bh, by -> edge(chunk, ax, ah, ay, bx, bh, by) }
+        val detail = Details(w, { ax, ah, ay, bx, bh, by -> edge(chunk, ax, ah, ay, bx, bh, by) }, chunk.rails)
+        // Montreal cornices: mostly dark sheet metal, some painted light on red brick.
+        val cornice = if (style == ArchStyle.PLEX && seed % 4 == 1) 0xD9D4C7 else 0x3C3E44
         var along = 0.0
         var balconies = 0
         for (i in 0 until n) {
@@ -646,6 +657,12 @@ class SceneBuilder(
             val ox = (by - ay) / len; val oy = -(bx - ax) / len // outward, local metres
             if ((rp.x - mx) * ox + (rp.y - my) * oy < 0.4 * hypot(rp.x - mx, rp.y - my)) continue
             val ux = (bx - ax) / len; val uy = (by - ay) / len
+            if (montreal) {
+                // Room in front of the façade before the sidewalk (street half + sidewalk ~ 6.5 m).
+                val free = (rp.x - mx) * ox + (rp.y - my) * oy - STREET_HALF
+                balconies += plexFront(detail, ax, ay, ux, uy, ox, oy, len, ground, floorH, min(nLevels, 4), eave, cornice, free, seed + i)
+                continue
+            }
             when (style) {
                 ArchStyle.HISTORIC -> {
                     val bays = (len / style.bay).toInt()
@@ -690,7 +707,11 @@ class SceneBuilder(
                 detail.band(ring, eave - 0.55, eave, 0.32, trim)
                 if (nLevels >= 2) detail.band(ring, base + floorH - 0.08, base + floorH + 0.18, 0.12, trim)
             }
-            ArchStyle.PLEX -> detail.band(ring, eave - 0.45, eave + 0.25, 0.22, Rgb.darker(wall, 0.35))
+            ArchStyle.PLEX, ArchStyle.GREYSTONE -> if (montreal) {
+                // The Montreal cornice: deep, dark, with a parapet above.
+                detail.band(ring, eave - 0.7, eave, 0.5, cornice)
+                detail.band(ring, eave, eave + 0.35, 0.22, cornice)
+            } else detail.band(ring, eave - 0.45, eave + 0.25, 0.22, Rgb.darker(wall, 0.35))
             ArchStyle.SLAB -> detail.band(ring, eave - 0.2, eave + 0.35, 0.06, Rgb.lighter(wall, 0.1))
             ArchStyle.GLASS -> detail.band(ring, eave - 0.1, eave + 0.6, 0.04, 0x4A5260)
             ArchStyle.INDUSTRIAL -> detail.band(ring, eave - 0.1, eave + 0.4, 0.05, Rgb.darker(wall, 0.15))
@@ -709,6 +730,116 @@ class SceneBuilder(
             radial && roofH > 0.3 -> radialRoof(chunk, ring, n, eave, roofH, roof, shape)
             else -> flatRoof(chunk, ring, n, eave, roof)
         }
+    }
+
+    /**
+     * A Montreal plex frontage along one street-facing wall (a → length [len] along
+     * u, outwards o): cornice brackets and crest, balconies with iron railings and
+     * the outdoor staircase up to the second floor, straight out into the yard when
+     * there is room ([free] metres before the sidewalk) or along the façade, plus a
+     * little fence and hedge. Returns the number of balconies made.
+     */
+    private fun plexFront(
+        d: Details, ax: Double, ay: Double, ux: Double, uy: Double, ox: Double, oy: Double, len: Double,
+        ground: Double, floorH: Double, levels: Int, eave: Double, cornice: Int, free: Double, seed: Int,
+    ): Int {
+        fun px(s: Double, off: Double) = ax + ux * s + ox * off
+        fun py(s: Double, off: Double) = ay + uy * s + oy * off
+        fun box(s: Double, off: Double, h: Double, halfAlong: Double, halfOut: Double, halfUp: Double, rgb: Int, ink: Boolean = true, skip: Int = Details.BACK) =
+            d.box(px(s, off), py(s, off), h, ux, uy, ox, oy, halfAlong, halfOut, halfUp, rgb, ink, skip)
+        val treadSkip = Details.BACK or Details.BOTTOM or Details.SIDES
+        fun rail(s0: Double, o0: Double, h0: Double, s1: Double, o1: Double, h1: Double, height: Double = 1.0) =
+            d.rail(px(s0, o0), py(s0, o0), h0, px(s1, o1), py(s1, o1), h1, height)
+
+        // Cornice brackets all along, a crest over each unit.
+        val nb = (len / 0.9).toInt()
+        for (k in 0..nb) box(0.15 + k * (len - 0.3) / max(1, nb), 0.25, eave - 0.9, 0.07, 0.22, 0.2, cornice, ink = false, skip = Details.BACK or Details.TOP)
+        val units = max(1, (len / 7.6).roundToInt())
+        val uw = len / units
+        if (uw < 4.5 || levels < 2) return 0
+        val wood = 0x4A4D55
+        val tread = 0x3A3D44
+        var made = 0
+        for (i in 0 until units) {
+            val s0 = i * uw
+            box(s0 + uw / 2, 0.1, eave + 0.55, 0.9, 0.16, 0.2, cornice)
+            box(s0 + uw / 2, 0.1, eave + 0.9, 0.35, 0.16, 0.15, cornice)
+            val mirror = (seed + i) % 2 == 1
+            val bw = min(2.8, uw * 0.42)
+            val sb0 = if (mirror) s0 + 0.1 else s0 + uw - bw - 0.1
+            val sb1 = sb0 + bw
+            val bd = 1.35 // balcony depth
+
+            // The staircase to the 2nd floor: straight out, or along the façade.
+            val hb = ground + floorH
+            val steps = kotlin.math.ceil(floorH / 0.2).toInt()
+            val rise = floorH / steps
+            var perp = false
+            var gap0 = 0.0; var gap1 = 0.0          // front rail opening (perpendicular stair)
+            var stairFoot0 = 0.0; var stairFoot1 = 0.0 // yard span the stair takes
+            val outEnd = bd + min(steps * 0.27, free - 0.8)
+            if (free >= 4.0 && (outEnd - bd) / steps >= 0.18) {
+                perp = true
+                val run = (outEnd - bd) / steps
+                val ss0 = if (mirror) sb0 + 0.05 else sb1 - 1.1
+                val ss1 = ss0 + 1.05
+                for (k in 0 until steps) {
+                    val h = hb - (k + 1) * rise
+                    box((ss0 + ss1) / 2, bd + (k + 0.5) * run, h + 0.03, 0.52, run / 2 + 0.02, 0.03, tread, ink = false, skip = treadSkip)
+                }
+                for (s in doubleArrayOf(ss0, ss1)) {
+                    d.beam(px(s, bd), py(s, bd), hb - 0.1, px(s, outEnd), py(s, outEnd), ground - 0.05, 0.04, 0.12, tread)
+                    rail(s, bd, hb, s, outEnd, ground + 0.15, 0.95)
+                }
+                gap0 = ss0; gap1 = ss1
+                stairFoot0 = ss0 - 0.2; stairFoot1 = ss1 + 0.2
+            } else if (free >= 2.4) {
+                // Along the façade, under the balcony's inner edge, down towards the unit's middle.
+                val sTop = if (mirror) sb1 else sb0
+                val dir = if (mirror) 1.0 else -1.0
+                val room = if (mirror) s0 + uw - 0.3 - sTop else sTop - s0 - 0.3
+                val run = min(0.25, room / steps)
+                if (run >= 0.18) {
+                    val l = run * steps
+                    for (k in 0 until steps) {
+                        val h = hb - (k + 1) * rise
+                        box(sTop + dir * (k + 0.5) * run, 0.8, h + 0.03, run / 2 + 0.02, 0.5, 0.03, tread, ink = false, skip = treadSkip)
+                    }
+                    d.beam(px(sTop, 1.3), py(sTop, 1.3), hb - 0.1, px(sTop + dir * l, 1.3), py(sTop + dir * l, 1.3), ground - 0.05, 0.04, 0.12, tread)
+                    rail(sTop, 1.3, hb, sTop + dir * l, 1.3, ground + 0.15, 0.95)
+                    stairFoot0 = min(sTop, sTop + dir * l) - 0.2; stairFoot1 = max(sTop, sTop + dir * l) + 0.2
+                }
+            }
+
+            // Balconies on the upper floors, on brackets.
+            for (fl in 1 until levels) {
+                val h = ground + fl * floorH
+                box((sb0 + sb1) / 2, bd / 2, h - 0.08, bw / 2, bd / 2, 0.08, wood)
+                if (fl == 1 && perp) {
+                    if (gap0 - sb0 > 0.1) rail(sb0, bd, h, gap0, bd, h)
+                    if (sb1 - gap1 > 0.1) rail(gap1, bd, h, sb1, bd, h)
+                } else rail(sb0, bd, h, sb1, bd, h)
+                rail(sb0, 0.05, h, sb0, bd, h)
+                rail(sb1, 0.05, h, sb1, bd, h)
+                for (s in doubleArrayOf(sb0 + 0.12, sb1 - 0.12)) {
+                    d.beam(px(s, 0.02), py(s, 0.02), h - 0.85, px(s, bd - 0.15), py(s, bd - 0.15), h - 0.12, 0.03, 0.03, Details.IRON)
+                }
+                made++
+            }
+
+            // The front yard: a low iron fence and a hedge, clear of the stair foot.
+            if (free >= 2.0) {
+                val fo = free - 0.35
+                if (stairFoot1 > stairFoot0 && perp) {
+                    if (stairFoot0 - s0 > 0.3) rail(s0, fo, ground, stairFoot0, fo, ground, 0.75)
+                    if (s0 + uw - stairFoot1 > 0.3) rail(stairFoot1, fo, ground, s0 + uw, fo, ground, 0.75)
+                } else rail(s0, fo, ground, s0 + uw, fo, ground, 0.75)
+                val h0 = if (mirror) max(s0 + 0.2, stairFoot1) else s0 + 0.2
+                val h1 = if (mirror) s0 + uw - 0.2 else if (stairFoot1 > stairFoot0) min(s0 + uw - 0.2, stairFoot0) else s0 + uw * 0.55
+                if (h1 - h0 > 1.0 && free >= 2.6) box((h0 + h1) / 2, free - 0.9, ground + 0.45, (h1 - h0) / 2, 0.35, 0.47, 0x3F6B33, skip = Details.BOTTOM)
+            }
+        }
+        return made
     }
 
     /** Dome / onion / cone / pyramid over any footprint (towers, church spires, landmarks). */
@@ -830,12 +961,111 @@ class SceneBuilder(
         propBuf[idx] = sb to count + 1
     }
 
+    /**
+     * The tree's silhouette: species from the map tags (genus / species / taxon,
+     * Latin or English), else a typical street tree mix for the region.
+     */
+    private fun treeKind(t: Map<String, String>, k: Int, park: Boolean = false): String {
+        if (t["leaf_type"] == "needleleaved") return "conifer"
+        val name = listOfNotNull(t["genus"], t["species"], t["taxon"], t["genus:en"], t["species:en"], t["taxon:en"], t["species:fr"], t["genus:fr"])
+            .joinToString(" ").lowercase()
+        if (name.isNotEmpty()) {
+            val kind = when {
+                Regex("\\bacer\\b|maple|érable|erable|ahorn").containsMatchIn(name) -> "maple"
+                Regex("tilia|linden|basswood|\\blime\\b|tilleul|linde").containsMatchIn(name) -> "linden"
+                Regex("fraxinus|\\bash\\b|frêne|frene|esche").containsMatchIn(name) -> "ash"
+                Regex("gleditsia|locust|robinia|févier|fevier").containsMatchIn(name) -> "locust"
+                Regex("ulmus|\\belm\\b|celtis|hackberry|orme|micocoulier|platanus|plane|platane").containsMatchIn(name) -> "elm"
+                Regex("quercus|\\boak\\b|chêne|chene|eiche").containsMatchIn(name) -> "oak"
+                Regex("populus|poplar|aspen|cottonwood|peuplier|ginkgo|pappel").containsMatchIn(name) -> "poplar"
+                Regex("betula|birch|bouleau|birke").containsMatchIn(name) -> "birch"
+                Regex("pinus|picea|abies|thuja|juniperus|larix|pine|spruce|\\bfir\\b|cedar|pin |épinette|sapin|cèdre").containsMatchIn(name) -> "conifer"
+                Regex("malus|prunus|syringa|pyrus|amelanchier|crabapple|cherry|lilac|pommier|cerisier|lilas|sorbus").containsMatchIn(name) -> "small_tree"
+                else -> null
+            }
+            if (kind != null) return kind
+        }
+        val r = k and 15
+        return when (region) {
+            // Montreal streets: silver / Norway maples first, then lindens, honey locusts, ash, hackberry.
+            Region.QUEBEC -> when {
+                r < 7 -> "maple"; r < 9 -> "linden"; r < 11 -> "locust"; r < 13 -> "ash"; r < 15 -> "elm"
+                else -> if (park) "oak" else "small_tree"
+            }
+            Region.NORTH_AMERICA -> when { r < 6 -> "maple"; r < 9 -> "oak"; r < 11 -> "linden"; r < 13 -> "locust"; else -> "elm" }
+            Region.EUROPE -> when { r < 6 -> "linden"; r < 9 -> "maple"; r < 11 -> "elm"; r < 13 -> "ash"; r < 14 -> "oak"; else -> "birch" }
+            Region.OTHER -> "tree"
+        }
+    }
+
+    /**
+     * Cars parked along the kerbs of residential and local streets near the route:
+     * every ~6 m (with gaps), clear of junctions, both sides on wide streets.
+     */
+    private fun parkedCars() {
+        // Kerbside parking: local streets; in North America the bigger streets too.
+        val wide = region == Region.QUEBEC || region == Region.NORTH_AMERICA
+        val eligible = if (wide) setOf("residential", "unclassified", "tertiary", "secondary") else setOf("residential", "unclassified")
+        val roadWays = osm.ways.filter { it.tags["highway"] != null }
+        fun vkey(x: Double, y: Double) = (Math.round(x * 2) shl 32) or (Math.round(y * 2) and 0xFFFFFFFFL)
+        val uses = HashMap<Long, Int>()
+        for (w in roadWays) {
+            val hw = w.tags["highway"]!!
+            if (hw in setOf("footway", "path", "steps", "cycleway", "track", "pedestrian", "bridleway", "corridor")) continue
+            for (i in 0 until w.xy.size / 2) uses.merge(vkey(w.xy[2 * i], w.xy[2 * i + 1]), 1, Int::plus)
+        }
+        for (w in roadWays) {
+            val t = w.tags
+            val hw = t["highway"]!!
+            if (hw !in eligible) continue
+            if (t["parking:both"] in setOf("no", "no_parking") || t["parking:lane:both"] in setOf("no", "no_parking", "no_stopping")) continue
+            if (t["bridge"] == "yes" || t["tunnel"] == "yes") continue
+            val base = when (hw) {
+                "secondary" -> 8.5; "tertiary" -> 7.5
+                else -> if (region == Region.QUEBEC || region == Region.NORTH_AMERICA) 9.0 else 6.0
+            }
+            val width = parseMeters(t["width"]) ?: t["lanes"]?.toIntOrNull()?.let { max(base * 0.8, it * 3.1) } ?: base
+            val sides = if (width >= 8.0) intArrayOf(1, -1) else intArrayOf(if (w.id % 2 == 0L) 1 else -1)
+            val n = w.xy.size / 2
+            if (n < 2) continue
+            // Distance along the way of every junction vertex.
+            val cum = DoubleArray(n)
+            for (i in 1 until n) cum[i] = cum[i - 1] + hypot(w.xy[2 * i] - w.xy[2 * i - 2], w.xy[2 * i + 1] - w.xy[2 * i - 1])
+            val junctions = (0 until n).filter { (uses[vkey(w.xy[2 * it], w.xy[2 * it + 1])] ?: 0) >= 2 }.map { cum[it] }
+            var seg = 0
+            var s = 4.0
+            while (s < cum[n - 1] - 4.0) {
+                while (seg < n - 2 && cum[seg + 1] < s) seg++
+                if (junctions.none { abs(it - s) < 12.0 }) {
+                    val ax = w.xy[2 * seg]; val ay = w.xy[2 * seg + 1]; val bx = w.xy[2 * seg + 2]; val by = w.xy[2 * seg + 3]
+                    val l = (cum[seg + 1] - cum[seg]).coerceAtLeast(1e-6)
+                    val f = (s - cum[seg]) / l
+                    val x = ax + (bx - ax) * f; val y = ay + (by - ay) * f
+                    val dx = (bx - ax) / l; val dy = (by - ay) / l
+                    // Only near the route (and not on it).
+                    val nr = nearest(x, y, PROP_RANGE)
+                    if (nr != null) for (side in sides) {
+                        val h = (Math.round(x * 3.1) * 73856093L) xor (Math.round(y * 2.7) * 19349663L) xor side.toLong()
+                        if (((h ushr 8) and 0xFF) > 178) continue
+                        val off = side * (width / 2 - 1.1)
+                        val cx = x + dy * off; val cy = y - dx * off
+                        val cn = nearest(cx, cy, PROP_RANGE) ?: continue
+                        if (cn[1] < 2.2) continue // keep the rider's line clear
+                        prop("car", cx, cy, 1.0, kotlin.math.atan2(dx, -dy) + if ((h and 1L) == 0L) PI else 0.0, ((h ushr 16) and 7).toInt())
+                    }
+                }
+                s += 6.2
+            }
+        }
+    }
+
     private fun propsByChunk(): Map<Int, Pair<StringBuilder, Int>> {
         buildProps()
         return propBuf
     }
 
     private fun buildProps() {
+        parkedCars()
         val treePts = ArrayList<DoubleArray>()
         for (p in osm.points) {
             val t = p.tags
@@ -844,7 +1074,7 @@ class SceneBuilder(
             when {
                 t["natural"] == "tree" -> {
                     val h = parseMeters(t["height"]) ?: (8.0 + v)
-                    prop(if (t["leaf_type"] == "needleleaved") "conifer" else "tree", p.x, p.y, h / 10.0, rot, v)
+                    prop(treeKind(t, (p.id ushr 5).toInt()), p.x, p.y, h / 10.0, rot, v)
                     treePts.add(doubleArrayOf(p.x, p.y))
                 }
                 t["highway"] == "street_lamp" -> prop("lamp", p.x, p.y, 1.0, rot, v)
@@ -867,7 +1097,7 @@ class SceneBuilder(
                 while (s < len) {
                     val x = ax + (bx - ax) * s / len; val y = ay + (by - ay) * s / len
                     val k = (x * 7 + y * 13).toInt()
-                    prop("tree", x, y, 0.9 + (k and 3) * 0.08, (k and 63) / 10.0, k and 7)
+                    prop(treeKind(w.tags, k ushr 3), x, y, 0.9 + (k and 3) * 0.08, (k and 63) / 10.0, k and 7)
                     treePts.add(doubleArrayOf(x, y))
                     s += 9.0
                 }
@@ -900,7 +1130,7 @@ class SceneBuilder(
                 ?.any { hypot(it[0] - x, it[1] - y) < 6.0 } ?: false
             if (near) continue
             val k = (x * 7 + y * 13).toInt()
-            prop("tree", x, y, 0.85 + (k and 3) * 0.08, (k and 63) / 10.0, k and 7)
+            prop(treeKind(emptyMap(), k ushr 3), x, y, 0.85 + (k and 3) * 0.08, (k and 63) / 10.0, k and 7)
         }
         for (a in osm.areas) {
             val t = a.tags
@@ -936,7 +1166,7 @@ class SceneBuilder(
                                 a.inners.none { Geometry.contains(it, jx, jy) } && !inBuilding(jx, jy)
                             ) {
                                 val conifer = dense && ((hx shr 24) and 3) == 0L
-                                prop(if (conifer) "conifer" else "tree", jx, jy, 0.8 + ((hx shr 26) and 7) / 14.0, ((hx shr 4) and 63) / 10.0, ((hx shr 12) and 7).toInt())
+                                prop(if (conifer) "conifer" else treeKind(emptyMap(), (hx ushr 20).toInt() and 0xFFFF, park = true), jx, jy, 0.8 + ((hx shr 26) and 7) / 14.0, ((hx shr 4) and 63) / 10.0, ((hx shr 12) and 7).toInt())
                             }
                             x += step
                         }

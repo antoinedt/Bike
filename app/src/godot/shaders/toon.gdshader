@@ -4,7 +4,7 @@
 shader_type spatial;
 render_mode cull_disabled, specular_disabled;
 
-uniform int mode = 0; // 0 = vertex colour, 1 = texture (ground), 2 = walls with windows
+uniform int mode = 0; // 0 = vertex colour, 1 = texture (ground), 2 = walls with windows, 3 = iron railings
 uniform sampler2D albedo_tex : source_color, filter_linear_mipmap;
 uniform vec3 shadow_tint : source_color = vec3(0.62, 0.66, 0.90);
 uniform vec3 glass : source_color = vec3(0.27, 0.37, 0.52);
@@ -83,14 +83,28 @@ vec3 windows(vec3 wall, bool shops) {
 		if (g.y < 0.24) return wall * 0.85; // spandrel
 		return mix(pane(vec2(facade.x * 0.12, facade.y * 0.08), 0.0), wall, 0.25);
 	}
-	if (style == 4) { // Montreal plex: brick, stone lintels, dark frames, shops below
+	if (style == 4 || style == 8) { // Montreal plex: brick (4) or greystone (8), paired windows
 		if (fl < 1.0 && shops) return shopfront(g, wall, bay);
-		vec3 stone = vec3(0.78, 0.74, 0.66);
-		vec3 c = framed(g, vec2(0.28, 0.20), vec2(0.72, 0.76), 0.035, wall, vec3(0.08, 0.09, 0.11), bay + fl, hit);
-		if (hit) return c;
-		if (inside(g, vec2(0.22, 0.79), vec2(0.78, 0.88))) return stone;
-		// Brick courses.
-		return wall * (1.0 - step(0.85, fract(facade.y * 12.0)) * 0.12);
+		vec3 trim = vec3(0.80, 0.77, 0.70);
+		vec3 frame = vec3(0.93, 0.93, 0.90);
+		// Two tall windows per bay with a post between them; dark glass.
+		vec3 c = framed(g, vec2(0.2, 0.18), vec2(0.8, 0.80), 0.035, wall, frame, bay + fl, hit);
+		if (hit) {
+			if (g.x > 0.47 && g.x < 0.53) return frame;
+			if (c != frame) return mix(vec3(0.07, 0.10, 0.15), glass_hi, step(0.88, fract(g.x * 1.4 + g.y * 1.1 + fl * 0.37)) * 0.5);
+			return c;
+		}
+		if (inside(g, vec2(0.10, 0.83), vec2(0.90, 0.93))) return style == 8 ? mix(wall, vec3(1.0), 0.25) : trim; // lintel
+		if (inside(g, vec2(0.12, 0.10), vec2(0.88, 0.145))) return style == 8 ? mix(wall, vec3(1.0), 0.25) : trim; // sill
+		if (style == 8) { // greystone: big cut blocks
+			vec2 b = vec2(facade.x * 1.6 + step(0.5, fract(facade.y * 2.0)) * 0.5, facade.y * 4.0);
+			float joint = max(step(0.95, fract(b.x)), step(0.92, fract(b.y)));
+			return wall * (1.0 - joint * 0.16) * (0.96 + 0.06 * fract(sin(dot(floor(b), vec2(12.9, 78.2))) * 4375.5));
+		}
+		// Brick courses with pale mortar.
+		vec2 k = vec2(facade.x * 5.0 + step(0.5, fract(facade.y * 6.0)) * 0.5, facade.y * 12.0);
+		float mortar = max(step(0.88, fract(k.y)), step(0.94, fract(k.x)));
+		return mix(wall, vec3(0.86, 0.84, 0.80), mortar * 0.35);
 	}
 	if (style == 5) { // house: small white-framed windows, a door
 		if (fl < 1.0 && int(mod(bay, 3.0)) == 1) {
@@ -128,6 +142,8 @@ vec3 windows(vec3 wall, bool shops) {
 }
 
 void fragment() {
+	// Iron railings: one quad per run, the bars cut out of it (UV.x counts bars).
+	if (mode == 3 && UV.y > 0.07 && UV.y < 0.92 && fract(UV.x) > 0.28) discard;
 	// Vertex / instance colours are authored in sRGB.
 	vec3 c = pow(COLOR.rgb, vec3(2.2)) * tint;
 	if (mode == 1) c = texture(albedo_tex, UV).rgb;

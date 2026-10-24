@@ -5,7 +5,8 @@ extends Node3D
 var toon_shader: Shader = preload("res://shaders/toon.gdshader")
 var hull_shader: Shader = preload("res://shaders/outline_hull.gdshader")
 
-## type -> list of parts: [mesh, colour, outline grow (0 = none), local transform]
+## type -> list of parts: [mesh, colour, outline grow (0 = none), local transform,
+## optional palette (instance colour picked by the prop's variant)]
 var kinds := {}
 var mats := {}
 
@@ -47,6 +48,104 @@ func _init() -> void:
 	kinds["bike_rack"] = [[hoop, Color(0.55, 0.58, 0.62), 0.02, Transform3D(Basis(Vector3.RIGHT, PI / 2), Vector3(0, 0.45, 0))]]
 	kinds["bin"] = [[bin, Color(0.25, 0.45, 0.32), 0.03, T.call(0, 0.45, 0)]]
 	kinds["hydrant"] = [[hydrant, Color(0.80, 0.22, 0.18), 0.03, T.call(0, 0.4, 0)]]
+	_trees()
+	_car()
+
+
+## A lumpy crown: overlapping low-poly spheres [x, y, z, radius] in two greens.
+func _crown(lumps: Array, greens: Array, grow := 0.08, squash := 0.9) -> Array:
+	var parts := []
+	for i in lumps.size():
+		var l: Array = lumps[i]
+		var sp := SphereMesh.new()
+		sp.radius = l[3]; sp.height = l[3] * 2.0 * squash; sp.radial_segments = 8; sp.rings = 5
+		parts.append([sp, greens[i % greens.size()], grow, Transform3D(Basis(), Vector3(l[0], l[1], l[2]))])
+	return parts
+
+
+func _trunk(h: float, r: float, c: Color, limbs := 0, limb_top := 0.0, spread := 1.0) -> Array:
+	var t := CylinderMesh.new()
+	t.top_radius = r * 0.7; t.bottom_radius = r; t.height = h; t.radial_segments = 6
+	var parts := [[t, c, 0.03, Transform3D(Basis(), Vector3(0, h / 2, 0))]]
+	for k in limbs:
+		var a := k * TAU / limbs + 0.4
+		var from := Vector3(0, h - 0.2, 0)
+		var to := Vector3(cos(a) * spread, limb_top, sin(a) * spread)
+		var len := from.distance_to(to)
+		var lm := CylinderMesh.new()
+		lm.top_radius = r * 0.35; lm.bottom_radius = r * 0.6; lm.height = len; lm.radial_segments = 5
+		var up := (to - from).normalized()
+		var side := up.cross(Vector3.FORWARD).normalized()
+		var b := Basis(side, up, side.cross(up))
+		parts.append([lm, c, 0.02, Transform3D(b, (from + to) / 2)])
+	return parts
+
+
+## Street tree species: the silhouettes tell a maple street from a linden or locust one.
+func _trees() -> void:
+	var bark := Color(0.36, 0.28, 0.22)
+	var g1 := Color(0.30, 0.52, 0.20); var g2 := Color(0.36, 0.58, 0.23); var g3 := Color(0.27, 0.47, 0.19)
+	# Maple: short trunk forking into limbs, broad rounded crown of big lumps.
+	kinds["maple"] = _trunk(2.6, 0.24, bark, 3, 4.3, 1.1) + _crown([
+		[0, 6.0, 0, 1.8], [1.7, 5.3, 0.4, 1.6], [-1.5, 5.4, 0.8, 1.7], [0.3, 5.2, -1.7, 1.6],
+		[-0.6, 7.0, -0.5, 1.5], [0.9, 6.8, 1.1, 1.5], [-1.2, 4.7, -1.0, 1.4], [1.2, 4.6, -0.9, 1.4]], [g1, g2, g3])
+	# Linden: one straight trunk, dense egg-shaped crown.
+	kinds["linden"] = _trunk(3.4, 0.22, bark) + _crown([
+		[0, 4.6, 0, 1.9], [0, 6.4, 0, 1.9], [0, 8.1, 0, 1.45], [0, 9.3, 0, 0.9],
+		[1.1, 5.4, 0.5, 1.4], [-1.0, 5.6, -0.6, 1.4], [0.5, 7.2, -0.9, 1.3]], [g3, g1], 0.08, 0.95)
+	# Ash: tall, airy crown of small clumps, lighter green.
+	var ga := Color(0.42, 0.62, 0.26); var gb := Color(0.36, 0.56, 0.22)
+	kinds["ash"] = _trunk(3.6, 0.2, bark, 3, 5.6, 1.4) + _crown([
+		[0, 7.6, 0, 1.3], [2.0, 6.4, 0.6, 1.1], [-1.8, 6.6, 1.0, 1.15], [0.6, 6.2, -2.0, 1.1],
+		[-1.0, 8.2, -1.0, 1.0], [1.2, 8.0, 1.3, 1.0], [-2.2, 5.6, -0.8, 0.9]], [ga, gb], 0.06)
+	# Honey locust: wide, flat, see-through, yellow-green.
+	var gl := Color(0.60, 0.70, 0.30); var gm := Color(0.52, 0.66, 0.28)
+	kinds["locust"] = _trunk(3.2, 0.2, bark, 4, 5.2, 2.0) + _crown([
+		[0, 6.2, 0, 1.2], [2.4, 5.8, 0.3, 1.0], [-2.3, 5.9, 0.5, 1.05], [0.4, 5.7, -2.4, 1.0],
+		[-0.3, 5.8, 2.4, 1.0], [1.6, 6.6, -1.5, 0.9], [-1.6, 6.5, -1.4, 0.9], [1.5, 6.4, 1.7, 0.9]], [gl, gm], 0.05, 0.7)
+	# Elm / hackberry: vase shape, wide top.
+	kinds["elm"] = _trunk(3.0, 0.26, bark, 4, 7.0, 2.2) + _crown([
+		[0, 9.0, 0, 1.9], [2.6, 8.4, 0.4, 1.7], [-2.5, 8.5, 0.6, 1.7], [0.3, 8.3, -2.6, 1.6],
+		[-0.4, 8.2, 2.6, 1.6], [1.8, 7.4, -1.8, 1.3], [-1.8, 7.3, -1.6, 1.3]], [g1, g3], 0.08, 0.8)
+	# Oak: big, dark, irregular.
+	var go := Color(0.24, 0.42, 0.17)
+	kinds["oak"] = _trunk(2.8, 0.32, bark, 4, 4.6, 1.6) + _crown([
+		[0, 6.4, 0, 2.2], [2.2, 5.6, 0.6, 1.8], [-2.0, 5.8, 1.0, 1.9], [0.5, 5.4, -2.2, 1.8],
+		[-0.8, 7.6, -0.8, 1.6], [1.3, 7.3, 1.4, 1.5], [-1.9, 5.0, -1.5, 1.5]], [go, g3], 0.09)
+	# Poplar: columnar.
+	kinds["poplar"] = _trunk(2.0, 0.22, bark) + _crown([
+		[0, 3.6, 0, 1.2], [0, 5.4, 0, 1.35], [0, 7.4, 0, 1.3], [0, 9.3, 0, 1.05], [0, 10.8, 0, 0.7]], [g2, g1], 0.07, 1.25)
+	# Birch: slender white trunk, small loose crown.
+	var birch := Color(0.92, 0.91, 0.86)
+	kinds["birch"] = _trunk(4.5, 0.15, birch, 2, 6.0, 0.9) + _crown([
+		[0, 7.2, 0, 1.2], [1.0, 6.2, 0.4, 1.0], [-0.9, 6.4, -0.3, 1.0], [0.2, 8.2, 0.3, 0.9], [-0.3, 5.4, 0.9, 0.85]], [ga, g2], 0.06)
+	# Small ornamental (crab apple, cherry, lilac).
+	kinds["small_tree"] = _trunk(1.6, 0.14, bark, 3, 2.4, 0.6) + _crown([
+		[0, 3.3, 0, 1.1], [0.8, 2.9, 0.3, 0.9], [-0.7, 3.0, -0.4, 0.9], [0.1, 3.9, -0.3, 0.8]], [g2, g1], 0.05)
+
+
+## A parked car (body colour from the variant).
+func _car() -> void:
+	var body := BoxMesh.new(); body.size = Vector3(1.8, 0.75, 4.4)
+	var cabin := BoxMesh.new(); cabin.size = Vector3(1.56, 0.5, 2.1)
+	var glass := BoxMesh.new(); glass.size = Vector3(1.6, 0.32, 2.16)
+	var wheel := CylinderMesh.new(); wheel.top_radius = 0.34; wheel.bottom_radius = 0.34; wheel.height = 0.24; wheel.radial_segments = 10
+	var paint := [Color(0.90, 0.91, 0.92), Color(0.70, 0.72, 0.75), Color(0.30, 0.32, 0.36), Color(0.72, 0.18, 0.15),
+		Color(0.28, 0.44, 0.70), Color(0.96, 0.96, 0.97), Color(0.80, 0.74, 0.60), Color(0.30, 0.58, 0.60)]
+	var rb := Basis(Vector3.BACK, PI / 2)
+	kinds["car"] = [
+		[body, Color.WHITE, 0.04, T3(0, 0.77, 0), paint],
+		[cabin, Color.WHITE, 0.04, T3(0, 1.39, -0.1), paint],
+		[glass, Color(0.22, 0.30, 0.40), 0.0, T3(0, 1.42, -0.1)],
+		[wheel, Color(0.10, 0.10, 0.11), 0.02, Transform3D(rb, Vector3(-0.86, 0.43, 1.4))],
+		[wheel, Color(0.10, 0.10, 0.11), 0.02, Transform3D(rb, Vector3(0.86, 0.43, 1.4))],
+		[wheel, Color(0.10, 0.10, 0.11), 0.02, Transform3D(rb, Vector3(-0.86, 0.43, -1.4))],
+		[wheel, Color(0.10, 0.10, 0.11), 0.02, Transform3D(rb, Vector3(0.86, 0.43, -1.4))],
+	]
+
+
+func T3(x: float, y: float, z: float) -> Transform3D:
+	return Transform3D(Basis(), Vector3(x, y, z))
 
 
 func _material(grow: float) -> ShaderMaterial:
@@ -89,6 +188,10 @@ func add_chunk(root: Node3D, list: Array) -> void:
 				mm.set_instance_transform(i, Transform3D(b, pos) * local)
 				# A little colour variety per instance (greens, wood).
 				var k := int(p.get("k", 0))
+				if part.size() > 4:
+					var pal: Array = part[4]
+					mm.set_instance_color(i, pal[k % pal.size()])
+					continue
 				var c: Color = part[1]
 				mm.set_instance_color(i, c.lightened(0.04 * (k % 4)).darkened(0.03 * (k / 4)))
 			var mmi := MultiMeshInstance3D.new()

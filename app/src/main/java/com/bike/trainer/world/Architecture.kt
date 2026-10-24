@@ -6,9 +6,11 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 
 /** Where a route is, broadly: decides the local building vocabulary. */
-enum class Region { EUROPE, NORTH_AMERICA, OTHER;
+enum class Region { EUROPE, NORTH_AMERICA, QUEBEC, OTHER;
     companion object {
         fun of(lat: Double, lon: Double): Region = when {
+            // Montreal / Quebec: plexes with outdoor stairs, maple streets.
+            lat in 44.9..47.5 && lon in -76.5..-70.0 -> QUEBEC
             lon < -30 && lat > 15 -> NORTH_AMERICA
             lon in -25.0..45.0 && lat in 34.0..72.0 -> EUROPE
             else -> OTHER
@@ -32,10 +34,12 @@ enum class ArchStyle(val id: Int, val bay: Double, val palette: IntArray) {
     HISTORIC(1, 2.9, intArrayOf(0xEADBB0, 0xE3C489, 0xE7A983, 0xD9D3C4, 0xF1ECE2, 0xBFD3C0, 0xE9CFA0, 0xD8B9A0)),
     SLAB(2, 3.0, intArrayOf(0xD9D6CC, 0xCFD4CF, 0xE2D7C2, 0xC9CED6)),
     GLASS(3, 1.6, intArrayOf(0x7C97B5, 0x8AA3B8, 0x6F8CA8, 0x9DB0BF)),
-    PLEX(4, 2.6, intArrayOf(0xA9573F, 0xB8664A, 0x9A4E3A, 0xC08A5E, 0xB07752)),
+    PLEX(4, 3.0, intArrayOf(0xA9573F, 0xB8664A, 0x9A4E3A, 0xC08A5E, 0xB07752)),
     HOUSE(5, 3.3, intArrayOf(0xF1ECE2, 0xE6D8B8, 0xCFDCE3, 0xE9CFA0, 0xD6C4AA)),
     INDUSTRIAL(6, 4.0, intArrayOf(0xBFC3C6, 0xA9B0B5, 0xC9C2B4, 0x9FA9AE)),
-    CHURCH(7, 4.5, intArrayOf(0xD8CDB8, 0xC9BCA4, 0xB7A68C));
+    CHURCH(7, 4.5, intArrayOf(0xD8CDB8, 0xC9BCA4, 0xB7A68C)),
+    /** Montreal greystone plex (cut limestone façade). */
+    GREYSTONE(8, 3.0, intArrayOf(0xB3A898, 0xA59D90, 0xBDB3A2, 0x9E978C));
 
     companion object {
         /**
@@ -54,11 +58,22 @@ enum class ArchStyle(val id: Int, val bay: Double, val palette: IntArray) {
             ) return INDUSTRIAL
             if (facts?.material == Material.GLASS && levels >= 3) return GLASS
             if (t in setOf("house", "detached", "semidetached_house", "bungalow", "farm", "cabin", "static_caravan") ||
-                (levels <= 2 && area < 250)
+                // (Montreal's small two-storey buildings are duplexes, not houses.)
+                (area < 250 && (levels <= 1 || (levels == 2 && region != Region.QUEBEC)))
             ) return HOUSE
             if (t in setOf("office", "commercial") && (height >= 25 || region != Region.EUROPE)) return GLASS
             if (height >= 40) return GLASS
             return when (region) {
+                Region.QUEBEC -> when {
+                    levels in 2..4 && area < 1500 -> when (facts?.material) {
+                        Material.STONE, Material.CONCRETE -> GREYSTONE
+                        Material.BRICK -> PLEX
+                        // No photo: mostly brick, some greystone (decided per building later).
+                        else -> PLEX
+                    }
+                    levels >= 8 -> if (facts?.material == Material.BRICK) SLAB else GLASS
+                    else -> if (levels <= 6) PLEX else SLAB
+                }
                 Region.NORTH_AMERICA -> when {
                     levels in 2..4 && area < 900 -> PLEX
                     levels >= 8 -> if (facts?.material == Material.BRICK) SLAB else GLASS
@@ -90,7 +105,55 @@ internal object Rgb {
  * (cornices, ledges, parapets), balconies and galleries, chimneys. Everything is
  * emitted as flat-shaded quads in Godot space (X = east, Y = up, Z = -north).
  */
-internal class Details(private val mesh: MeshData, private val edge: (Double, Double, Double, Double, Double, Double) -> Unit) {
+internal class Details(
+    private val mesh: MeshData,
+    private val edge: (Double, Double, Double, Double, Double, Double) -> Unit,
+    /** Iron railings: quads whose bars the shader cuts out (mode 3). */
+    private val rails: MeshData? = null,
+) {
+
+    /**
+     * An iron railing [height] high from a (x, y north, h) to b: one quad, UV.x counts
+     * the bars (every 13 cm, measured horizontally so stair railings stay vertical).
+     */
+    fun rail(ax: Double, ay: Double, ah: Double, bx: Double, by: Double, bh: Double, height: Double = 1.0) {
+        val m = rails ?: return
+        val len = hypot(bx - ax, by - ay)
+        if (len < 0.05) return
+        val nx = -(by - ay) / len; val nz = -(bx - ax) / len
+        val u1 = len / 0.13
+        val s = m.vertexCount
+        m.v(ax, ah, -ay, nx, 0.0, nz, IRON, 0.0, 0.0); m.v(bx, bh, -by, nx, 0.0, nz, IRON, u1, 0.0)
+        m.v(bx, bh + height, -by, nx, 0.0, nz, IRON, u1, 1.0); m.v(ax, ah + height, -ay, nx, 0.0, nz, IRON, 0.0, 1.0)
+        m.tri(s, s + 1, s + 2); m.tri(s, s + 2, s + 3)
+    }
+
+    /** A beam from a to b (x, y north, h up), [halfW] wide and [halfH] thick (stair stringers, brackets). */
+    fun beam(ax: Double, ay: Double, ah: Double, bx: Double, by: Double, bh: Double, halfW: Double, halfH: Double, rgb: Int) {
+        // Godot space vectors.
+        val dx = bx - ax; val dy = bh - ah; val dz = -(by - ay)
+        val l = kotlin.math.sqrt(dx * dx + dy * dy + dz * dz)
+        if (l < 1e-3) return
+        val fx = dx / l; val fy = dy / l; val fz = dz / l
+        // side = f x up (horizontal), up' = side x f
+        var sx = -fz; var sz = fx; val sl = hypot(sx, sz)
+        if (sl < 1e-6) { sx = 1.0; sz = 0.0 } else { sx /= sl; sz /= sl }
+        val ux = -sz * fy; val uy = sz * fx - sx * fz; val uz = sx * fy
+        val a = doubleArrayOf(ax, ah, -ay); val b = doubleArrayOf(bx, bh, -by)
+        fun corner(p: DoubleArray, i: Int, j: Int) = doubleArrayOf(
+            p[0] + sx * halfW * i + ux * halfH * j, p[1] + uy * halfH * j, p[2] + sz * halfW * i + uz * halfH * j)
+        val c = arrayOf(corner(a, -1, -1), corner(a, 1, -1), corner(a, 1, 1), corner(a, -1, 1),
+            corner(b, -1, -1), corner(b, 1, -1), corner(b, 1, 1), corner(b, -1, 1))
+        fun face(i: Int, j: Int, k: Int, m: Int, nx: Double, ny: Double, nz: Double) {
+            val s = mesh.vertexCount
+            for (q in intArrayOf(i, j, k, m)) mesh.v(c[q][0], c[q][1], c[q][2], nx, ny, nz, rgb)
+            mesh.tri(s, s + 1, s + 2); mesh.tri(s, s + 2, s + 3)
+        }
+        face(0, 1, 5, 4, -ux, -uy, -uz)
+        face(3, 7, 6, 2, ux, uy, uz)
+        face(1, 2, 6, 5, sx, 0.0, sz)
+        face(0, 4, 7, 3, -sx, 0.0, -sz)
+    }
 
     /**
      * A band around a CCW [ring] between heights [h0]..[h1], projecting [out] metres
@@ -114,9 +177,12 @@ internal class Details(private val mesh: MeshData, private val edge: (Double, Do
         }
     }
 
-    /** A box: centre (x, y north, h up), half sizes along the wall ([ux],[uy]), outwards ([nx],[ny]) and up. */
+    /**
+     * A box: centre (x, y north, h up), half sizes along the wall ([ux],[uy]), outwards
+     * ([nx],[ny]) and up. [skip] leaves out faces nobody sees (see [BACK] …).
+     */
     fun box(x: Double, y: Double, h: Double, ux: Double, uy: Double, nx: Double, ny: Double,
-            halfAlong: Double, halfOut: Double, halfUp: Double, rgb: Int, ink: Boolean = true) {
+            halfAlong: Double, halfOut: Double, halfUp: Double, rgb: Int, ink: Boolean = true, skip: Int = 0) {
         fun p(a: Double, o: Double, u: Double) = doubleArrayOf(x + ux * a + nx * o, y + uy * a + ny * o, h + u)
         val c = arrayOf(
             p(-halfAlong, -halfOut, -halfUp), p(halfAlong, -halfOut, -halfUp), p(halfAlong, halfOut, -halfUp), p(-halfAlong, halfOut, -halfUp),
@@ -128,11 +194,13 @@ internal class Details(private val mesh: MeshData, private val edge: (Double, Do
             mesh.tri(s, s + 1, s + 2); mesh.tri(s, s + 2, s + 3)
         }
         face(3, 2, 6, 7, nx, 0.0, -ny, rgb)                                  // front (outwards)
-        face(1, 0, 4, 5, -nx, 0.0, ny, Rgb.darker(rgb, 0.15))               // back
-        face(4, 5, 6, 7, 0.0, 1.0, 0.0, Rgb.lighter(rgb, 0.08))             // top
-        face(0, 1, 2, 3, 0.0, -1.0, 0.0, Rgb.darker(rgb, 0.3))              // bottom
-        face(0, 3, 7, 4, -ux, 0.0, uy, Rgb.darker(rgb, 0.1))                // side
-        face(2, 1, 5, 6, ux, 0.0, -uy, Rgb.darker(rgb, 0.1))                // side
+        if (skip and BACK == 0) face(1, 0, 4, 5, -nx, 0.0, ny, Rgb.darker(rgb, 0.15))
+        if (skip and TOP == 0) face(4, 5, 6, 7, 0.0, 1.0, 0.0, Rgb.lighter(rgb, 0.08))
+        if (skip and BOTTOM == 0) face(0, 1, 2, 3, 0.0, -1.0, 0.0, Rgb.darker(rgb, 0.3))
+        if (skip and SIDES == 0) {
+            face(0, 3, 7, 4, -ux, 0.0, uy, Rgb.darker(rgb, 0.1))
+            face(2, 1, 5, 6, ux, 0.0, -uy, Rgb.darker(rgb, 0.1))
+        }
         if (ink) {
             for ((a, b) in listOf(7 to 6, 3 to 2, 2 to 6, 3 to 7)) edge(c[a][0], c[a][2], c[a][1], c[b][0], c[b][2], c[b][1])
         }
@@ -153,6 +221,12 @@ internal class Details(private val mesh: MeshData, private val edge: (Double, Do
     }
 
     companion object {
+        const val IRON = 0x24262B
+        const val BACK = 1
+        const val TOP = 2
+        const val BOTTOM = 4
+        const val SIDES = 8
+
         /** Offset a CCW ring outwards by [d] (mitred, clamped at sharp corners). */
         fun offsetRing(r: DoubleArray, d: Double): DoubleArray {
             val n = r.size / 2

@@ -46,12 +46,14 @@ var mat_ground: ShaderMaterial
 var mat_walls: ShaderMaterial
 var mat_roofs: ShaderMaterial
 var mat_ink: ShaderMaterial
+var mat_rails: ShaderMaterial
 
 
 func _ready() -> void:
 	_build_environment()
 	mat_walls = _toon(2)
 	mat_roofs = _toon(0)
+	mat_rails = _toon(3)
 	mat_ink = ShaderMaterial.new()
 	mat_ink.shader = ink_shader
 	props = Props.new()
@@ -245,6 +247,8 @@ func _style(n: Node) -> void:
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		elif name.begins_with("walls"):
 			mi.material_override = mat_walls
+		elif name.begins_with("rails"):
+			mi.material_override = mat_rails
 		elif name.begins_with("roads"):
 			mi.material_override = mat_roofs
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
