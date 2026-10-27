@@ -42,6 +42,10 @@ object ServiceLocator {
     @Volatile
     var scenery: String = com.bike.trainer.data.Scenery.STREET_VIEW
 
+    /** 3D World for [activeRide]: "real" or a game theme (see WorldStore.THEMES). */
+    @Volatile
+    var worldTheme: String = "real"
+
     /** Stylized ride: colour the 3D model from prefetched Street View photos. */
     @Volatile
     var photoTexture: Boolean = true

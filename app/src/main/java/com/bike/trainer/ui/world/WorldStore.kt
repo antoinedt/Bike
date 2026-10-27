@@ -12,6 +12,7 @@ import com.bike.trainer.world.OsmData
 import com.bike.trainer.world.PhotoAnalysis
 import com.bike.trainer.world.SegFrame
 import com.bike.trainer.world.SceneBuilder
+import com.bike.trainer.world.ThemeBuilder
 import com.bike.trainer.world.TileOsm
 import com.bike.trainer.world.plus
 import kotlinx.coroutines.Dispatchers
@@ -136,6 +137,55 @@ object WorldStore {
     }
 
     fun isBuilt(context: Context, route: Route): Boolean = status(context, route) != null
+
+    // ---------------------------------------------------------------------------------
+    // Video-game themed worlds: the route's shape and climbs, game scenery around it.
+
+    /** Game themes: key -> name shown in the app. */
+    val THEMES = listOf("robot" to "Robot City (8-bit action game)")
+
+    fun themeDir(context: Context, routeId: String, theme: String): File =
+        File(context.filesDir, "worlds/" + StreetViewCache.sanitize(routeId) + "__" + theme)
+
+    private fun themeStamp(route: Route, theme: String) =
+        "$theme|${ThemeBuilder.VERSION}|${StreetViewCache.fingerprint(route)}"
+
+    fun isThemeBuilt(context: Context, route: Route, theme: String): Boolean {
+        val d = themeDir(context, route.id ?: return false, theme)
+        val st = File(d, "stamp.txt")
+        return File(d, "world.json").exists() && st.exists() && st.readText() == themeStamp(route, theme)
+    }
+
+    /** Build a themed world: only the elevation model is needed, so it is quick. */
+    suspend fun buildTheme(context: Context, route: Route, theme: String, onProgress: (Progress) -> Unit): String? =
+        withContext(Dispatchers.IO) {
+            val id = route.id ?: return@withContext "Only GPX routes can be built"
+            if (route.points.size < 2) return@withContext "Route is empty"
+            val out = themeDir(context, id, theme).apply { mkdirs() }
+            post(onProgress, Progress("Elevation…", 0.1f))
+            val field = HeightField(context, route, allowNetwork = true)
+            val heights = HeightSource { x, y -> field.height(x, y) }
+            val tmp = File(out, "build.tmp").apply { deleteRecursively(); mkdirs() }
+            try {
+                withContext(Dispatchers.Default) {
+                    ThemeBuilder(route, heights, theme).build({ name, bytes -> File(tmp, name).writeBytes(bytes) }) { step ->
+                        post(onProgress, Progress("Building: $step…", 0.5f))
+                    }
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                tmp.deleteRecursively()
+                throw e
+            } catch (e: Throwable) {
+                tmp.deleteRecursively()
+                return@withContext "World build failed: " + (if (e is OutOfMemoryError) "ran out of memory" else (e.message ?: e.javaClass.simpleName))
+            }
+            out.listFiles()?.forEach { f -> if (f.isFile) f.delete() }
+            tmp.listFiles()?.forEach { f -> f.renameTo(File(out, f.name)) }
+            tmp.deleteRecursively()
+            File(out, "stamp.txt").writeText(themeStamp(route, theme))
+            post(onProgress, Progress("Done", 1f))
+            null
+        }
 
     class Progress(val step: String, val fraction: Float)
 

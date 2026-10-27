@@ -125,10 +125,16 @@ fun RideScreen(
     val google3d = chosenScenery == com.bike.trainer.data.Scenery.GOOGLE_3D &&
         engine.route.id != null && com.bike.trainer.BuildConfig.HAS_MAPS_KEY
     // The cel-shaded 3D world, when it has been built for this route.
+    val worldTheme = remember { ServiceLocator.worldTheme }
     val worldDir = remember(engine.route.id) {
-        if (chosenScenery == com.bike.trainer.data.Scenery.WORLD &&
-            com.bike.trainer.ui.world.WorldStore.isBuilt(context, engine.route)
-        ) com.bike.trainer.ui.world.WorldStore.dir(context, engine.route.id!!).absolutePath else null
+        val store = com.bike.trainer.ui.world.WorldStore
+        when {
+            chosenScenery != com.bike.trainer.data.Scenery.WORLD -> null
+            worldTheme != "real" ->
+                if (store.isThemeBuilt(context, engine.route, worldTheme)) store.themeDir(context, engine.route.id!!, worldTheme).absolutePath else null
+            store.isBuilt(context, engine.route) -> store.dir(context, engine.route.id!!).absolutePath
+            else -> null
+        }
     }
     val world = worldDir != null
     val stylized = !google3d && !world && chosenScenery != com.bike.trainer.data.Scenery.STREET_VIEW

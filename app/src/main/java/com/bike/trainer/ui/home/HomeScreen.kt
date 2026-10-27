@@ -110,6 +110,7 @@ fun HomeScreen(
 
     val startRide: (Route, Double, Boolean) -> Unit = { route, startMeters, ignoreHills ->
         ServiceLocator.scenery = scenery
+        ServiceLocator.worldTheme = appConfig?.worldTheme ?: "real"
         ServiceLocator.photoTexture = appConfig?.photoTexture ?: true
         ServiceLocator.activeRide = RideEngine(
             route = route,
@@ -145,9 +146,17 @@ fun HomeScreen(
     var sceneryMenu by remember { mutableStateOf(false) }
     var buildWorldFor by remember { mutableStateOf<Route?>(null) }
     var worldStatus by remember { mutableStateOf<com.bike.trainer.ui.world.WorldStore.Status?>(null) }
+    var themeBuilt by remember { mutableStateOf(false) }
+    var buildThemeFor by remember { mutableStateOf<Route?>(null) }
+    val worldTheme = appConfig?.worldTheme ?: "real"
     // Selected GPX parsed, and how many of its terrain tiles are still missing.
     var selectedRoute by remember { mutableStateOf<Route?>(null) }
     var missingTiles by remember { mutableStateOf<Int?>(null) }
+    LaunchedEffect(selectedRoute, worldTheme) {
+        val r = selectedRoute
+        themeBuilt = r != null && worldTheme != "real" &&
+            withContext(Dispatchers.IO) { com.bike.trainer.ui.world.WorldStore.isThemeBuilt(context, r, worldTheme) }
+    }
     // Prefetched Street View frames of the selected GPX (for photo-textured Stylized).
     var svFrames by remember { mutableStateOf<StreetViewManifest?>(null) }
     var startKm by remember { mutableStateOf("") }
@@ -354,9 +363,26 @@ fun HomeScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 } else if (r != null) {
+                    OptionPicker(
+                        "World", worldTheme,
+                        listOf("real" to "Real place (map data)") + com.bike.trainer.ui.world.WorldStore.THEMES,
+                    ) { scope.launch { ServiceLocator.appConfigRepository.setWorldTheme(it) } }
                     RiderPicker(appConfig?.riderStyle ?: "armour") { st ->
                         scope.launch { ServiceLocator.appConfigRepository.setRiderStyle(st) }
                     }
+                    if (worldTheme != "real") {
+                        val themeName = com.bike.trainer.ui.world.WorldStore.THEMES.firstOrNull { it.first == worldTheme }?.second ?: worldTheme
+                        TextButton(onClick = { buildThemeFor = r }) {
+                            Icon(Icons.Filled.Terrain, contentDescription = null)
+                            Text(if (themeBuilt) "  World built ✓ (rebuild…)" else "  Build world…")
+                        }
+                        Text(
+                            "$themeName: your route's real shape and climbs, with game scenery around it. " +
+                                "No map download needed: builds in seconds.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
                     val look = appConfig?.worldLook ?: "soft"
                     val time = appConfig?.worldTime ?: "afternoon"
                     OptionPicker(
@@ -395,6 +421,7 @@ fun HomeScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    }
                 }
             }
             if (scenery == Scenery.GOOGLE_3D) {
@@ -536,12 +563,71 @@ fun HomeScreen(
             buildWorldFor = null
         })
     }
+    buildThemeFor?.let { route ->
+        BuildThemeDialog(route = route, theme = worldTheme, onDismiss = { ok ->
+            if (selectedRoute === route && ok) themeBuilt = true
+            buildThemeFor = null
+        })
+    }
     stylizeFor?.let { route ->
         StylizeDialog(route = route, frames = svFrames, onDismiss = { remaining ->
             if (selectedRoute === route) missingTiles = remaining
             stylizeFor = null
         })
     }
+}
+
+/** Builds a route's game-themed world (elevation only: quick). */
+@Composable
+private fun BuildThemeDialog(route: Route, theme: String, onDismiss: (built: Boolean) -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var running by remember { mutableStateOf(false) }
+    var progress by remember { mutableStateOf<com.bike.trainer.ui.world.WorldStore.Progress?>(null) }
+    var status by remember { mutableStateOf<String?>(null) }
+    var built by remember { mutableStateOf(false) }
+    var job by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    val name = com.bike.trainer.ui.world.WorldStore.THEMES.firstOrNull { it.first == theme }?.second ?: theme
+    AlertDialog(
+        onDismissRequest = { if (!running) onDismiss(built) },
+        title = { Text(if (running) "Building world…" else "Build $name") },
+        text = {
+            Column {
+                Text(
+                    "Builds $name around ${route.name}: the route keeps its real shape and climbs, " +
+                        "the scenery comes from the game. Only elevation data is downloaded.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                val p = progress
+                if (p != null && running) {
+                    Spacer(Modifier.height(12.dp))
+                    LinearProgressIndicator(progress = { p.fraction }, modifier = Modifier.fillMaxWidth())
+                    Text(p.step, style = MaterialTheme.typography.bodySmall)
+                }
+                status?.let {
+                    Spacer(Modifier.height(8.dp))
+                    Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = !running, onClick = {
+                running = true
+                status = null
+                job = scope.launch {
+                    val error = com.bike.trainer.ui.world.WorldStore.buildTheme(context, route, theme) { progress = it }
+                    running = false
+                    built = built || error == null
+                    status = error ?: "Done: pick \"3D World\" and start the ride"
+                }
+            }) { Text(if (built) "Rebuild" else "Build") }
+        },
+        dismissButton = {
+            TextButton(onClick = {
+                if (running) { job?.cancel(); running = false; status = "Cancelled" } else onDismiss(built)
+            }) { Text(if (running) "Cancel" else "Close") }
+        },
+    )
 }
 
 /** A labelled dropdown of (key, label) options. */

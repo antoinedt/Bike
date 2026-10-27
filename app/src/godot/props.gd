@@ -50,6 +50,7 @@ func _init() -> void:
 	kinds["hydrant"] = [[hydrant, Color(0.80, 0.22, 0.18), 0.03, T.call(0, 0.4, 0)]]
 	_trees()
 	_car()
+	_robot_theme()
 
 
 ## A lumpy crown: overlapping low-poly spheres [x, y, z, radius] in two greens.
@@ -141,6 +142,31 @@ func _car() -> void:
 		[wheel, Color(0.10, 0.10, 0.11), 0.02, Transform3D(rb, Vector3(0.86, 0.43, 1.4))],
 		[wheel, Color(0.10, 0.10, 0.11), 0.02, Transform3D(rb, Vector3(-0.86, 0.43, -1.4))],
 		[wheel, Color(0.10, 0.10, 0.11), 0.02, Transform3D(rb, Vector3(0.86, 0.43, -1.4))],
+	]
+
+
+## Robot City props: a little dome-helmet robot and an energy capsule.
+func _robot_theme() -> void:
+	var dome := SphereMesh.new(); dome.radius = 0.42; dome.height = 0.42; dome.is_hemisphere = true; dome.radial_segments = 10; dome.rings = 4
+	var body := CylinderMesh.new(); body.top_radius = 0.34; body.bottom_radius = 0.38; body.height = 0.35; body.radial_segments = 10
+	var eye := SphereMesh.new(); eye.radius = 0.11; eye.height = 0.22; eye.radial_segments = 8; eye.rings = 4
+	var pupil := SphereMesh.new(); pupil.radius = 0.05; pupil.height = 0.1; pupil.radial_segments = 6; pupil.rings = 3
+	var foot := BoxMesh.new(); foot.size = Vector3(0.18, 0.12, 0.3)
+	var helmet_cols := [Color(0.98, 0.78, 0.10), Color(0.95, 0.45, 0.10), Color(0.20, 0.70, 0.95), Color(0.85, 0.20, 0.30)]
+	kinds["bot"] = [
+		[body, Color(0.35, 0.36, 0.42), 0.03, T3(0, 0.3, 0)],
+		[dome, Color.WHITE, 0.04, T3(0, 0.46, 0), helmet_cols],
+		[eye, Color(0.98, 0.98, 0.98), 0.02, T3(0, 0.3, 0.33)],
+		[pupil, Color(0.05, 0.05, 0.08), 0.0, T3(0, 0.3, 0.43)],
+		[foot, Color(0.25, 0.26, 0.32), 0.02, T3(-0.18, 0.06, 0.05)],
+		[foot, Color(0.25, 0.26, 0.32), 0.02, T3(0.18, 0.06, 0.05)],
+	]
+	var tube := CylinderMesh.new(); tube.top_radius = 0.22; tube.bottom_radius = 0.22; tube.height = 0.42; tube.radial_segments = 10
+	var cap := CylinderMesh.new(); cap.top_radius = 0.26; cap.bottom_radius = 0.26; cap.height = 0.1; cap.radial_segments = 10
+	kinds["capsule"] = [
+		[tube, Color.WHITE, 0.03, T3(0, 0, 0), [Color(0.25, 0.85, 0.99), Color(0.99, 0.85, 0.20)]],
+		[cap, Color(0.95, 0.95, 0.98), 0.03, T3(0, 0.25, 0)],
+		[cap, Color(0.95, 0.95, 0.98), 0.03, T3(0, -0.25, 0)],
 	]
 
 

@@ -50,6 +50,23 @@ var mat_rails: ShaderMaterial
 var mat_roads: ShaderMaterial
 
 
+## Video-game themed worlds (world.json "theme"): pixel-art tiles, an 8-bit sky
+## per stage and a pixelated frame. "" = the real-place world.
+var theme := ""
+var stages := []
+var stage_now := ""
+var mat_tiles: ShaderMaterial
+var retro_sky: ShaderMaterial
+var pixel_quad: MeshInstance3D
+const STAGE_COLOURS := {
+	# top, horizon, skyline, clouds, stars
+	"sky": [Color(0.0, 0.47, 0.97), Color(0.24, 0.74, 0.99), Color(0.0, 0.25, 0.53), 1.0, 0.0],
+	"factory": [Color(0.85, 0.30, 0.20), Color(0.99, 0.72, 0.55), Color(0.30, 0.12, 0.10), 1.0, 0.0],
+	"forest": [Color(0.0, 0.50, 0.45), Color(0.70, 0.95, 0.65), Color(0.0, 0.25, 0.05), 1.0, 0.0],
+	"ice": [Color(0.40, 0.60, 0.99), Color(0.86, 0.94, 1.0), Color(0.36, 0.45, 0.62), 1.0, 0.0],
+	"night": [Color(0.0, 0.0, 0.10), Color(0.15, 0.06, 0.30), Color(0.05, 0.04, 0.12), 0.0, 1.0],
+}
+
 var look := "comic"      # "comic" or "soft"
 var time_of_day := "afternoon"
 var env: Environment
@@ -166,6 +183,10 @@ func open_world(dir: String) -> void:
 		push_error("No world at " + dir)
 		return
 	route_step = float(data.get("routeStep", 5.0))
+	theme = String(data.get("theme", ""))
+	stages = data.get("stages", [])
+	stage_now = ""
+	_apply_theme()
 	chunk_len = float(data.get("chunkLength", 400.0))
 	chunks_meta = data["chunks"]
 	var r: Array = data["route"]
@@ -287,6 +308,57 @@ func set_look(name: String, tod := "afternoon") -> void:
 	sky_mat.set_shader_parameter("sun_glow", p[2])
 
 
+## Switch between the real-place look and a themed (video-game) one.
+func _apply_theme() -> void:
+	if pixel_quad == null:
+		pixel_quad = MeshInstance3D.new()
+		var q := QuadMesh.new(); q.size = Vector2(1, 1)
+		pixel_quad.mesh = q
+		var pm := ShaderMaterial.new(); pm.shader = load("res://shaders/pixelate.gdshader")
+		pm.render_priority = 127
+		pixel_quad.material_override = pm
+		pixel_quad.extra_cull_margin = 16384.0
+		pixel_quad.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		cam.add_child(pixel_quad)
+		pixel_quad.position = Vector3(0, 0, -1)
+	if theme == "":
+		pixel_quad.visible = false
+		env.sky.sky_material = sky_mat
+		env.fog_enabled = true
+		set_look(look, time_of_day)
+		return
+	set_look("comic")
+	env.fog_enabled = false
+	if mat_tiles == null:
+		mat_tiles = ShaderMaterial.new()
+		mat_tiles.shader = load("res://shaders/retro_tiles.gdshader")
+		retro_sky = ShaderMaterial.new()
+		retro_sky.shader = load("res://shaders/retro_sky.gdshader")
+	var img := Image.load_from_file("res://themes/%s_atlas.png" % theme)
+	if img: mat_tiles.set_shader_parameter("atlas", ImageTexture.create_from_image(img))
+	env.sky.sky_material = retro_sky
+	pixel_quad.visible = true
+	# 8-bit light: flat and bright.
+	sun.light_energy = 1.1; sun.light_color = Color(1, 1, 1)
+	env.ambient_light_color = Color(0.75, 0.78, 0.85); env.ambient_light_energy = 0.55
+
+
+## The stage at [d] colours the sky and the haze.
+func _update_stage(d: float) -> void:
+	var key := ""
+	for st in stages:
+		if float(st["d"]) <= d: key = String(st["s"])
+	if key == stage_now or not STAGE_COLOURS.has(key): return
+	stage_now = key
+	var c: Array = STAGE_COLOURS[key]
+	retro_sky.set_shader_parameter("top", c[0])
+	retro_sky.set_shader_parameter("horizon", c[1])
+	retro_sky.set_shader_parameter("skyline", c[2])
+	retro_sky.set_shader_parameter("clouds", c[3])
+	retro_sky.set_shader_parameter("stars", c[4])
+	mat_tiles.set_shader_parameter("fog_color", c[1])
+
+
 ## Swap the imported materials for the toon ones by mesh name.
 func _style(n: Node) -> void:
 	if n is MeshInstance3D:
@@ -303,6 +375,9 @@ func _style(n: Node) -> void:
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		elif name.begins_with("walls"):
 			mi.material_override = mat_walls
+		elif name.begins_with("tiles"):
+			mi.material_override = mat_tiles
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		elif name.begins_with("rails"):
 			mi.material_override = mat_rails
 		elif name.begins_with("roads"):
@@ -355,6 +430,7 @@ func _ink(root: Node3D, e: Array) -> void:
 
 func _process(delta: float) -> void:
 	if route.size() < 2: return
+	if theme != "": _update_stage(render_d)
 	# Extrapolate between app ticks, then ease toward it (snap on big jumps).
 	var now := Time.get_ticks_msec() / 1000.0
 	var target := distance + speed * clampf(now - sample_time, 0.0, 0.6)
