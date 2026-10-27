@@ -18,10 +18,17 @@ class WorldPlugin(godot: Godot) : GodotPlugin(godot) {
     @Volatile private var style = "armour"
     @Volatile private var look = "soft"
     @Volatile private var time = "afternoon"
+    @Volatile private var pack = ""
 
     override fun getPluginName() = "VibeBike"
 
-    override fun getPluginSignals() = setOf(OPEN_WORLD, RIDE_UPDATE, SET_CHASE, SET_STYLE, SET_LOOK)
+    override fun getPluginSignals() = setOf(OPEN_WORLD, RIDE_UPDATE, SET_CHASE, SET_STYLE, SET_LOOK, SET_PACK)
+
+    /** The user's asset pack folder ("" = built-in models). */
+    fun setPack(dir: String) {
+        pack = dir
+        if (ready) emitSignal(SET_PACK.name, dir)
+    }
 
     /** Art style ("soft" / "comic") and time of day (see res://main.gd set_look). */
     fun setLook(look: String, time: String) {
@@ -54,6 +61,8 @@ class WorldPlugin(godot: Godot) : GodotPlugin(godot) {
     @UsedByGodot
     fun worldReady() {
         ready = true
+        // The pack first, so the world's first load already uses it.
+        emitSignal(SET_PACK.name, pack)
         pendingWorld?.let { emitSignal(OPEN_WORLD.name, it) }
         emitSignal(SET_CHASE.name, chase)
         emitSignal(SET_STYLE.name, style)
@@ -68,5 +77,6 @@ class WorldPlugin(godot: Godot) : GodotPlugin(godot) {
         private val SET_CHASE = SignalInfo("set_chase", java.lang.Boolean::class.java)
         private val SET_STYLE = SignalInfo("set_style", String::class.java)
         private val SET_LOOK = SignalInfo("set_look", String::class.java, String::class.java)
+        private val SET_PACK = SignalInfo("set_pack", String::class.java)
     }
 }

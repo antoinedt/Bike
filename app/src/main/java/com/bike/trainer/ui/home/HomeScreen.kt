@@ -207,6 +207,23 @@ fun HomeScreen(
 
     LaunchedEffect(Unit) { refreshGpx() }
 
+    // The user's 3D asset packs (imported .zip files of glTF models).
+    var packs by remember { mutableStateOf<List<com.bike.trainer.ui.world.AssetPacks.Pack>>(emptyList()) }
+    var showSlots by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { packs = withContext(Dispatchers.IO) { com.bike.trainer.ui.world.AssetPacks.list(context) } }
+    val packPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) scope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { com.bike.trainer.ui.world.AssetPacks.import(context, uri) } }
+            result.onSuccess { p ->
+                packs = withContext(Dispatchers.IO) { com.bike.trainer.ui.world.AssetPacks.list(context) }
+                ServiceLocator.appConfigRepository.setAssetPack(p.id)
+                Toast.makeText(context, "Pack \"${p.name}\": ${p.slots.size} models" + if (p.hasAtlas) " + tile art" else "", Toast.LENGTH_LONG).show()
+            }.onFailure { e ->
+                Toast.makeText(context, e.message ?: "Couldn't import that pack", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
     // The picker now copies the chosen file into the routes folder so it persists
     // and shows up in the dropdown, instead of being a one-off import.
     val gpxPicker = rememberLauncherForActivityResult(
@@ -369,6 +386,18 @@ fun HomeScreen(
                     ) { scope.launch { ServiceLocator.appConfigRepository.setWorldTheme(it) } }
                     RiderPicker(appConfig?.riderStyle ?: "armour") { st ->
                         scope.launch { ServiceLocator.appConfigRepository.setRiderStyle(st) }
+                    }
+                    val pack = appConfig?.assetPack.orEmpty()
+                    OptionPicker(
+                        "3D models", if (packs.any { it.id == pack }) pack else "",
+                        listOf("" to "Built-in") + packs.map { it.id to "${it.name} (${it.slots.size} models${if (it.hasAtlas) " + tiles" else ""})" },
+                    ) { scope.launch { ServiceLocator.appConfigRepository.setAssetPack(it) } }
+                    Row {
+                        TextButton(onClick = { packPicker.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream")) }) {
+                            Icon(Icons.Filled.UploadFile, contentDescription = null)
+                            Text("  Import pack (.zip)…")
+                        }
+                        TextButton(onClick = { showSlots = true }) { Text("Slots…") }
                     }
                     if (worldTheme != "real") {
                         val themeName = com.bike.trainer.ui.world.WorldStore.THEMES.firstOrNull { it.first == worldTheme }?.second ?: worldTheme
@@ -562,6 +591,44 @@ fun HomeScreen(
             if (selectedRoute === route && st != null) worldStatus = st
             buildWorldFor = null
         })
+    }
+    if (showSlots) {
+        val current = packs.firstOrNull { it.id == appConfig?.assetPack }
+        AlertDialog(
+            onDismissRequest = { showSlots = false },
+            title = { Text("3D model packs") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    Text(
+                        "A pack is a .zip of glTF models (.glb / .gltf) named after the slots below, " +
+                            "e.g. chest.glb, round_tree.glb. They replace the built-in models; slots " +
+                            "without a model keep the built-in one. Optional:\n" +
+                            "• pack.json to map slots to other file names and sizes:\n" +
+                            "  {\"props\": {\"chest\": {\"model\": \"box.glb\", \"height\": 0.8, \"rot\": 90}}}\n" +
+                            "  height in metres (else \"scale\"), \"y\" lifts, \"rot\" turns (degrees)\n" +
+                            "• atlas.png: tile art for the game worlds (128×128, 8×8 tiles, same layout as the built-in one)\n" +
+                            "Packs stay on this phone.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    com.bike.trainer.ui.world.AssetPacks.SLOTS.forEach { (world, slots) ->
+                        Spacer(Modifier.height(8.dp))
+                        Text(world, style = MaterialTheme.typography.titleSmall)
+                        Text(slots.joinToString(", ") { s -> if (current?.slots?.contains(s) == true) "$s ✓" else s }, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showSlots = false }) { Text("Close") } },
+            dismissButton = {
+                if (current != null) TextButton(onClick = {
+                    scope.launch {
+                        withContext(Dispatchers.IO) { com.bike.trainer.ui.world.AssetPacks.delete(context, current.id) }
+                        packs = withContext(Dispatchers.IO) { com.bike.trainer.ui.world.AssetPacks.list(context) }
+                        ServiceLocator.appConfigRepository.setAssetPack("")
+                        showSlots = false
+                    }
+                }) { Text("Delete \"${current.name}\"") }
+            },
+        )
     }
     buildThemeFor?.let { route ->
         BuildThemeDialog(route = route, theme = worldTheme, onDismiss = { ok ->

@@ -274,6 +274,10 @@ fun RideScreen(
             if (world) {
                 // The Godot view sits behind the UI; this area stays transparent.
                 DisposableEffect(worldDir) {
+                    // The pack before the world, so the world loads once, with it.
+                    val pack = appConfig?.assetPack.orEmpty()
+                    val packDir = com.bike.trainer.ui.world.AssetPacks.dir(context, pack)
+                    com.bike.trainer.ui.world.WorldHost.setPack(if (pack.isNotEmpty() && packDir.isDirectory) packDir.absolutePath else "")
                     com.bike.trainer.ui.world.WorldHost.show(worldDir!!)
                     com.bike.trainer.ui.world.WorldHost.setStyle(appConfig?.riderStyle ?: "armour")
                     com.bike.trainer.ui.world.WorldHost.setLook(appConfig?.worldLook ?: "soft", appConfig?.worldTime ?: "afternoon")

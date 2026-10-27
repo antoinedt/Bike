@@ -117,6 +117,7 @@ func _ready() -> void:
 		elif a.begins_with("--cad="): cadence = float(a.substr(6))
 		elif a.begins_with("--shot="): shot_path = a.substr(7)
 		elif a == "--noshadow": debug_noshadow = true
+		elif a.begins_with("--pack="): props.load_pack(a.substr(7))
 		elif a == "--side": debug_side = true
 
 	if debug_noshadow:
@@ -129,6 +130,7 @@ func _ready() -> void:
 		plugin.connect("set_chase", func(c): chase = c)
 		plugin.connect("set_style", set_rider_style)
 		plugin.connect("set_look", set_look)
+		plugin.connect("set_pack", set_pack)
 		plugin.call("worldReady")
 	if world_dir != "":
 		open_world(world_dir)
@@ -324,6 +326,14 @@ func set_look(name: String, tod := "afternoon") -> void:
 	sky_mat.set_shader_parameter("sun_glow", p[2])
 
 
+## Use a user asset pack (see props.gd load_pack); "" = the built-in props.
+func set_pack(dir: String) -> void:
+	if dir == props.pack_dir: return
+	var slots := props.load_pack(dir)
+	print("Asset pack ", dir, ": ", slots)
+	if world_dir != "": open_world(world_dir) # rebuild the loaded chunks with it
+
+
 ## Switch between the real-place look and a themed (video-game) one.
 func _apply_theme() -> void:
 	if pixel_quad == null:
@@ -352,7 +362,13 @@ func _apply_theme() -> void:
 		mat_tiles.shader = load("res://shaders/retro_tiles.gdshader")
 		retro_sky = ShaderMaterial.new()
 		retro_sky.shader = load("res://shaders/retro_sky.gdshader")
-	var img := Image.load_from_file("res://themes/%s_atlas.png" % theme)
+	# A pack may bring its own tile art (same 8 x 8 layout as the built-in atlas).
+	var img: Image = null
+	for f in ["%s_atlas.png" % theme, "atlas.png"]:
+		if props.pack_dir != "" and FileAccess.file_exists(props.pack_dir.path_join(f)):
+			img = Image.load_from_file(props.pack_dir.path_join(f))
+			break
+	if img == null: img = Image.load_from_file("res://themes/%s_atlas.png" % theme)
 	if img: mat_tiles.set_shader_parameter("atlas", ImageTexture.create_from_image(img))
 	env.sky.sky_material = retro_sky
 	pixel_quad.visible = true

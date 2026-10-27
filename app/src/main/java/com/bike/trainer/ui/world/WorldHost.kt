@@ -37,7 +37,10 @@ object WorldHost {
     }
 
     /** The plugin handed to the engine at start-up (one per engine). */
-    fun plugin(godot: Godot): WorldPlugin = plugin ?: WorldPlugin(godot).also { plugin = it }
+    fun plugin(godot: Godot): WorldPlugin = plugin ?: WorldPlugin(godot).also { plugin = it; it.setPack(pack) }
+
+    /** Asset pack folder, kept until the engine (and its plugin) exists. */
+    private var pack = ""
 
     /** Show the world in [dir] (starting the engine on first use). */
     fun show(dir: String) {
@@ -81,6 +84,11 @@ object WorldHost {
     fun setStyle(name: String) = plugin?.setStyle(name)
 
     fun setLook(look: String, time: String) = plugin?.setLook(look, time)
+
+    fun setPack(dir: String) {
+        pack = dir
+        plugin?.setPack(dir)
+    }
 
     fun hide() {
         container?.visibility = View.GONE

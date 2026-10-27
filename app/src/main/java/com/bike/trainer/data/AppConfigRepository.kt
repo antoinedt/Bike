@@ -47,6 +47,8 @@ data class AppConfig(
     val worldTime: String = "afternoon",
     /** 3D World: "real" (the real place, from map data) or a game theme ("robot"). */
     val worldTheme: String = "real",
+    /** 3D World: the user's asset pack in use ("" = built-in models). */
+    val assetPack: String = "",
     /** Stylized: colour façades / road from the route's prefetched Street View photos. */
     val photoTexture: Boolean = true,
 ) {
@@ -84,6 +86,7 @@ class AppConfigRepository(private val dataStore: DataStore<Preferences>) {
             worldLook = prefs[WORLD_LOOK] ?: "soft",
             worldTime = prefs[WORLD_TIME] ?: "afternoon",
             worldTheme = prefs[WORLD_THEME] ?: "real",
+            assetPack = prefs[ASSET_PACK] ?: "",
         )
     }
 
@@ -123,6 +126,10 @@ class AppConfigRepository(private val dataStore: DataStore<Preferences>) {
 
     suspend fun setRiderStyle(style: String) {
         dataStore.edit { it[RIDER_STYLE] = style }
+    }
+
+    suspend fun setAssetPack(id: String) {
+        dataStore.edit { it[ASSET_PACK] = id }
     }
 
     suspend fun setWorldTheme(theme: String) {
@@ -168,6 +175,7 @@ class AppConfigRepository(private val dataStore: DataStore<Preferences>) {
         val WORLD_LOOK = stringPreferencesKey("cfg_world_look")
         val WORLD_TIME = stringPreferencesKey("cfg_world_time")
         val WORLD_THEME = stringPreferencesKey("cfg_world_theme")
+        val ASSET_PACK = stringPreferencesKey("cfg_asset_pack")
         val WORKOUT_TOLERANCE = floatPreferencesKey("cfg_workout_tolerance")
         val GEAR_UP_FIELD = intPreferencesKey("cfg_gear_up_field")
         val GEAR_DOWN_FIELD = intPreferencesKey("cfg_gear_down_field")

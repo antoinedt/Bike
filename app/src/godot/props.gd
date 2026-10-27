@@ -238,6 +238,81 @@ func _material(grow: float) -> ShaderMaterial:
 	return m
 
 
+## Built-in kinds (kept to restore them when a pack is removed) and the pack in use.
+var builtin := {}
+var pack_dir := ""
+
+
+## Use a user asset pack: a folder of glTF models named after the prop slots
+## (round_tree.glb, chest.glb …) and/or a pack.json mapping slots to models:
+##   {"name": "…", "props": {"chest": {"model": "box.glb", "height": 0.8, "y": 0, "rot": 90}}}
+## "height" scales the model to that many metres (else "scale"), "y" lifts it,
+## "rot" turns it (degrees). "" goes back to the built-in props. Returns the
+## slots the pack replaced.
+func load_pack(dir: String) -> Array:
+	if builtin.is_empty(): builtin = kinds.duplicate()
+	kinds = builtin.duplicate()
+	pack_dir = dir
+	var replaced := []
+	if dir == "": return replaced
+	var cfg := {}
+	var txt := FileAccess.get_file_as_string(dir.path_join("pack.json"))
+	if txt != "":
+		var parsed = JSON.parse_string(txt)
+		if parsed is Dictionary and parsed.get("props") is Dictionary: cfg = parsed["props"]
+	var da := DirAccess.open(dir)
+	if da:
+		for f in da.get_files():
+			if f.get_extension().to_lower() in ["glb", "gltf"]:
+				var slot := f.get_basename()
+				if not cfg.has(slot): cfg[slot] = {"model": f}
+	for slot in cfg:
+		var c = cfg[slot]
+		if not (c is Dictionary) or not c.has("model"): continue
+		var parts := _pack_parts(dir.path_join(String(c["model"])), c)
+		if parts.size() > 0:
+			kinds[slot] = parts
+			replaced.append(slot)
+	return replaced
+
+
+## A model as prop parts: every mesh of the glTF scene with its own materials,
+## sized and stood on the ground.
+func _pack_parts(path: String, c: Dictionary) -> Array:
+	var doc := GLTFDocument.new()
+	var state := GLTFState.new()
+	if doc.append_from_file(path, state) != OK:
+		push_warning("Asset pack: can't read " + path)
+		return []
+	var scene := doc.generate_scene(state)
+	if scene == null: return []
+	var meshes := []
+	_collect(scene, Transform3D.IDENTITY, meshes)
+	scene.free()
+	if meshes.is_empty(): return []
+	var box := AABB()
+	for k in meshes.size():
+		var a: AABB = meshes[k][1] * (meshes[k][0] as Mesh).get_aabb()
+		box = a if k == 0 else box.merge(a)
+	var s := float(c.get("scale", 1.0))
+	if c.has("height") and box.size.y > 0.001: s = float(c["height"]) / box.size.y
+	var lift := float(c.get("y", 0.0)) - box.position.y * s
+	var rot := deg_to_rad(float(c.get("rot", 0.0)))
+	var base := Transform3D(Basis(Vector3.UP, rot).scaled(Vector3(s, s, s)), Vector3(0, lift, 0))
+	var parts := []
+	for m in meshes:
+		# [mesh, colour, outline, transform, palette, keep the model's own materials]
+		parts.append([m[0], Color.WHITE, 0.0, base * m[1], null, true])
+	return parts
+
+
+func _collect(n: Node, xf: Transform3D, out: Array) -> void:
+	var t := xf
+	if n is Node3D: t = xf * (n as Node3D).transform
+	if n is MeshInstance3D and (n as MeshInstance3D).mesh: out.append([(n as MeshInstance3D).mesh, t])
+	for ch in n.get_children(): _collect(ch, t, out)
+
+
 ## Instance a chunk's props under [root].
 func add_chunk(root: Node3D, list: Array) -> void:
 	var by_type := {}
@@ -263,7 +338,7 @@ func add_chunk(root: Node3D, list: Array) -> void:
 				mm.set_instance_transform(i, Transform3D(b, pos) * local)
 				# A little colour variety per instance (greens, wood).
 				var k := int(p.get("k", 0))
-				if part.size() > 4:
+				if part.size() > 4 and part[4] != null:
 					var pal: Array = part[4]
 					mm.set_instance_color(i, pal[k % pal.size()])
 					continue
@@ -271,5 +346,6 @@ func add_chunk(root: Node3D, list: Array) -> void:
 				mm.set_instance_color(i, c.lightened(0.04 * (k % 4)).darkened(0.03 * (k / 4)))
 			var mmi := MultiMeshInstance3D.new()
 			mmi.multimesh = mm
-			mmi.material_override = _material(part[2])
+			# Pack models keep their own materials; built-in ones are cel-shaded.
+			if not (part.size() > 5 and part[5]): mmi.material_override = _material(part[2])
 			root.add_child(mmi)
