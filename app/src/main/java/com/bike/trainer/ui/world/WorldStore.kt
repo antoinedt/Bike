@@ -142,7 +142,10 @@ object WorldStore {
     // Video-game themed worlds: the route's shape and climbs, game scenery around it.
 
     /** Game themes: key -> name shown in the app. */
-    val THEMES = listOf("robot" to "Robot City (8-bit action game)")
+    val THEMES = listOf(
+        "robot" to "Robot City (8-bit action game)",
+        "quest" to "Kingdom Quest (16-bit adventure)",
+    )
 
     fun themeDir(context: Context, routeId: String, theme: String): File =
         File(context.filesDir, "worlds/" + StreetViewCache.sanitize(routeId) + "__" + theme)

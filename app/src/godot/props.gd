@@ -51,6 +51,7 @@ func _init() -> void:
 	_trees()
 	_car()
 	_robot_theme()
+	_quest_theme()
 
 
 ## A lumpy crown: overlapping low-poly spheres [x, y, z, radius] in two greens.
@@ -168,6 +169,54 @@ func _robot_theme() -> void:
 		[cap, Color(0.95, 0.95, 0.98), 0.03, T3(0, 0.25, 0)],
 		[cap, Color(0.95, 0.95, 0.98), 0.03, T3(0, -0.25, 0)],
 	]
+
+
+## Kingdom Quest props: round trees, bushes, rocks, pots, chests, gems, hearts …
+func _quest_theme() -> void:
+	var bark := Color(0.45, 0.28, 0.14)
+	var trunk := CylinderMesh.new(); trunk.top_radius = 0.28; trunk.bottom_radius = 0.42; trunk.height = 2.4; trunk.radial_segments = 7
+	var canopy := SphereMesh.new(); canopy.radius = 2.6; canopy.height = 4.6; canopy.radial_segments = 10; canopy.rings = 6
+	var lobe := SphereMesh.new(); lobe.radius = 1.4; lobe.height = 2.4; lobe.radial_segments = 8; lobe.rings = 5
+	var greens := [Color(0.18, 0.55, 0.22), Color(0.24, 0.62, 0.20), Color(0.15, 0.48, 0.26), Color(0.30, 0.66, 0.24)]
+	kinds["round_tree"] = [
+		[trunk, bark, 0.04, T3(0, 1.2, 0)],
+		[canopy, Color.WHITE, 0.10, T3(0, 4.4, 0), greens],
+		[lobe, Color(0.46, 0.78, 0.34), 0.0, T3(-0.9, 5.4, 0.9)],
+	]
+	var bush := SphereMesh.new(); bush.radius = 0.75; bush.height = 1.1; bush.radial_segments = 9; bush.rings = 5
+	kinds["bush"] = [[bush, Color.WHITE, 0.05, T3(0, 0.45, 0), [Color(0.44, 0.78, 0.28), Color(0.36, 0.70, 0.26), Color(0.52, 0.82, 0.32)]]]
+	var rock := SphereMesh.new(); rock.radius = 0.6; rock.height = 0.8; rock.radial_segments = 6; rock.rings = 3
+	kinds["rock"] = [[rock, Color(0.62, 0.62, 0.66), 0.05, T3(0, 0.25, 0)]]
+	var boulder := SphereMesh.new(); boulder.radius = 1.5; boulder.height = 2.2; boulder.radial_segments = 6; boulder.rings = 3
+	kinds["boulder"] = [[boulder, Color(0.58, 0.40, 0.28), 0.07, T3(0, 0.8, 0)]]
+	var stem := CylinderMesh.new(); stem.top_radius = 0.12; stem.bottom_radius = 0.15; stem.height = 0.5; stem.radial_segments = 6
+	var cap := SphereMesh.new(); cap.radius = 0.45; cap.height = 0.45; cap.is_hemisphere = true; cap.radial_segments = 8; cap.rings = 3
+	kinds["mushroom"] = [[stem, Color(0.95, 0.92, 0.82), 0.03, T3(0, 0.25, 0)], [cap, Color(0.85, 0.20, 0.18), 0.04, T3(0, 0.48, 0)]]
+	var pot := SphereMesh.new(); pot.radius = 0.38; pot.height = 0.7; pot.radial_segments = 8; pot.rings = 5
+	var neck := CylinderMesh.new(); neck.top_radius = 0.2; neck.bottom_radius = 0.16; neck.height = 0.15; neck.radial_segments = 8
+	kinds["pot"] = [[pot, Color(0.72, 0.48, 0.30), 0.04, T3(0, 0.35, 0)], [neck, Color(0.60, 0.38, 0.22), 0.03, T3(0, 0.72, 0)]]
+	var chest := BoxMesh.new(); chest.size = Vector3(1.0, 0.6, 0.7)
+	var lid := CylinderMesh.new(); lid.top_radius = 0.35; lid.bottom_radius = 0.35; lid.height = 1.0; lid.radial_segments = 10
+	var band := BoxMesh.new(); band.size = Vector3(0.14, 0.62, 0.72)
+	var rz := Basis(Vector3.BACK, PI / 2)
+	kinds["chest"] = [
+		[chest, Color(0.55, 0.30, 0.12), 0.04, T3(0, 0.3, 0)],
+		[lid, Color(0.62, 0.34, 0.14), 0.04, Transform3D(rz, Vector3(0, 0.6, 0))],
+		[band, Color(0.95, 0.78, 0.25), 0.0, T3(-0.3, 0.32, 0)],
+		[band, Color(0.95, 0.78, 0.25), 0.0, T3(0.3, 0.32, 0)],
+	]
+	# A cut gem: a four-sided double cone.
+	var gem := SphereMesh.new(); gem.radius = 0.28; gem.height = 0.8; gem.radial_segments = 4; gem.rings = 2
+	kinds["gem"] = [[gem, Color.WHITE, 0.03, T3(0, 0, 0), [Color(0.25, 0.85, 0.35), Color(0.30, 0.55, 0.98), Color(0.95, 0.25, 0.30)]]]
+	var lobe2 := SphereMesh.new(); lobe2.radius = 0.2; lobe2.height = 0.4; lobe2.radial_segments = 8; lobe2.rings = 4
+	var tip := CylinderMesh.new(); tip.top_radius = 0.32; tip.bottom_radius = 0.0; tip.height = 0.36; tip.radial_segments = 8
+	var red := Color(0.92, 0.12, 0.18)
+	kinds["heart"] = [[lobe2, red, 0.03, T3(-0.15, 0.08, 0)], [lobe2, red, 0.03, T3(0.15, 0.08, 0)], [tip, red, 0.03, T3(0, -0.12, 0)]]
+	var post := CylinderMesh.new(); post.top_radius = 0.07; post.bottom_radius = 0.08; post.height = 1.4; post.radial_segments = 6
+	var board := BoxMesh.new(); board.size = Vector3(1.2, 0.6, 0.08)
+	kinds["sign"] = [[post, Color(0.45, 0.28, 0.14), 0.03, T3(0, 0.7, 0)], [board, Color(0.75, 0.55, 0.32), 0.03, T3(0, 1.2, 0.05)]]
+	var pad := CylinderMesh.new(); pad.top_radius = 0.6; pad.bottom_radius = 0.6; pad.height = 0.04; pad.radial_segments = 10
+	kinds["lily"] = [[pad, Color(0.30, 0.65, 0.25), 0.02, T3(0, 0.02, 0)]]
 
 
 func T3(x: float, y: float, z: float) -> Transform3D:

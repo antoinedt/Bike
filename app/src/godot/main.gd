@@ -65,7 +65,23 @@ const STAGE_COLOURS := {
 	"forest": [Color(0.0, 0.50, 0.45), Color(0.70, 0.95, 0.65), Color(0.0, 0.25, 0.05), 1.0, 0.0],
 	"ice": [Color(0.40, 0.60, 0.99), Color(0.86, 0.94, 1.0), Color(0.36, 0.45, 0.62), 1.0, 0.0],
 	"night": [Color(0.0, 0.0, 0.10), Color(0.15, 0.06, 0.30), Color(0.05, 0.04, 0.12), 0.0, 1.0],
+	# Kingdom Quest (+ haze start, end)
+	"meadow": [Color(0.32, 0.58, 0.97), Color(0.76, 0.89, 1.0), Color(0.30, 0.56, 0.30), 1.0, 0.0, 120.0, 280.0],
+	"woods": [Color(0.22, 0.42, 0.34), Color(0.60, 0.74, 0.60), Color(0.12, 0.30, 0.16), 0.0, 0.0, 45.0, 150.0],
+	"village": [Color(0.40, 0.62, 0.95), Color(0.96, 0.90, 0.74), Color(0.42, 0.52, 0.34), 1.0, 0.0, 120.0, 280.0],
+	"lake": [Color(0.28, 0.55, 0.92), Color(0.80, 0.92, 0.99), Color(0.36, 0.52, 0.62), 1.0, 0.0, 130.0, 300.0],
+	"mountain": [Color(0.52, 0.34, 0.46), Color(0.98, 0.74, 0.54), Color(0.46, 0.30, 0.25), 1.0, 0.0, 120.0, 300.0],
+	"castle": [Color(0.30, 0.40, 0.80), Color(0.86, 0.86, 0.96), Color(0.46, 0.48, 0.60), 1.0, 0.0, 120.0, 280.0],
 }
+## Area names shown as a title card when a stage starts.
+const STAGE_NAMES := {
+	"sky": "SKY CITY", "factory": "IRON FACTORY", "forest": "TIMBER WOODS", "ice": "FROST PEAKS", "night": "MIDNIGHT FORTRESS",
+	"meadow": "Meadow Fields", "woods": "Whispering Woods", "village": "Riverside Village", "lake": "Crystal Lake",
+	"mountain": "Thunder Peak", "castle": "The Royal Castle",
+}
+var title_layer: CanvasLayer
+var title_label: Label
+var title_time := 0.0
 
 var look := "comic"      # "comic" or "soft"
 var time_of_day := "afternoon"
@@ -328,7 +344,9 @@ func _apply_theme() -> void:
 		set_look(look, time_of_day)
 		return
 	set_look("comic")
-	env.fog_enabled = false
+	# Props (lit toon materials) fade with the scene's fog; the tiles do their own haze.
+	env.fog_enabled = true
+	env.fog_sky_affect = 0.0
 	if mat_tiles == null:
 		mat_tiles = ShaderMaterial.new()
 		mat_tiles.shader = load("res://shaders/retro_tiles.gdshader")
@@ -338,6 +356,11 @@ func _apply_theme() -> void:
 	if img: mat_tiles.set_shader_parameter("atlas", ImageTexture.create_from_image(img))
 	env.sky.sky_material = retro_sky
 	pixel_quad.visible = true
+	# 8-bit: a coarse frame and few colours; 16-bit: finer and richer.
+	var pm := pixel_quad.material_override as ShaderMaterial
+	pm.set_shader_parameter("lines", 320.0 if theme == "quest" else 240.0)
+	pm.set_shader_parameter("levels", 24.0 if theme == "quest" else 10.0)
+	retro_sky.set_shader_parameter("hills", 1.0 if theme == "quest" else 0.0)
 	# 8-bit light: flat and bright.
 	sun.light_energy = 1.1; sun.light_color = Color(1, 1, 1)
 	env.ambient_light_color = Color(0.75, 0.78, 0.85); env.ambient_light_energy = 0.55
@@ -356,7 +379,32 @@ func _update_stage(d: float) -> void:
 	retro_sky.set_shader_parameter("skyline", c[2])
 	retro_sky.set_shader_parameter("clouds", c[3])
 	retro_sky.set_shader_parameter("stars", c[4])
+	retro_sky.set_shader_parameter("window_color", Color(0.99, 0.85, 0.47))
 	mat_tiles.set_shader_parameter("fog_color", c[1])
+	mat_tiles.set_shader_parameter("fog_start", c[5] if c.size() > 5 else 110.0)
+	mat_tiles.set_shader_parameter("fog_end", c[6] if c.size() > 6 else 260.0)
+	env.fog_light_color = c[1]
+	env.fog_light_energy = 1.0
+	env.fog_density = 1.2 / (c[6] if c.size() > 6 else 260.0)
+	_show_title(STAGE_NAMES.get(key, ""))
+
+
+## The area's name, faded in and out over the scene.
+func _show_title(text: String) -> void:
+	if text == "": return
+	if title_layer == null:
+		title_layer = CanvasLayer.new()
+		add_child(title_layer)
+		title_label = Label.new()
+		title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		title_label.set_anchors_preset(Control.PRESET_TOP_WIDE)
+		title_label.add_theme_font_size_override("font_size", 44)
+		title_label.add_theme_color_override("font_color", Color(1, 1, 1))
+		title_label.add_theme_color_override("font_outline_color", Color(0.05, 0.05, 0.1))
+		title_label.add_theme_constant_override("outline_size", 12)
+		title_layer.add_child(title_label)
+	title_label.text = text
+	title_time = 4.0
 
 
 ## Swap the imported materials for the toon ones by mesh name.
@@ -431,6 +479,10 @@ func _ink(root: Node3D, e: Array) -> void:
 func _process(delta: float) -> void:
 	if route.size() < 2: return
 	if theme != "": _update_stage(render_d)
+	if title_label:
+		title_time = maxf(0.0, title_time - delta)
+		title_label.modulate.a = clampf(title_time, 0.0, 1.0) * clampf((4.0 - title_time) * 2.0, 0.0, 1.0)
+		title_label.position.y = get_viewport().get_visible_rect().size.y * 0.22
 	# Extrapolate between app ticks, then ease toward it (snap on big jumps).
 	var now := Time.get_ticks_msec() / 1000.0
 	var target := distance + speed * clampf(now - sample_time, 0.0, 0.6)

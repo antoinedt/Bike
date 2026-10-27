@@ -16,15 +16,38 @@ import kotlin.math.sin
  * around it is generated in a game's style instead of being read from the map.
  * Needs no map data, only the elevation model, so it builds in seconds.
  *
- * "robot" (Robot City): an 8-bit action-game world of pixel-art blocks, inspired by
- * the classic robot platformers. The ride crosses stages (sky bridge, factory,
- * forest, ice, night fortress), each opened by a boss shutter gate.
+ * Each theme is a [Kit] with its own tiles, stages, track and scenery:
+ *  - "robot" (Robot City): an 8-bit action-game world of pixel-art blocks, inspired
+ *    by the classic robot platformers. Stages: sky bridge, factory, forest, ice,
+ *    night fortress, each opened by a boss shutter gate.
+ *  - "quest" (Kingdom Quest): a 16-bit adventure-game world, inspired by the classic
+ *    top-down fantasy adventures. A dirt road (wooden bridges over drops) through
+ *    meadows, woods, a village, a lake, a mountain and a castle, with round trees,
+ *    bushes, rocks, pots, chests and gems.
  *
  * Output matches [SceneBuilder] (chunk_NNN.glb / .json, world.json) so the same
  * Godot scene streams it; world.json adds "theme" and the stage list. Meshes use a
  * tile atlas (res://themes/<theme>_atlas.png): UV0 repeats the tile, UV1.x picks it.
  */
 class ThemeBuilder(private val route: Route, private val dem: HeightSource, private val theme: String = "robot") {
+
+    /** A game theme: stages, the track and what stands around it. */
+    private abstract inner class Kit {
+        abstract val stages: List<String>
+        /** Track half width. */
+        abstract val half: Double
+        /** Height of the terrain block in cell (i, j) (null = the track runs there). */
+        abstract fun cellTop(i: Long, j: Long, e: CellInfo): Double?
+        /** Top and side tiles of a terrain block. */
+        abstract fun cellTiles(i: Long, j: Long, e: CellInfo, t: Double): IntArray
+        abstract fun track(d0: Double, d1: Double)
+        abstract fun structures(i: Long, j: Long, e: CellInfo, t: Double)
+        abstract fun features(d0: Double, d1: Double)
+    }
+
+    private val kit: Kit = if (theme == "quest") QuestKit() else RobotKit()
+
+    private fun stageIndex(d: Double) = ((d / stageLen()).toInt()) % kit.stages.size
 
     /** The stages of Robot City, in riding order (they repeat on long routes). */
     enum class Stage(val key: String, val top: Int, val side: Int, val towerSide: Int, val towerTop: Int, val track: Int) {
@@ -45,7 +68,7 @@ class ThemeBuilder(private val route: Route, private val dem: HeightSource, priv
     }
 
     companion object {
-        const val VERSION = 1
+        const val VERSION = 2
         const val CHUNK_LEN = 400.0
         private const val STAGE_LEN = 1600.0
         private const val CELL = 5.0
@@ -75,10 +98,7 @@ class ThemeBuilder(private val route: Route, private val dem: HeightSource, priv
         }
     }
 
-    private fun stageAt(d: Double): Stage {
-        val len = if (route.totalDistance < STAGE_LEN * 2) max(400.0, route.totalDistance / 3) else STAGE_LEN
-        return Stage.entries[((d / len).toInt()) % Stage.entries.size]
-    }
+    private fun stageAt(d: Double): Stage = Stage.entries[stageIndex(d) % Stage.entries.size]
 
     private fun stageLen() = if (route.totalDistance < STAGE_LEN * 2) max(400.0, route.totalDistance / 3) else STAGE_LEN
 
@@ -115,8 +135,8 @@ class ThemeBuilder(private val route: Route, private val dem: HeightSource, priv
             cur = Chunk()
             val d0 = c * CHUNK_LEN; val d1 = min(route.totalDistance, (c + 1) * CHUNK_LEN)
             terrain(d0, d1)
-            track(d0, d1)
-            features(d0, d1)
+            kit.track(d0, d1)
+            kit.features(d0, d1)
             val glb = GlbWriter()
             glb.add("tiles", cur.mesh, "tiles")
             val name = "chunk_%03d".format(c)
@@ -135,7 +155,7 @@ class ThemeBuilder(private val route: Route, private val dem: HeightSource, priv
         var d = 0.0; var first = true
         while (d < route.totalDistance) {
             if (!first) sb.append(',')
-            sb.append("{\"d\":${fmt(d)},\"s\":\"${stageAt(d).key}\"}")
+            sb.append("{\"d\":${fmt(d)},\"s\":\"${kit.stages[stageIndex(d)]}\"}")
             first = false
             d += stageLen()
         }
@@ -212,7 +232,7 @@ class ThemeBuilder(private val route: Route, private val dem: HeightSource, priv
 
     private fun groundAt(x: Double, y: Double) = floor(dem.height(x, y) / STEP) * STEP
 
-    private fun track(d0: Double, d1: Double) {
+    private fun robotTrack(d0: Double, d1: Double) {
         val i0 = idx(d0); val i1 = min(rs.size - 1, idx(d1) + 1)
         for (i in i0 until i1) {
             val a = rs[i]; val b = rs[i + 1]
@@ -261,6 +281,21 @@ class ThemeBuilder(private val route: Route, private val dem: HeightSource, priv
 
     private class CellInfo(val dist: Double, val d: Double, val trackH: Double)
 
+    private inner class RobotKit : Kit() {
+        override val stages = Stage.entries.map { it.key }
+        override val half = HALF
+        override fun cellTop(i: Long, j: Long, e: CellInfo) = robotCellTop(i, j, e)
+        override fun cellTiles(i: Long, j: Long, e: CellInfo, t: Double): IntArray {
+            val stage = stageAt(e.d)
+            val lava = stage == Stage.NIGHT && e.dist > 12 && vnoise(i * 0.21, j * 0.21) < 0.28
+            val sea = stage == Stage.SKY && e.dist > 16
+            return intArrayOf(when { lava -> Tile.LAVA; sea -> Tile.CLOUD; else -> stage.top }, if (sea) Tile.CLOUD else stage.side)
+        }
+        override fun track(d0: Double, d1: Double) = robotTrack(d0, d1)
+        override fun structures(i: Long, j: Long, e: CellInfo, t: Double) = robotStructures(i, j, e, t, stageAt(e.d))
+        override fun features(d0: Double, d1: Double) = robotFeatures(d0, d1)
+    }
+
     private fun terrain(d0: Double, d1: Double) {
         // Nearest route point for every cell around this stretch.
         val i0 = idx(d0 - RANGE - 40); val i1 = idx(d1 + RANGE + 40)
@@ -280,17 +315,15 @@ class ThemeBuilder(private val route: Route, private val dem: HeightSource, priv
         }
         fun top(i: Long, j: Long): Double? {
             val e = cells[(i shl 32) or (j and 0xFFFFFFFFL)] ?: return null
-            return cellTop(i, j, e)
+            return kit.cellTop(i, j, e)
         }
         for ((key, e) in cells) {
             if (e.d < d0 || e.d >= d1 || e.dist > RANGE) continue
             val i = key shr 32; val j = (key and 0xFFFFFFFFL).toInt().toLong()
-            val t = cellTop(i, j, e) ?: continue
-            val stage = stageAt(e.d)
+            val t = kit.cellTop(i, j, e) ?: continue
             val x0 = i * CELL; val y0 = j * CELL; val x1 = x0 + CELL; val y1 = y0 + CELL
-            val lava = stage == Stage.NIGHT && e.dist > 12 && vnoise(i * 0.21, j * 0.21) < 0.28
-            val sea = stage == Stage.SKY && e.dist > 16
-            val topTile = when { lava -> Tile.LAVA; sea -> Tile.CLOUD; else -> stage.top }
+            val tiles = kit.cellTiles(i, j, e, t)
+            val topTile = tiles[0]
             val n = CELL / TILE_M
             quad(x0, y0, t, x1, y0, t, x1, y1, t, x0, y1, t, topTile, (i * n).toDouble() % 64, (j * n).toDouble() % 64, (i * n).toDouble() % 64 + n, (j * n).toDouble() % 64 + n)
             // Sides where a neighbour is lower (or missing).
@@ -298,7 +331,7 @@ class ThemeBuilder(private val route: Route, private val dem: HeightSource, priv
             for ((k, nb) in nbrs.withIndex()) {
                 val nt = top(nb[0], nb[1]) ?: if (cells.containsKey((nb[0] shl 32) or (nb[1] and 0xFFFFFFFFL))) min(t, e.trackH - 1.0) else t - 6.0
                 if (nt >= t - 0.01) continue
-                val sideTile = if (sea) Tile.CLOUD else stage.side
+                val sideTile = tiles[1]
                 val vh = (t - nt) / TILE_M
                 when (k) {
                     0 -> quad(x0, y0, nt, x1, y0, nt, x1, y0, t, x0, y0, t, sideTile, 0.0, 0.0, n, vh)
@@ -307,12 +340,12 @@ class ThemeBuilder(private val route: Route, private val dem: HeightSource, priv
                     else -> quad(x0, y1, nt, x0, y0, nt, x0, y0, t, x0, y1, t, sideTile, 0.0, 0.0, n, vh)
                 }
             }
-            structures(i, j, e, t, stage)
+            kit.structures(i, j, e, t)
         }
     }
 
     /** Height of a terrain block (null = none: the track runs there). */
-    private fun cellTop(i: Long, j: Long, e: CellInfo): Double? {
+    private fun robotCellTop(i: Long, j: Long, e: CellInfo): Double? {
         if (e.dist < HALF + 1.5) return null
         val stage = stageAt(e.d)
         val x = (i + 0.5) * CELL; val y = (j + 0.5) * CELL
@@ -329,7 +362,7 @@ class ThemeBuilder(private val route: Route, private val dem: HeightSource, priv
     }
 
     /** Stage scenery standing on a block. */
-    private fun structures(i: Long, j: Long, e: CellInfo, t: Double, stage: Stage) {
+    private fun robotStructures(i: Long, j: Long, e: CellInfo, t: Double, stage: Stage) {
         if (e.dist < 9) return
         val h = hash(i, j, 11)
         val r = h % 1000
@@ -388,7 +421,7 @@ class ThemeBuilder(private val route: Route, private val dem: HeightSource, priv
     // ---------------------------------------------------------------------------------
     // Along the track: gates, pipe arches, spikes, robots and energy capsules.
 
-    private fun features(d0: Double, d1: Double) {
+    private fun robotFeatures(d0: Double, d1: Double) {
         // Boss shutter gates where a stage starts (and at the start line).
         var g = 0.0
         while (g < route.totalDistance) {
@@ -453,4 +486,233 @@ class ThemeBuilder(private val route: Route, private val dem: HeightSource, priv
         // Horizontal run: the pipe tile's bands run along it.
         box(s[1], s[2], nx, ny, span + 0.6, 0.6, h + 7.4, h + 8.6, Tile.PIPE, Tile.PIPE, bottom = true)
     }
+
+    // ---------------------------------------------------------------------------------
+    // Kingdom Quest: a 16-bit adventure world.
+
+    private inner class QuestKit : Kit() {
+        override val stages = listOf("meadow", "woods", "village", "lake", "mountain", "castle")
+        override val half = 2.6
+
+        // Tiles of res://themes/quest_atlas.png.
+        val GRASS = 0; val DARK_GRASS = 1; val PATH = 2; val CLIFF = 4; val STONE = 5; val ROOF_RED = 6
+        val ROOF_BLUE = 7; val HOUSE = 8; val DOOR = 9; val WINDOW = 10; val WATER = 11; val PLANKS = 12
+        val BARK = 14; val FLOWERS = 16; val ROCK = 18; val FENCE = 19; val BANNER = 20
+        val CASTLE_WINDOW = 21; val TALL_GRASS = 22; val FLOOR = 23; val SNOW = 24
+
+        fun stage(d: Double) = stages[stageIndex(d)]
+
+        /** Lake stage: open water here (the road crosses on bridges). */
+        fun water(x: Double, y: Double, d: Double) = stage(d) == "lake" && vnoise(x * 0.018 + 3.1, y * 0.018) < 0.5
+
+        override fun cellTop(i: Long, j: Long, e: CellInfo): Double? {
+            if (e.dist < half + 1.0) return null
+            val x = (i + 0.5) * CELL; val y = (j + 0.5) * CELL
+            val st = stage(e.d)
+            if (water(x, y, e.d)) return floor((e.trackH - 1.6) * 2) / 2
+            // Flush with the road nearby; terraced ledges (2 m, 3 m on the mountain) beyond.
+            if (e.dist < 11) return e.trackH - 0.05
+            val step = if (st == "mountain") 3.0 else 2.0
+            var t = floor(dem.height(x, y) / step) * step
+            if (e.dist > 18) t += floor(vnoise(i * 0.11, j * 0.11) * 3) * step * min(1.0, (e.dist - 18) / 20)
+            if (st == "castle" && e.dist in 13.0..17.5) t = max(t, e.trackH) + 6.0 // the castle walls
+            return t
+        }
+
+        override fun cellTiles(i: Long, j: Long, e: CellInfo, t: Double): IntArray {
+            val x = (i + 0.5) * CELL; val y = (j + 0.5) * CELL
+            val st = stage(e.d)
+            if (water(x, y, e.d) && e.dist >= half + 1.0) return intArrayOf(WATER, CLIFF)
+            val n = vnoise(i * 0.3, j * 0.3)
+            val top = when (st) {
+                "woods" -> if (n < 0.3) TALL_GRASS else DARK_GRASS
+                "mountain" -> if (t > e.trackH + 24) SNOW else ROCK
+                "castle" -> if (e.dist < 11 || (e.dist in 13.0..17.5)) FLOOR else GRASS
+                else -> when { n > 0.72 -> FLOWERS; n < 0.18 -> TALL_GRASS; else -> GRASS }
+            }
+            val side = when (st) { "mountain" -> ROCK; "castle" -> STONE; else -> CLIFF }
+            return intArrayOf(top, side)
+        }
+
+        override fun track(d0: Double, d1: Double) {
+            val i0 = idx(d0); val i1 = min(rs.size - 1, idx(d1) + 1)
+            for (i in i0 until i1) {
+                val a = rs[i]; val b = rs[i + 1]
+                val da = dirAt(i); val db = dirAt(i + 1)
+                val nax = -da[1]; val nay = da[0]; val nbx = -db[1]; val nby = db[0]
+                val ha = a[3] + 0.03; val hb = b[3] + 0.03
+                val st = stage(a[0])
+                val gMid = groundAt(a[1], a[2])
+                val bridge = water(a[1], a[2], a[0]) || a[3] - gMid > 4.5
+                val tile = when { bridge -> PLANKS; st == "castle" || st == "village" && i % 40 < 6 -> FLOOR; else -> PATH }
+                val w = 2 * half / TILE_M
+                quad(a[1] - nax * half, a[2] - nay * half, ha, a[1] + nax * half, a[2] + nay * half, ha,
+                    b[1] + nbx * half, b[2] + nby * half, hb, b[1] - nbx * half, b[2] - nby * half, hb, tile, 0.0, b[0] / TILE_M, w, a[0] / TILE_M)
+                for (side in doubleArrayOf(-1.0, 1.0)) {
+                    val o = side * half
+                    val ax = a[1] + nax * o; val ay = a[2] + nay * o; val bx = b[1] + nbx * o; val by = b[2] + nby * o
+                    val ga = min(ha - 0.3, groundAt(ax, ay) - 0.3); val gb = min(hb - 0.3, groundAt(bx, by) - 0.3)
+                    if (bridge) {
+                        // Rails and posts of a wooden bridge.
+                        if (i % 2 == 0) box(ax, ay, da[0], da[1], 0.12, 0.12, ha, ha + 1.0, BARK, BARK)
+                        if (i % 6 == 0) box(ax, ay, da[0], da[1], 0.25, 0.25, min(ha - 2, ga), ha, BARK, BARK)
+                        quad(ax, ay, ha + 0.85, bx, by, hb + 0.85, bx, by, hb + 1.0, ax, ay, ha + 1.0, PLANKS, 0.0, 0.0, 2.0, 0.1)
+                        quad(ax, ay, ha - 0.6, bx, by, hb - 0.6, bx, by, hb, ax, ay, ha, PLANKS, 0.0, 0.0, 2.0, 0.25)
+                    } else if (ha - ga > 0.5 || hb - gb > 0.5) {
+                        // A retaining wall where the road is raised.
+                        quad(ax, ay, ga, bx, by, gb, bx, by, hb, ax, ay, ha, if (st == "castle") STONE else CLIFF,
+                            a[0] / TILE_M, 0.0, b[0] / TILE_M, (ha - ga) / TILE_M)
+                    }
+                }
+            }
+        }
+
+        override fun structures(i: Long, j: Long, e: CellInfo, t: Double) {
+            if (e.dist < half + 1.5) return
+            val x = (i + 0.5) * CELL; val y = (j + 0.5) * CELL
+            if (water(x, y, e.d)) {
+                if (hash(i, j, 21) % 1000 < 12) prop("lily", x, y, t + 0.02, 0.0, 0)
+                return
+            }
+            val h = hash(i, j, 13)
+            val r = h % 1000
+            val rot = (h % 628) / 100.0
+            val k = (h / 7) % 8
+            // Somewhere in the 5 m cell, not on its edge.
+            val px = x + ((h shr 4) % 30 - 15) / 10.0; val py = y + ((h shr 9) % 30 - 15) / 10.0
+            when (stage(e.d)) {
+                "meadow" -> when {
+                    e.dist > 9 && r < 28 -> prop("round_tree", px, py, t, rot, k, 0.9 + (k % 3) * 0.15)
+                    r < 70 -> prop("bush", px, py, t, rot, k)
+                    r < 82 -> prop("rock", px, py, t, rot, k)
+                }
+                "woods" -> when {
+                    e.dist > 5.5 && r < 210 -> prop(if (k % 4 == 0) "conifer" else "round_tree", px, py, t, rot, k, 1.0 + (k % 3) * 0.2)
+                    r < 260 -> prop("bush", px, py, t, rot, k)
+                    r < 268 -> prop("mushroom", px, py, t, rot, k)
+                }
+                "village" -> when {
+                    e.dist in 12.0..45.0 && r < 55 -> house(x, y, t, h)
+                    e.dist < 12 && r < 40 -> prop("pot", px, py, t, rot, k)
+                    e.dist > 9 && r < 75 -> prop("round_tree", px, py, t, rot, k)
+                    r < 110 -> prop("bush", px, py, t, rot, k)
+                }
+                "lake" -> when {
+                    e.dist > 8 && r < 40 -> prop("round_tree", px, py, t, rot, k)
+                    r < 90 -> prop("bush", px, py, t, rot, k)
+                }
+                "mountain" -> when {
+                    r < 45 -> prop("boulder", px, py, t, rot, k, 0.8 + (k % 4) * 0.3)
+                    e.dist > 10 && r < 60 -> prop("conifer", px, py, t, rot, k)
+                }
+                "castle" -> when {
+                    e.dist in 13.0..17.5 -> {
+                        // Crenellations on the castle walls.
+                        if ((i + j) % 2 == 0L) box(x, y, 1.0, 0.0, 1.0, 1.0, t, t + 1.2, STONE, STONE)
+                        if (r < 60) quad(x - 1.0, y, t - 4.5, x + 1.0, y, t - 4.5, x + 1.0, y, t - 0.5, x - 1.0, y, t - 0.5, BANNER, 0.0, 0.0, 1.0, 2.0)
+                    }
+                    e.dist in 22.0..70.0 && r < 22 -> castleTower(x, y, t, h)
+                    r < 40 -> prop("bush", px, py, t, rot, k)
+                }
+            }
+        }
+
+        /** A timber-framed cottage with a red (sometimes blue) gabled roof. */
+        fun house(x: Double, y: Double, base: Double, h: Int) {
+            val along = (h shr 3) % 2 == 0
+            val ux = if (along) 1.0 else 0.0; val uy = if (along) 0.0 else 1.0
+            val hw = 3.5; val hd = 2.5; val wall = 3.2
+            // Walls: the door on one long side, windows elsewhere.
+            box(x, y, ux, uy, hw, hd, base, base + wall, HOUSE, WINDOW)
+            val vx = -uy; val vy = ux
+            quad(x - ux * 0.6 - vx * (hd + 0.02), y - uy * 0.6 - vy * (hd + 0.02), base,
+                x + ux * 0.6 - vx * (hd + 0.02), y + uy * 0.6 - vy * (hd + 0.02), base,
+                x + ux * 0.6 - vx * (hd + 0.02), y + uy * 0.6 - vy * (hd + 0.02), base + 2.2,
+                x - ux * 0.6 - vx * (hd + 0.02), y - uy * 0.6 - vy * (hd + 0.02), base + 2.2, DOOR, 0.0, 0.0, 1.0, 1.0)
+            val roof = if ((h shr 6) % 4 == 0) ROOF_BLUE else ROOF_RED
+            val top = base + wall; val ridge = top + 2.4; val eave = 0.5
+            fun px(a: Double, b: Double) = x + ux * a + vx * b
+            fun py(a: Double, b: Double) = y + uy * a + vy * b
+            for (side in doubleArrayOf(-1.0, 1.0)) {
+                quad(px(-hw - eave, side * (hd + eave)), py(-hw - eave, side * (hd + eave)), top - 0.3,
+                    px(hw + eave, side * (hd + eave)), py(hw + eave, side * (hd + eave)), top - 0.3,
+                    px(hw + eave, 0.0), py(hw + eave, 0.0), ridge, px(-hw - eave, 0.0), py(-hw - eave, 0.0), ridge,
+                    roof, 0.0, 0.0, (2 * hw + 2 * eave) / TILE_M, (hd + eave) / TILE_M * 1.2)
+                // Gable triangle (a degenerate quad).
+                val gx = side * hw
+                quad(px(gx, -hd), py(gx, -hd), top, px(gx, hd), py(gx, hd), top, px(gx, 0.0), py(gx, 0.0), ridge,
+                    px(gx, 0.0), py(gx, 0.0), ridge, HOUSE, 0.0, 0.0, 2 * hd / TILE_M, 1.0)
+            }
+        }
+
+        /** A round-ish stone tower with a cone roof and a banner. */
+        fun castleTower(x: Double, y: Double, base: Double, h: Int) {
+            val top = base + 12 + (h shr 4) % 3 * 4.0
+            box(x, y, 1.0, 0.0, 2.6, 2.6, base, top, STONE, CASTLE_WINDOW)
+            box(x, y, 1.0, 0.0, 3.0, 3.0, top, top + 0.8, STONE, STONE)
+            // Pyramid roof.
+            val r = 3.2; val apex = top + 0.8 + 5.0
+            val c = arrayOf(doubleArrayOf(-r, -r), doubleArrayOf(r, -r), doubleArrayOf(r, r), doubleArrayOf(-r, r))
+            for (k in 0 until 4) {
+                val a = c[k]; val b = c[(k + 1) % 4]
+                quad(x + a[0], y + a[1], top + 0.8, x + b[0], y + b[1], top + 0.8, x, y, apex, x, y, apex, ROOF_BLUE, 0.0, 0.0, 2 * r / TILE_M, 2.0)
+            }
+            quad(x - 0.7, y - 2.65, top - 6, x + 0.7, y - 2.65, top - 6, x + 0.7, y - 2.65, top - 1, x - 0.7, y - 2.65, top - 1, BANNER, 0.0, 0.0, 1.0, 1.0)
+        }
+
+        override fun features(d0: Double, d1: Double) {
+            // An archway with banners where each area starts.
+            var g = 0.0
+            while (g < route.totalDistance) {
+                if (g >= d0 && g < d1) arch(g + 10.0)
+                g += stageLen()
+            }
+            var d = (floor(d0 / 10) * 10).coerceAtLeast(20.0)
+            while (d < d1) {
+                val i = idx(d)
+                val s = rs[i]; val dir = dirAt(i)
+                val nx = -dir[1]; val ny = dir[0]
+                val h = hash(i.toLong(), 9L, 3)
+                val rot = kotlin.math.atan2(dir[0], -dir[1])
+                val st = stage(d)
+                if (d.toInt() % 120 == 50) prop("gem", s[1], s[2], s[3] + 1.3, rot, h % 3)
+                if (d.toInt() % 400 == 250) prop("heart", s[1], s[2], s[3] + 1.4, rot, 0)
+                if (d.toInt() % 600 == 330) {
+                    val side = if (h % 2 == 0) 1.0 else -1.0
+                    prop("chest", s[1] + nx * side * (half + 1.4), s[2] + ny * side * (half + 1.4), s[3], rot + if (side > 0) PI_2 else -PI_2, 0)
+                }
+                if ((st == "meadow" || st == "village") && d.toInt() % 60 == 0 && h % 3 != 0 && !water(s[1], s[2], d)) {
+                    // A stretch of picket fence along the road.
+                    val side = if (h % 2 == 0) 1.0 else -1.0
+                    val o = side * (half + 1.2)
+                    val ax = s[1] + nx * o - dir[0] * 6; val ay = s[2] + ny * o - dir[1] * 6
+                    val bx = s[1] + nx * o + dir[0] * 6; val by = s[2] + ny * o + dir[1] * 6
+                    quad(ax, ay, s[3] - 0.05, bx, by, s[3] - 0.05, bx, by, s[3] + 1.0, ax, ay, s[3] + 1.0, FENCE, 0.0, 0.0, 12.0 / TILE_M * 2, 1.0)
+                }
+                d += 10.0
+            }
+        }
+
+        fun arch(d: Double) {
+            if (d > route.totalDistance) return
+            val i = idx(d)
+            val s = rs[i]; val dir = dirAt(i)
+            val nx = -dir[1]; val ny = dir[0]
+            val h = s[3]
+            val w = half + 1.2
+            for (side in doubleArrayOf(-1.0, 1.0)) {
+                val px = s[1] + nx * side * w; val py = s[2] + ny * side * w
+                box(px, py, dir[0], dir[1], 0.8, 0.8, min(h - 1, groundAt(px, py)), h + 5.5, STONE, STONE)
+                quad(px - dir[0] * 0.82 - nx * side * 0.5, py - dir[1] * 0.82 - ny * side * 0.5, h + 1.5,
+                    px - dir[0] * 0.82 + nx * side * 0.5, py - dir[1] * 0.82 + ny * side * 0.5, h + 1.5,
+                    px - dir[0] * 0.82 + nx * side * 0.5, py - dir[1] * 0.82 + ny * side * 0.5, h + 4.8,
+                    px - dir[0] * 0.82 - nx * side * 0.5, py - dir[1] * 0.82 - ny * side * 0.5, h + 4.8, BANNER, 0.0, 0.0, 1.0, 1.0)
+            }
+            box(s[1], s[2], dir[0], dir[1], 0.8, w + 0.8, h + 5.5, h + 6.6, STONE, STONE, bottom = true)
+            box(s[1], s[2], dir[0], dir[1], 0.5, w - 0.4, h + 6.6, h + 7.2, ROOF_RED, STONE)
+            prop("sign", s[1] + nx * (half + 2.2) - dir[0] * 3, s[2] + ny * (half + 2.2) - dir[1] * 3, groundAt(s[1] + nx * (half + 2.2), s[2] + ny * (half + 2.2)).coerceAtLeast(h - 0.05), kotlin.math.atan2(dir[0], -dir[1]), 0)
+        }
+    }
+
+    private val PI_2 = Math.PI / 2
 }
