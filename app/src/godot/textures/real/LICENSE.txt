@@ -1,0 +1,4 @@
+Textures from Poly Haven (https://polyhaven.com), CC0 (public domain):
+asphalt = asphalt_02, concrete = concrete_pavement, grass = leafy_grass,
+forest = forrest_ground_01, rock = rocky_terrain_02, plaster = white_plaster_rough_01,
+brick = red_brick_03, roof = clay_roof_tiles_02.

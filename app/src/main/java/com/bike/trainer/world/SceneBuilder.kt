@@ -230,6 +230,42 @@ class SceneBuilder(
         return doubleArrayOf(best, kx, ky)
     }
 
+    /**
+     * The verge: grass clumps, flowers, ferns and the odd bush along the roadsides
+     * near the route (clear of the carriageway, buildings and, in town, the pavement).
+     */
+    private fun verge(inBuilding: (Double, Double) -> Boolean) {
+        var d = 0.0
+        var k = 0L
+        while (d < route.totalDistance) {
+            val p = route.pointAt(d)
+            val a = route.pointAt(max(0.0, d - 2)); val b = route.pointAt(min(route.totalDistance, d + 2))
+            val l = hypot(b.x - a.x, b.y - a.y).coerceAtLeast(1e-6)
+            val nx = -(b.y - a.y) / l; val ny = (b.x - a.x) / l
+            for (side in intArrayOf(-1, 1)) for (n in 0 until 2) {
+                k++
+                val h = (k * 2654435761L) xor (k ushr 7)
+                val off = 2.5 + ((h ushr 4) and 0xFF) / 255.0 * 12.0
+                val along = (((h ushr 12) and 0xFF) / 255.0 - 0.5) * 2.0
+                val x = p.x + nx * side * off + (b.x - a.x) / l * along
+                val y = p.y + ny * side * off + (b.y - a.y) / l * along
+                val c = roadClearance(x, y)[0]
+                if (c < 0.4 || c > 9.0 || inBuilding(x, y)) continue
+                // In town the first metres past the kerb are pavement.
+                if (c < 3.2 && inBuilding(x + nx * side * 12, y + ny * side * 12)) continue
+                val r = ((h ushr 24) and 0xFF).toInt()
+                val type = when {
+                    r < 150 -> "grass"
+                    r < 205 -> "flower"
+                    r < 235 -> "fern"
+                    else -> "bush"
+                }
+                prop(type, x, y, 0.8 + ((h ushr 32) and 0xFF) / 255.0 * 0.7, ((h ushr 40) and 0xFF) / 40.0, ((h ushr 48) and 7).toInt())
+            }
+            d += 2.0
+        }
+    }
+
     /** Exact distance from the route line (the field lookup is only good to a cell). */
     private fun routeDistance(x: Double, y: Double): Double {
         val e = nearest(x, y, PROP_RANGE + 100) ?: return Double.MAX_VALUE
@@ -1025,7 +1061,7 @@ class SceneBuilder(
         if (type != "car") {
             // (At a junction the kerb of one street is in the other: step out of each in turn.)
             for (step in 0 until 3) {
-                val c = roadClearance(x, y, if (type in TREES) 1.0 else 0.5)
+                val c = roadClearance(x, y, if (type in TREES) 2.5 else 0.5)
                 if (c[0] >= 0.3) break
                 if (type == "bollard") return
                 x = c[1]; y = c[2]
@@ -1195,6 +1231,7 @@ class SceneBuilder(
         fun inBuilding(x: Double, y: Double): Boolean =
             bGrid[(floor(x / 50).toLong() shl 32) or (floor(y / 50).toLong() and 0xFFFFFFFFL)]
                 ?.any { (r, b) -> x in b[0]..b[2] && y in b[1]..b[3] && Geometry.contains(r, x, y) } ?: false
+        verge(::inBuilding)
         // Street trees seen in the photos, where the map has none close by (and not
         // on the route itself).
         for (p in photoTrees) {

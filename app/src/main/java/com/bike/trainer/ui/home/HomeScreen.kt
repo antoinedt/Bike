@@ -416,9 +416,9 @@ fun HomeScreen(
                     val time = appConfig?.worldTime ?: "afternoon"
                     OptionPicker(
                         "Look", look,
-                        listOf("soft" to "Soft (low-poly, hazy)", "comic" to "Comic (ink outlines)"),
+                        listOf("real" to "Realistic (textures)", "soft" to "Soft (low-poly, hazy)", "comic" to "Comic (ink outlines)"),
                     ) { scope.launch { ServiceLocator.appConfigRepository.setWorldLook(it, time) } }
-                    if (look == "soft") OptionPicker(
+                    if (look == "soft") OptionPicker( // (the realistic look has its own daylight)
                         "Time of day", time,
                         listOf("morning" to "Morning", "afternoon" to "Afternoon", "sunset" to "Sunset"),
                     ) { scope.launch { ServiceLocator.appConfigRepository.setWorldLook(look, it) } }

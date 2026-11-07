@@ -83,7 +83,10 @@ var title_layer: CanvasLayer
 var title_label: Label
 var title_time := 0.0
 
-var look := "comic"      # "comic" or "soft"
+var look := "comic"      # "comic", "soft" or "real" (photographic textures)
+var real_mats := {}
+const REAL_PACK := "res://packs/realistic"
+var real_sky: ProceduralSkyMaterial
 var time_of_day := "afternoon"
 var env: Environment
 var sun: DirectionalLight3D
@@ -99,11 +102,11 @@ func _ready() -> void:
 	mat_roofs = _toon(0)
 	mat_rails = _toon(3)
 	mat_roads = _toon(0)
-	set_look(look, time_of_day)
 	mat_ink = ShaderMaterial.new()
 	mat_ink.shader = ink_shader
 	props = Props.new()
 	add_child(props)
+	set_look(look, time_of_day)
 	rider = Cyclist.new()
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--style="): rider.style = a.substr(8)
@@ -288,15 +291,25 @@ func _load_chunk(i: int) -> Node3D:
 ## The art style: "comic" (ink lines, toon bands, bright) or "soft" (low-poly
 ## painted look: no outlines, warm wrapped light, haze), and the time of day.
 func set_look(name: String, tod := "afternoon") -> void:
+	var was_real := look == "real"
 	look = name
 	time_of_day = tod
+	if (look == "real") != was_real and world_dir != "" and theme == "": open_world(world_dir) # restyle
+	if look == "real":
+		# Without a pack of the user's, the realistic look uses the built-in one.
+		if props.pack_dir == "": set_pack(REAL_PACK)
+		_real_environment()
+		return
+	if props.pack_dir == REAL_PACK: set_pack("")
+	if env.sky.sky_material == real_sky: env.sky.sky_material = sky_mat
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	var soft := look == "soft"
 	RenderingServer.global_shader_parameter_set("soft_look", 1.0 if soft else 0.0)
 	# Soft look: warmer, lighter asphalt (sun-bleached, like a painted road).
 	if mat_roads: mat_roads.set_shader_parameter("tint", Color(1.18, 1.10, 1.0) if soft else Color.WHITE)
 	for c in loaded.values():
 		for n in c.get_children():
-			if n.name == "ink": n.visible = not soft
+			if n.name == "ink": n.visible = look == "comic"
 	if not soft:
 		env.ambient_light_color = Color(0.62, 0.68, 0.82); env.ambient_light_energy = 0.35
 		env.tonemap_mode = Environment.TONE_MAPPER_LINEAR
@@ -423,6 +436,47 @@ func _show_title(text: String) -> void:
 	title_time = 4.0
 
 
+## The "real" look: physical-ish sky, sky light, filmic tone mapping, soft
+## shadows and a blue distance haze; photographic textures on the world.
+func _real_environment() -> void:
+	RenderingServer.global_shader_parameter_set("soft_look", 1.0) # props / rider without ink outlines
+	if real_sky == null:
+		real_sky = ProceduralSkyMaterial.new()
+		real_sky.sky_top_color = Color(0.30, 0.50, 0.82)
+		real_sky.sky_horizon_color = Color(0.72, 0.80, 0.90)
+		real_sky.ground_horizon_color = Color(0.62, 0.64, 0.62)
+		real_sky.ground_bottom_color = Color(0.35, 0.36, 0.34)
+		real_sky.sun_angle_max = 20.0
+	env.sky.sky_material = real_sky
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
+	env.ambient_light_energy = 0.75
+	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+	env.tonemap_white = 6.0
+	env.fog_enabled = true
+	env.fog_light_color = Color(0.70, 0.78, 0.88)
+	env.fog_density = 0.0005
+	env.fog_sky_affect = 0.0
+	sun.rotation_degrees = Vector3(-42, -35, 0)
+	sun.light_color = Color(1.0, 0.96, 0.90)
+	sun.light_energy = 1.5
+	sun.shadow_blur = 1.0
+	RenderingServer.directional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_LOW)
+
+
+func _real(mode: int) -> ShaderMaterial:
+	if real_mats.has(mode): return real_mats[mode]
+	var m := ShaderMaterial.new()
+	m.shader = load("res://shaders/real_world.gdshader")
+	m.set_shader_parameter("mode", mode)
+	for t in ["asphalt", "concrete", "grass", "forest", "rock", "plaster", "brick", "roof"]:
+		var img := Image.load_from_file("res://textures/real/%s.jpg" % t)
+		if img:
+			img.generate_mipmaps()
+			m.set_shader_parameter(t, ImageTexture.create_from_image(img))
+	if mode != 1: real_mats[mode] = m # ground materials differ per tile (land-use texture)
+	return m
+
+
 ## Swap the imported materials for the toon ones by mesh name.
 func _style(n: Node) -> void:
 	if n is MeshInstance3D:
@@ -432,23 +486,23 @@ func _style(n: Node) -> void:
 			var tex: Texture2D = null
 			var src := mi.mesh.surface_get_material(0)
 			if src is BaseMaterial3D: tex = (src as BaseMaterial3D).albedo_texture
-			var m := _toon(1)
+			var m := _real(1) if look == "real" else _toon(1)
 			m.set_shader_parameter("albedo_tex", tex)
 			mi.material_override = m
 			# The ground only receives shadows (self-shadowing the bumpy DEM makes blotches).
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		elif name.begins_with("walls"):
-			mi.material_override = mat_walls
+			mi.material_override = _real(2) if look == "real" else mat_walls
 		elif name.begins_with("tiles"):
 			mi.material_override = mat_tiles
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		elif name.begins_with("rails"):
 			mi.material_override = mat_rails
 		elif name.begins_with("roads"):
-			mi.material_override = mat_roads
+			mi.material_override = _real(0) if look == "real" else mat_roads
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		else:
-			mi.material_override = mat_roofs
+			mi.material_override = _real(3) if look == "real" else mat_roofs
 	for c in n.get_children(): _style(c)
 
 
@@ -488,7 +542,7 @@ func _ink(root: Node3D, e: Array) -> void:
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	mi.extra_cull_margin = 16384
 	mi.name = "ink"
-	mi.visible = look != "soft"
+	mi.visible = look == "comic"
 	root.add_child(mi)
 
 

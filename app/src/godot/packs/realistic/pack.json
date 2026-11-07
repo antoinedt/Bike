@@ -1,0 +1,297 @@
+{
+ "name": "Poly Haven realistic (look test)",
+ "props": {
+  "maple": {
+   "billboard": [
+    "island_tree_01_0.png",
+    "island_tree_01_1.png"
+   ],
+   "size": [
+    [
+     4.755,
+     5.027
+    ],
+    [
+     4.818,
+     5.027
+    ]
+   ],
+   "height": 11,
+   "y": 0.0
+  },
+  "oak": {
+   "billboard": [
+    "island_tree_01_0.png",
+    "island_tree_01_1.png"
+   ],
+   "size": [
+    [
+     4.755,
+     5.027
+    ],
+    [
+     4.818,
+     5.027
+    ]
+   ],
+   "height": 13,
+   "y": 0.0
+  },
+  "elm": {
+   "billboard": [
+    "island_tree_01_0.png",
+    "island_tree_01_1.png"
+   ],
+   "size": [
+    [
+     4.755,
+     5.027
+    ],
+    [
+     4.818,
+     5.027
+    ]
+   ],
+   "height": 14,
+   "y": 0.0
+  },
+  "locust": {
+   "billboard": [
+    "tree_small_02_0.png",
+    "tree_small_02_1.png"
+   ],
+   "size": [
+    [
+     2.917,
+     4.557
+    ],
+    [
+     4.292,
+     4.557
+    ]
+   ],
+   "height": 11,
+   "y": 0.0
+  },
+  "linden": {
+   "billboard": [
+    "tree_small_02_0.png",
+    "tree_small_02_1.png"
+   ],
+   "size": [
+    [
+     2.917,
+     4.557
+    ],
+    [
+     4.292,
+     4.557
+    ]
+   ],
+   "height": 13,
+   "y": 0.0
+  },
+  "ash": {
+   "billboard": [
+    "tree_small_02_0.png",
+    "tree_small_02_1.png"
+   ],
+   "size": [
+    [
+     2.917,
+     4.557
+    ],
+    [
+     4.292,
+     4.557
+    ]
+   ],
+   "height": 14,
+   "y": 0.0
+  },
+  "poplar": {
+   "billboard": [
+    "tree_small_02_0.png",
+    "tree_small_02_1.png"
+   ],
+   "size": [
+    [
+     2.917,
+     4.557
+    ],
+    [
+     4.292,
+     4.557
+    ]
+   ],
+   "height": 16,
+   "y": 0.0
+  },
+  "birch": {
+   "billboard": [
+    "tree_small_02_0.png",
+    "tree_small_02_1.png"
+   ],
+   "size": [
+    [
+     2.917,
+     4.557
+    ],
+    [
+     4.292,
+     4.557
+    ]
+   ],
+   "height": 11,
+   "y": 0.0
+  },
+  "tree": {
+   "billboard": [
+    "island_tree_01_0.png",
+    "island_tree_01_1.png"
+   ],
+   "size": [
+    [
+     4.755,
+     5.027
+    ],
+    [
+     4.818,
+     5.027
+    ]
+   ],
+   "height": 11,
+   "y": 0.0
+  },
+  "round_tree": {
+   "billboard": [
+    "island_tree_01_0.png",
+    "island_tree_01_1.png"
+   ],
+   "size": [
+    [
+     4.755,
+     5.027
+    ],
+    [
+     4.818,
+     5.027
+    ]
+   ],
+   "height": 10,
+   "y": 0.0
+  },
+  "small_tree": {
+   "billboard": [
+    "shrub_02_0.png",
+    "shrub_02_1.png"
+   ],
+   "size": [
+    [
+     2.339,
+     1.977
+    ],
+    [
+     1.793,
+     1.977
+    ]
+   ],
+   "height": 3.0,
+   "y": 0.0
+  },
+  "conifer": {
+   "billboard": [
+    "fir_tree_01_0.png",
+    "fir_tree_01_1.png"
+   ],
+   "size": [
+    [
+     6.778,
+     18.939
+    ],
+    [
+     6.511,
+     18.939
+    ]
+   ],
+   "height": 17,
+   "y": 0.0
+  },
+  "bush": {
+   "billboard": [
+    "shrub_02_0.png",
+    "shrub_02_1.png"
+   ],
+   "size": [
+    [
+     2.339,
+     1.977
+    ],
+    [
+     1.793,
+     1.977
+    ]
+   ],
+   "height": 1.4,
+   "y": 0.0
+  },
+  "grass": {
+   "billboard": [
+    "grass_medium_02_0.png",
+    "grass_medium_02_1.png"
+   ],
+   "size": [
+    [
+     0.356,
+     0.405
+    ],
+    [
+     0.433,
+     0.405
+    ]
+   ],
+   "height": 0.55,
+   "y": 0.0
+  },
+  "flower": {
+   "billboard": [
+    "flower_empodium_0.png",
+    "flower_empodium_1.png"
+   ],
+   "size": [
+    [
+     0.23,
+     0.268
+    ],
+    [
+     0.284,
+     0.268
+    ]
+   ],
+   "height": 0.35,
+   "y": 0.0
+  },
+  "fern": {
+   "billboard": [
+    "fern_02_0.png",
+    "fern_02_1.png"
+   ],
+   "size": [
+    [
+     0.99,
+     0.428
+    ],
+    [
+     0.894,
+     0.428
+    ]
+   ],
+   "height": 0.6,
+   "y": 0.0
+  },
+  "bench": {
+   "model": "bench_model/painted_wooden_bench.gltf",
+   "height": 0.85
+  }
+ }
+}

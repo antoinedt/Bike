@@ -4,6 +4,7 @@ extends Node3D
 
 var toon_shader: Shader = preload("res://shaders/toon.gdshader")
 var hull_shader: Shader = preload("res://shaders/outline_hull.gdshader")
+var foliage_shader: Shader = preload("res://shaders/foliage.gdshader")
 
 ## type -> list of parts: [mesh, colour, outline grow (0 = none), local transform,
 ## optional palette (instance colour picked by the prop's variant)]
@@ -52,6 +53,7 @@ func _init() -> void:
 	_car()
 	_robot_theme()
 	_quest_theme()
+	_verge()
 
 
 ## A lumpy crown: overlapping low-poly spheres [x, y, z, radius] in two greens.
@@ -144,6 +146,25 @@ func _car() -> void:
 		[wheel, Color(0.10, 0.10, 0.11), 0.02, Transform3D(rb, Vector3(-0.86, 0.43, -1.4))],
 		[wheel, Color(0.10, 0.10, 0.11), 0.02, Transform3D(rb, Vector3(0.86, 0.43, -1.4))],
 	]
+
+
+## Roadside verge (built-in, simple): grass clumps, flowers, ferns, bushes.
+func _verge() -> void:
+	var blade := CylinderMesh.new(); blade.top_radius = 0.0; blade.bottom_radius = 0.09; blade.height = 0.45; blade.radial_segments = 3
+	var g := Color(0.42, 0.62, 0.26)
+	kinds["grass"] = [
+		[blade, g, 0.0, T3(0, 0.22, 0)],
+		[blade, g.darkened(0.1), 0.0, Transform3D(Basis(Vector3.RIGHT, 0.35), Vector3(0.06, 0.2, 0.04))],
+		[blade, g.lightened(0.1), 0.0, Transform3D(Basis(Vector3.FORWARD, 0.35), Vector3(-0.05, 0.2, -0.04))],
+	]
+	var stem := CylinderMesh.new(); stem.top_radius = 0.01; stem.bottom_radius = 0.015; stem.height = 0.3; stem.radial_segments = 3
+	var head := SphereMesh.new(); head.radius = 0.05; head.height = 0.06; head.radial_segments = 6; head.rings = 2
+	kinds["flower"] = [[stem, Color(0.35, 0.55, 0.25), 0.0, T3(0, 0.15, 0)],
+		[head, Color.WHITE, 0.0, T3(0, 0.31, 0), [Color(0.98, 0.85, 0.2), Color(0.95, 0.95, 0.95), Color(0.75, 0.45, 0.85), Color(0.9, 0.3, 0.3)]]]
+	var frond := SphereMesh.new(); frond.radius = 0.45; frond.height = 0.35; frond.radial_segments = 6; frond.rings = 3
+	kinds["fern"] = [[frond, Color(0.30, 0.55, 0.25), 0.0, T3(0, 0.15, 0)]]
+	var bush := SphereMesh.new(); bush.radius = 0.7; bush.height = 1.0; bush.radial_segments = 7; bush.rings = 4
+	if not kinds.has("bush"): kinds["bush"] = [[bush, Color(0.32, 0.55, 0.25), 0.05, T3(0, 0.4, 0)]]
 
 
 ## Robot City props: a little dome-helmet robot and an energy capsule.
@@ -260,7 +281,7 @@ func load_pack(dir: String) -> Array:
 	if txt != "":
 		var parsed = JSON.parse_string(txt)
 		if parsed is Dictionary and parsed.get("props") is Dictionary: cfg = parsed["props"]
-	var da := DirAccess.open(dir)
+	var da := DirAccess.open(dir) if not dir.begins_with("res://") else null
 	if da:
 		for f in da.get_files():
 			if f.get_extension().to_lower() in ["glb", "gltf"]:
@@ -268,8 +289,8 @@ func load_pack(dir: String) -> Array:
 				if not cfg.has(slot): cfg[slot] = {"model": f}
 	for slot in cfg:
 		var c = cfg[slot]
-		if not (c is Dictionary) or not c.has("model"): continue
-		var parts := _pack_parts(dir.path_join(String(c["model"])), c)
+		if not (c is Dictionary) or not (c.has("model") or c.has("billboard")): continue
+		var parts := _billboard_parts(dir, c) if c.has("billboard") else _pack_parts(dir.path_join(String(c["model"])), c)
 		if parts.size() > 0:
 			kinds[slot] = parts
 			replaced.append(slot)
@@ -303,6 +324,30 @@ func _pack_parts(path: String, c: Dictionary) -> Array:
 	for m in meshes:
 		# [mesh, colour, outline, transform, palette, keep the model's own materials]
 		parts.append([m[0], Color.WHITE, 0.0, base * m[1], null, true])
+	return parts
+
+
+## A plant / tree as two crossed cards cut out of renders of a model (impostor):
+##   {"billboard": ["front.png", "side.png"], "size": [[w_front, h], [w_side, h]], "height": 11}
+## Sizes in metres (as rendered); "height" rescales the whole thing.
+func _billboard_parts(dir: String, c: Dictionary) -> Array:
+	var pics: Array = c["billboard"]
+	var sizes: Array = c.get("size", [[1.0, 1.0], [1.0, 1.0]])
+	var s := float(c.get("scale", 1.0))
+	if c.has("height"): s = float(c["height"]) / float(sizes[0][1])
+	var parts := []
+	for k in mini(2, pics.size()):
+		var img := Image.load_from_file(dir.path_join(String(pics[k])))
+		if img == null: continue
+		img.generate_mipmaps()
+		var m := ShaderMaterial.new()
+		m.shader = foliage_shader
+		m.set_shader_parameter("tex", ImageTexture.create_from_image(img))
+		var q := QuadMesh.new()
+		q.size = Vector2(float(sizes[k][0]), float(sizes[k][1])) * s
+		q.material = m
+		var b := Basis(Vector3.UP, PI / 2 * k)
+		parts.append([q, Color.WHITE, 0.0, Transform3D(b, Vector3(0, q.size.y / 2 + float(c.get("y", 0.0)), 0)), null, true])
 	return parts
 
 

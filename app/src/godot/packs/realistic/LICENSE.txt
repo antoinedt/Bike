@@ -1,0 +1,3 @@
+Built-in "realistic" props. Tree and plant cards are renders of Poly Haven models
+(https://polyhaven.com, CC0): tree_small_02, island_tree_01, fir_tree_01, shrub_02,
+grass_medium_02, flower_empodium, dandelion_01, fern_02; bench = painted_wooden_bench.
