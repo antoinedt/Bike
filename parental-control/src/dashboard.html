@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Parental Control</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #fff; --text: #1d2330; --muted: #6b7280; --line: #e5e7eb;
+    --accent: #3867d6; --accent-soft: #dbe5fb; --danger: #c0392b; --ok: #1e8e3e; --warn: #b7791f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151b; --card: #1b1f27; --text: #e6e8ec; --muted: #9aa3b2; --line: #2b313c;
+      --accent: #7ea2ff; --accent-soft: #263457; --danger: #ff6b5b; --ok: #4cc26b; --warn: #e0a84a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
+  header { display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: var(--card); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 2; flex-wrap: wrap; }
+  header h1 { font-size: 17px; margin: 0; margin-right: auto; }
+  nav { display: flex; gap: 4px; flex-wrap: wrap; }
+  nav button { background: none; border: 0; padding: 7px 11px; border-radius: 8px; color: var(--muted); cursor: pointer; font: inherit; }
+  nav button.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  main { max-width: 1000px; margin: 0 auto; padding: 16px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+  .card h2 { font-size: 15px; margin: 0 0 12px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+  .user { border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+  .user .name { font-weight: 600; font-size: 16px; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; background: var(--muted); }
+  .dot.on { background: var(--ok); } .dot.idle { background: var(--warn); }
+  .muted { color: var(--muted); } .small { font-size: 13px; }
+  .big { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .controls { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
+  select, input, button.btn { font: inherit; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--text); }
+  button.btn { cursor: pointer; }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  button.danger { color: var(--danger); border-color: var(--danger); }
+  button.danger.solid { background: var(--danger); color: #fff; }
+  .bars .row { display: grid; grid-template-columns: minmax(90px, 200px) 1fr 70px; gap: 10px; align-items: center; padding: 3px 0; }
+  .bars .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bars .track { background: var(--accent-soft); border-radius: 4px; height: 14px; overflow: hidden; }
+  .bars .fill { background: var(--accent); height: 100%; border-radius: 4px; }
+  .bars .val { text-align: right; font-variant-numeric: tabular-nums; }
+  .cols { display: flex; align-items: flex-end; gap: 3px; height: 140px; padding-top: 6px; }
+  .cols .c { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; min-width: 0; }
+  .cols .b { width: 100%; background: var(--accent); border-radius: 3px 3px 0 0; min-height: 1px; }
+  .cols .t { font-size: 10px; color: var(--muted); margin-top: 3px; white-space: nowrap; height: 14px; line-height: 14px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 7px 6px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  th { font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .03em; }
+  td.actions { white-space: nowrap; text-align: right; }
+  td.actions button { margin-left: 4px; padding: 4px 8px; font-size: 13px; }
+  .tablewrap { overflow-x: auto; }
+  #login { position: fixed; inset: 0; background: var(--bg); display: flex; align-items: center; justify-content: center; z-index: 10; }
+  #login form { background: var(--card); padding: 24px; border-radius: 12px; border: 1px solid var(--line); width: min(340px, calc(100% - 32px)); display: grid; gap: 12px; }
+  #toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 9px 14px; border-radius: 8px; display: none; z-index: 20; max-width: calc(100% - 32px); }
+  .tag { display: inline-block; font-size: 12px; padding: 1px 7px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); }
+  .hidden { display: none !important; }
+  @media (max-width: 560px) { .bars .row { grid-template-columns: 100px 1fr 58px; } .hide-sm { display: none; } }
+</style>
+</head>
+<body>
+<div id="login" class="hidden">
+  <form onsubmit="doLogin(event)">
+    <h2 style="margin:0">Parental Control</h2>
+    <input id="pw" type="password" placeholder="Password" autocomplete="current-password" autofocus>
+    <button class="btn primary" type="submit">Sign in</button>
+    <div id="loginErr" class="small" style="color:var(--danger)"></div>
+  </form>
+</div>
+
+<header>
+  <h1>Parental Control</h1>
+  <nav id="tabs">
+    <button data-tab="overview" class="active">Now</button>
+    <button data-tab="stats">Stats</button>
+    <button data-tab="processes">Processes</button>
+    <button data-tab="blocklist">Blocked</button>
+    <button data-tab="events">Activity</button>
+  </nav>
+  <button class="btn small" onclick="logout()">Sign out</button>
+</header>
+
+<main>
+  <section id="tab-overview">
+    <div class="card"><h2>Who is on the PC</h2><div id="live" class="grid"></div></div>
+    <div class="card"><h2>Today, top apps (everyone)</h2><div id="todayApps" class="bars"></div></div>
+  </section>
+
+  <section id="tab-stats" class="hidden">
+    <div class="controls">
+      <select id="stUser"></select>
+      <select id="stRange">
+        <option value="0">Today</option>
+        <option value="-1">Yesterday</option>
+        <option value="7" selected>Last 7 days</option>
+        <option value="30">Last 30 days</option>
+      </select>
+      <span class="muted small" id="stTotal"></span>
+    </div>
+    <div class="card"><h2>Time per day</h2><div id="stDays" class="cols"></div></div>
+    <div class="card"><h2>Time per app</h2><div id="stApps" class="bars"></div></div>
+    <div class="card"><h2>Time of day</h2><div id="stHours" class="cols"></div></div>
+    <div class="card" id="stUsersCard"><h2>Per user</h2><div id="stUsers" class="bars"></div></div>
+  </section>
+
+  <section id="tab-processes" class="hidden">
+    <div class="card">
+      <div class="controls">
+        <select id="prUser"></select>
+        <input id="prFilter" placeholder="Filter by name" oninput="renderProcesses()">
+        <button class="btn" onclick="loadProcesses()">Refresh</button>
+      </div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Program</th><th>User</th><th class="hide-sm">Memory</th><th class="hide-sm">Started</th><th></th></tr></thead>
+        <tbody id="procs"></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <section id="tab-blocklist" class="hidden">
+    <div class="card">
+      <h2>Block a program</h2>
+      <div class="controls">
+        <input id="blName" placeholder="program.exe" style="flex:1;min-width:160px">
+        <select id="blUser"></select>
+        <button class="btn primary" onclick="addBlock()">Block</button>
+      </div>
+      <div class="muted small">Blocked programs are closed within ~2 seconds every time they start. Use the executable name, as shown in the Processes or Stats tabs.</div>
+    </div>
+    <div class="card">
+      <h2>Currently blocked</h2>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Program</th><th>Applies to</th><th class="hide-sm">Since</th><th></th></tr></thead>
+        <tbody id="blocks"></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <section id="tab-events" class="hidden">
+    <div class="card"><div class="tablewrap"><table>
+      <thead><tr><th>When</th><th>What</th><th>User</th><th>Details</th></tr></thead>
+      <tbody id="events"></tbody>
+    </table></div></div>
+  </section>
+</main>
+<div id="toast"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let currentTab = "overview", processes = [], users = [];
+
+function fmt(sec) {
+  sec = Math.round(sec || 0);
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
+  if (h) return `${h}h ${String(m).padStart(2, "0")}m`;
+  if (m) return `${m}m`;
+  return `${sec}s`;
+}
+const isoDay = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+function toast(msg) { const t = $("toast"); t.textContent = msg; t.style.display = "block"; clearTimeout(t._h); t._h = setTimeout(() => t.style.display = "none", 3500); }
+
+async function api(path, body) {
+  const opt = body === undefined ? {} : { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body) };
+  const r = await fetch(path, opt);
+  if (r.status === 401 && path !== "/api/login") { showLogin(); throw new Error("login required"); }
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error || data.message || r.statusText);
+  return data;
+}
+
+function showLogin() { $("login").classList.remove("hidden"); $("pw").focus(); }
+async function doLogin(e) {
+  e.preventDefault();
+  try { await api("/api/login", { password: $("pw").value }); $("pw").value = ""; $("login").classList.add("hidden"); init(); }
+  catch (err) { $("loginErr").textContent = err.message; }
+}
+async function logout() { await api("/api/logout", {}); showLogin(); }
+
+// ---------- rendering helpers
+function bars(el, items, labelFn = (k) => k) {
+  if (!items.length) { el.innerHTML = '<div class="muted">No data yet.</div>'; return; }
+  const max = Math.max(...items.map(i => i.seconds), 1);
+  el.innerHTML = items.map(i => `<div class="row"><div class="label" title="${esc(i.key)}">${esc(labelFn(i.key))}</div>
+    <div class="track"><div class="fill" style="width:${(i.seconds / max * 100).toFixed(1)}%"></div></div>
+    <div class="val">${fmt(i.seconds)}</div></div>`).join("");
+}
+function cols(el, items) {
+  const max = Math.max(...items.map(i => i.seconds), 1);
+  el.innerHTML = items.map(i => `<div class="c" title="${esc(i.label)}: ${fmt(i.seconds)}">
+    <div class="b" style="height:${(i.seconds / max * 100).toFixed(1)}%"></div><div class="t">${esc(i.short)}</div></div>`).join("");
+}
+function userOptions(sel, allLabel) {
+  const v = sel.value;
+  sel.innerHTML = `<option value="">${allLabel}</option>` + users.map(u => `<option>${esc(u)}</option>`).join("");
+  sel.value = users.includes(v) ? v : "";
+}
+
+// ---------- tabs
+async function loadOverview() {
+  const [live, today] = await Promise.all([api("/api/live"), api(`/api/stats?from=${isoDay(new Date())}&to=${isoDay(new Date())}`)]);
+  $("live").innerHTML = live.length ? live.map(u => {
+    const state = !u.online ? "offline" : u.locked ? "locked / away" : u.idle ? "idle" : "active";
+    const dot = !u.online ? "" : (u.idle || u.locked) ? "idle" : "on";
+    return `<div class="user"><div class="name"><span class="dot ${dot}"></span>${esc(u.user)}</div>
+      <div class="muted small">${state}${u.online && u.app ? ` · <b>${esc(u.app)}</b>` : ""}</div>
+      <div class="big">${fmt(u.today_seconds)}</div><div class="muted small">today</div></div>`;
+  }).join("") : '<div class="muted">No user has logged in since the service was installed.</div>';
+  bars($("todayApps"), today.by_app.slice(0, 10));
+}
+
+async function loadStats() {
+  userOptions($("stUser"), "All users");
+  const r = Number($("stRange").value), end = new Date(), start = new Date();
+  if (r === -1) { end.setDate(end.getDate() - 1); start.setDate(start.getDate() - 1); }
+  else if (r > 0) start.setDate(start.getDate() - (r - 1));
+  const s = await api(`/api/stats?from=${isoDay(start)}&to=${isoDay(end)}&user=${encodeURIComponent($("stUser").value)}`);
+  $("stTotal").textContent = `Total: ${fmt(s.total)}`;
+  const byDay = Object.fromEntries(s.by_day.map(d => [d.key, d.seconds])), days = [];
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    const k = isoDay(d);
+    days.push({ label: k, short: d.toLocaleDateString(undefined, r > 7 ? {day: "numeric"} : {weekday: "short"}), seconds: byDay[k] || 0 });
+  }
+  cols($("stDays"), days);
+  bars($("stApps"), s.by_app.slice(0, 25));
+  const byHour = Object.fromEntries(s.by_hour.map(h => [h.key, h.seconds]));
+  cols($("stHours"), [...Array(24).keys()].map(h => ({ label: `${h}:00`, short: h % 3 === 0 ? `${h}h` : "", seconds: byHour[h] || 0 })));
+  $("stUsersCard").classList.toggle("hidden", !!$("stUser").value);
+  bars($("stUsers"), s.by_user);
+}
+
+async function loadProcesses() { userOptions($("prUser"), "All users"); processes = await api("/api/processes"); renderProcesses(); }
+function renderProcesses() {
+  const u = $("prUser").value, f = $("prFilter").value.toLowerCase();
+  const list = processes.filter(p => (!u || p.user === u) && (!f || p.name.toLowerCase().includes(f)));
+  $("procs").innerHTML = list.map(p => `<tr><td>${esc(p.name)} <span class="muted small">#${p.pid}</span></td><td>${esc(p.user)}</td>
+    <td class="hide-sm">${p.memory_mb ?? ""} MB</td><td class="hide-sm small muted">${esc((p.started || "").replace("T", " "))}</td>
+    <td class="actions"><button class="btn danger" data-act="kill" data-pid="${p.pid}" data-name="${esc(p.name)}">Stop</button>
+    <button class="btn danger solid" data-act="block" data-name="${esc(p.name)}" data-user="${esc(p.user)}">Block</button></td></tr>`).join("")
+    || '<tr><td colspan="5" class="muted">No processes.</td></tr>';
+}
+async function killPid(pid, name) {
+  if (!confirm(`Stop ${name} now?`)) return;
+  try { await api("/api/kill", { pid }); toast(`${name} stopped`); } catch (e) { toast(e.message); }
+  loadProcesses();
+}
+async function blockName(name, user) {
+  const forAll = confirm(`Block ${name} for ALL users?\n\nOK = all users, Cancel = only for ${user}`);
+  try { const r = await api("/api/block", { name, user: forAll ? "" : user, kill_now: true }); toast(`${name} blocked (${r.killed} closed)`); }
+  catch (e) { toast(e.message); }
+  if (currentTab === "processes") loadProcesses(); else loadBlocklist();
+}
+
+async function loadBlocklist() {
+  userOptions($("blUser"), "All users");
+  const rules = await api("/api/blocklist");
+  $("blocks").innerHTML = rules.map(b => `<tr><td><b>${esc(b.name)}</b></td><td>${b.user ? esc(b.user) : '<span class="tag">everyone</span>'}</td>
+    <td class="hide-sm small muted">${esc(b.created.replace("T", " "))}</td>
+    <td class="actions"><button class="btn" data-act="unblock" data-name="${esc(b.name)}" data-user="${esc(b.user)}">Unblock</button></td></tr>`).join("")
+    || '<tr><td colspan="4" class="muted">Nothing is blocked.</td></tr>';
+}
+async function addBlock() {
+  let name = $("blName").value.trim();
+  if (!name) return;
+  if (!name.includes(".")) name += ".exe";
+  try { const r = await api("/api/block", { name, user: $("blUser").value, kill_now: true }); toast(`${name} blocked (${r.killed} closed)`); $("blName").value = ""; }
+  catch (e) { toast(e.message); }
+  loadBlocklist();
+}
+async function unblock(name, user) {
+  try { await api("/api/unblock", { name, user }); toast(`${name} unblocked`); } catch (e) { toast(e.message); }
+  loadBlocklist();
+}
+
+const EVENT_LABELS = { killed: "Stopped", blocked: "Blocked start", block_added: "Block added", block_removed: "Block removed",
+  agent_missing: "⚠ Tracking stopped", agent_back: "Tracking resumed", service_started: "Service started", login_failed: "Failed login" };
+async function loadEvents() {
+  const ev = await api("/api/events");
+  $("events").innerHTML = ev.map(e => `<tr><td class="small muted" style="white-space:nowrap">${esc(e.ts.replace("T", " "))}</td>
+    <td>${esc(EVENT_LABELS[e.kind] || e.kind)}</td><td>${esc(e.user)}</td><td class="small">${esc(e.detail)}</td></tr>`).join("")
+    || '<tr><td colspan="4" class="muted">Nothing yet.</td></tr>';
+}
+
+const loaders = { overview: loadOverview, stats: loadStats, processes: loadProcesses, blocklist: loadBlocklist, events: loadEvents };
+function showTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
+  Object.keys(loaders).forEach(t => $("tab-" + t).classList.toggle("hidden", t !== tab));
+  refresh();
+}
+async function refresh() { try { await loaders[currentTab](); } catch (e) { if (e.message !== "login required") toast(e.message); } }
+async function init() { try { users = await api("/api/users"); } catch { return; } refresh(); }
+
+document.addEventListener("click", e => {
+  const b = e.target.closest("button[data-act]"); if (!b) return;
+  const d = b.dataset;
+  if (d.act === "kill") killPid(Number(d.pid), d.name);
+  else if (d.act === "block") blockName(d.name, d.user);
+  else if (d.act === "unblock") unblock(d.name, d.user);
+});
+$("tabs").addEventListener("click", e => { if (e.target.dataset.tab) showTab(e.target.dataset.tab); });
+$("stUser").onchange = $("stRange").onchange = loadStats;
+$("prUser").onchange = renderProcesses;
+$("blName").addEventListener("keydown", e => { if (e.key === "Enter") addBlock(); });
+setInterval(() => { if (currentTab === "overview" && document.visibilityState === "visible") refresh(); }, 10000);
+
+fetch("/api/session").then(r => r.json()).then(s => s.logged_in ? init() : showLogin());
+</script>
+</body>
+</html>
