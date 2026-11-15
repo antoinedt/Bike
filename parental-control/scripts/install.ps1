@@ -14,7 +14,9 @@
   powershell -ExecutionPolicy Bypass -File scripts\install.ps1 -Port 9000
 #>
 param(
-    [int]$Port = 8765
+    [int]$Port = 8765,
+    # Full path to an all-users python.exe, if the automatic search picks the wrong one.
+    [string]$PythonPath = ""
 )
 $ErrorActionPreference = "Stop"
 
@@ -25,27 +27,43 @@ $RunKey     = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
 $SrcDir     = Join-Path (Split-Path -Parent $PSScriptRoot) "src"
 
 # ---------------------------------------------------------------- Python ---
-Write-Host "Looking for Python..."
+# The agent runs as each child, so Python must be installed for all users
+# (not in someone's profile, e.g. by the per-user Python Install Manager).
+Write-Host "Looking for an all-users Python..."
+$candidates = @()
+if ($PythonPath) { $candidates += $PythonPath }
+foreach ($root in "HKLM:\SOFTWARE\Python\PythonCore", "HKLM:\SOFTWARE\WOW6432Node\Python\PythonCore") {
+    Get-ChildItem $root -ErrorAction SilentlyContinue |
+        Sort-Object { try { [version]($_.PSChildName -replace '[^0-9.]', '') } catch { [version]"0.0" } } -Descending |
+        ForEach-Object {
+            $ip = Get-ItemProperty (Join-Path $_.PSPath "InstallPath") -ErrorAction SilentlyContinue
+            if ($ip -and $ip.ExecutablePath) { $candidates += $ip.ExecutablePath }
+            elseif ($ip -and $ip.'(default)') { $candidates += (Join-Path $ip.'(default)' "python.exe") }
+        }
+}
+$candidates += @(Get-ChildItem "$env:ProgramFiles\Python3*\python.exe", "${env:ProgramFiles(x86)}\Python3*\python.exe" `
+                   -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
+
 $python = $null
-$py = Get-Command py.exe -ErrorAction SilentlyContinue
-if ($py) { $python = (& $py.Source -3 -c "import sys; print(sys.executable)" 2>$null) }
-if (-not $python) {
-    $p = Get-Command python.exe -ErrorAction SilentlyContinue
-    # Skip the Microsoft Store "python.exe" stub in WindowsApps.
-    if ($p -and $p.Source -notlike "*WindowsApps*") { $python = (& $p.Source -c "import sys; print(sys.executable)" 2>$null) }
+$rejected = @()
+foreach ($c in $candidates) {
+    if (-not $c -or -not (Test-Path $c)) { continue }
+    if ($c -like "$env:SystemDrive\Users\*" -or $c -like "*WindowsApps*") { $rejected += $c; continue }
+    if (-not (Test-Path (Join-Path (Split-Path $c) "pythonw.exe"))) { $rejected += $c; continue }
+    & $c -c "import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)" 2>$null
+    if ($LASTEXITCODE -ne 0) { $rejected += "$c (older than 3.9)"; continue }
+    $python = $c
+    break
 }
-if ($python) { $python = "$python".Trim() }
 if (-not $python) {
-    throw "Python 3.9+ not found. Install it from python.org with 'Install for all users' ticked, then re-run."
-}
-if ($python -like "$env:SystemDrive\Users\*") {
-    throw "Python is installed in a user profile ($python). Child accounts cannot run it from there. " +
-          "Reinstall Python with 'Install for all users' (it goes to C:\Program Files\Python3xx) and re-run."
+    $msg = "No Python 3.9+ installed for all users was found."
+    if ($rejected) { $msg += " Not usable: " + ($rejected -join ", ") + "." }
+    $msg += " Install one with the python.org 'Windows installer (64-bit)' (not the Python Install Manager): " +
+            "choose 'Customize installation', then tick 'Install Python for all users' on the Advanced Options page. " +
+            "It should end up in C:\Program Files\Python3xx. Or pass -PythonPath 'C:\path\to\python.exe'."
+    throw $msg
 }
 $pythonw = Join-Path (Split-Path $python) "pythonw.exe"
-if (-not (Test-Path $pythonw)) { throw "pythonw.exe not found next to $python" }
-& $python -c "import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)"
-if ($LASTEXITCODE -ne 0) { throw "Python 3.9 or newer is required ($python is too old)." }
 Write-Host "  using $python"
 
 Write-Host "Installing the psutil package for all users..."

@@ -39,9 +39,12 @@ A small, self-hosted parental control for a Windows PC where you are the adminis
 ## Requirements
 
 - Windows 10/11.
-- **Python 3.9+ installed "for all users"**: on python.org, choose *Customize
-  installation* and tick *Install Python for all users*. The children's accounts need
-  to be able to run it.
+- **Python 3.9+ installed "for all users"**. Use the python.org **"Windows installer (64-bit)"**,
+  not the newer *Python Install Manager*, which installs into your own profile
+  (`AppData\Local\Python\...`) where the children's accounts can't run it. In the installer,
+  choose *Customize installation*, then tick *Install Python for all users* on the
+  *Advanced Options* page. It should end up in `C:\Program Files\Python3xx`. The install script
+  finds it automatically. Otherwise pass `-PythonPath "C:\...\python.exe"`.
 - The children's accounts must be **Standard users**, not Administrators. Otherwise
   they could simply stop the service.
 
