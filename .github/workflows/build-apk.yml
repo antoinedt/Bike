@@ -24,7 +24,13 @@ jobs:
           java-version: "17"
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          # v3's default package list included the long-removed legacy "tools"
+          # package, which now makes sdkmanager fail outright ("Failed to find
+          # package 'tools'"). Explicitly request only platform-tools here;
+          # the next step installs the specific platform/build-tools we need.
+          packages: "platform-tools"
 
       - name: Install SDK packages
         run: |
