@@ -76,10 +76,17 @@ try {
     Copy-Item -Path (Join-Path $SrcDir "*") -Destination $InstallDir -Recurse -Force
 
     # ---------------------------------------------------- remote access ---
+    # Optional step: any problem here is a warning, never a reason to stop the update.
     Write-Host "Checking remote access (ZeroTier)..."
-    $zt = @(Set-DashboardFirewallRule $port)
-    if (Set-RemoteAccessConfig $cfg ($zt.Count -gt 0)) {
-        $cfg | ConvertTo-Json -Depth 5 | Set-Content -Path (Join-Path $DataDir "config.json") -Encoding UTF8
+    $zt = @()
+    try {
+        $zt = @(Set-DashboardFirewallRule $port)
+        if (Set-RemoteAccessConfig $cfg ($zt.Count -gt 0)) {
+            $cfg | ConvertTo-Json -Depth 5 | Set-Content -Path (Join-Path $DataDir "config.json") -Encoding UTF8
+        }
+    } catch {
+        $zt = @()
+        Write-Warning "remote access (ZeroTier) step skipped: $($_.Exception.Message). Firewall rule and settings left as they were."
     }
 
     # ----------------------------------------------------------- service ---
@@ -135,9 +142,12 @@ try {
         Write-Host "  agent for ${user}: $(if ($new) { "running, pid $($new.ProcessId -join ',') session $($new[0].SessionId)" } else { 'NOT running' })"
         if (-not $new) { $ok = $false }
     }
-    $listen = (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue).LocalAddress -join ", "
-    Write-Host "  listening on: $listen port $port"
-    Write-Host "  firewall rule: $((Get-NetFirewallRule -DisplayName $FirewallRuleName -ErrorAction SilentlyContinue).Description)"
+    try {
+        $listen = (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction Stop).LocalAddress -join ", "
+        Write-Host "  listening on: $listen port $port"
+    } catch { Write-Host "  listening on: (could not read: $($_.Exception.Message))" }
+    $rules = @(Get-DashboardFirewallRules)
+    Write-Host "  firewall rule: $(if ($rules) { ($rules | ForEach-Object { if ($_.Description) { $_.Description } else { "'$($_.DisplayName)' (created by an older install)" } }) -join ' | ' } else { 'none' })"
     foreach ($a in $zt) { Write-Host "  from your phone (ZeroTier): ${scheme}://$(if ($a.IP -like '*:*') { "[$($a.IP)]" } else { $a.IP }):$port" }
     if ($ok) { Write-Host "Update complete." -ForegroundColor Green }
     else { Write-Host "Update finished with problems (see above)." -ForegroundColor Yellow; exit 1 }

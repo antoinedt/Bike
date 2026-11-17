@@ -6,8 +6,10 @@
   With ZeroTier joined on this PC, the dashboard is reachable from the ZeroTier
   subnet(s) only, on the ZeroTier adapter only, whatever Windows' network profile
   for it (ZeroTier networks are often "Public" or "Unidentified").
-  Without ZeroTier, it falls back to the original rule: any address on Private
-  (home) networks.
+  Without ZeroTier (not installed, not joined, adapter without an address), the
+  existing rule is kept as it is (the original rule: any address on Private (home)
+  networks). Nothing here throws: a ZeroTier or firewall problem is reported as a
+  warning and never stops an install or update.
 #>
 
 $FirewallRuleName = "Parental Control dashboard"
@@ -22,50 +24,93 @@ function Get-NetworkCidr([string]$Ip, [int]$Prefix) {
 }
 
 function Get-ZeroTierAddresses {
-    <# One object per address on a ZeroTier adapter: Alias, IP, Subnet (CIDR). #>
-    $adapters = Get-NetAdapter -ErrorAction SilentlyContinue |
-        Where-Object { $_.InterfaceDescription -like "*ZeroTier*" -or $_.Name -like "ZeroTier*" }
+    <# One object per address on a ZeroTier adapter: Alias, IP, Subnet (CIDR).
+       Never throws: no ZeroTier, an adapter without an IP stack ("The specified
+       interface was not found on the system"), or any other lookup error = no address. #>
+    $adapters = @()
+    try {
+        $adapters = @(Get-NetAdapter -ErrorAction Stop |
+            Where-Object { $_.InterfaceDescription -like "*ZeroTier*" -or $_.Name -like "ZeroTier*" })
+    } catch {
+        Write-Host "  could not list network adapters ($($_.Exception.Message)): treating ZeroTier as absent"
+        return
+    }
     foreach ($a in $adapters) {
-        Get-NetIPAddress -InterfaceIndex $a.ifIndex -ErrorAction SilentlyContinue |
-            Where-Object { $_.IPAddress -notlike "fe80*" -and $_.IPAddress -notlike "169.254.*" } |
-            ForEach-Object {
-                [pscustomobject]@{
-                    Alias  = $a.Name
-                    IP     = ($_.IPAddress -split "%")[0]
-                    Subnet = Get-NetworkCidr ($_.IPAddress -split "%")[0] $_.PrefixLength
-                }
+        try {
+            $ips = @(Get-NetIPAddress -InterfaceIndex $a.ifIndex -ErrorAction Stop)
+        } catch {
+            Write-Host "  ZeroTier adapter '$($a.Name)' has no usable address ($($_.Exception.Message)): skipped"
+            continue
+        }
+        foreach ($ip in $ips) {
+            $addr = ($ip.IPAddress -split "%")[0]
+            if ($addr -like "fe80*" -or $addr -like "169.254.*") { continue }
+            try {
+                [pscustomobject]@{ Alias = $a.Name; IP = $addr; Subnet = Get-NetworkCidr $addr $ip.PrefixLength }
+            } catch {
+                Write-Host "  skipped ZeroTier address $addr ($($_.Exception.Message))"
             }
+        }
     }
 }
 
+function Get-DashboardFirewallRules {
+    try { @(Get-NetFirewallRule -DisplayName $FirewallRuleName -ErrorAction Stop) } catch { @() }
+}
+
+function New-PrivateFirewallRule([int]$Port) {
+    New-NetFirewallRule -DisplayName $FirewallRuleName -Direction Inbound -Action Allow -Protocol TCP `
+        -LocalPort $Port -Profile Private `
+        -Description "managed by Parental Control; port=$Port; private networks" -ErrorAction Stop | Out-Null
+}
+
 function Set-DashboardFirewallRule([int]$Port) {
-    <# Creates or refreshes the inbound rule. Only touches it if something changed
-       (port, ZeroTier subnets or adapter names): the wanted state is kept in the
-       rule's Description and compared. Returns the ZeroTier addresses (may be empty). #>
+    <# With ZeroTier: makes the inbound rule ZeroTier-only, rewriting it only if the
+       port, subnets or adapter names changed (the wanted state is kept in the rule's
+       Description and compared).
+       Without ZeroTier: keeps whatever rule exists; only creates the original
+       Private-network rule if there is none at all.
+       Never throws: on any firewall error the existing rule is left in place.
+       Returns the ZeroTier addresses (empty if none). #>
     $zt = @(Get-ZeroTierAddresses)
-    if ($zt) {
-        $subnets = @($zt.Subnet | Sort-Object -Unique)
-        $aliases = @($zt.Alias | Sort-Object -Unique)
-        $wanted = "managed by Parental Control; port=$Port; zerotier=$($subnets -join ','); adapters=$($aliases -join ',')"
-    } else {
-        $wanted = "managed by Parental Control; port=$Port; private networks"
+    $existing = @(Get-DashboardFirewallRules)
+
+    if (-not $zt) {
+        if ($existing) {
+            Write-Host "  no ZeroTier network found: keeping the existing firewall rule"
+        } else {
+            try {
+                New-PrivateFirewallRule $Port
+                Write-Host "  no ZeroTier network found and no firewall rule: created one for port $Port on Private networks"
+            } catch {
+                Write-Warning "could not create the firewall rule ($($_.Exception.Message)); the dashboard may only work from this PC"
+            }
+        }
+        return @()
     }
-    $existing = @(Get-NetFirewallRule -DisplayName $FirewallRuleName -ErrorAction SilentlyContinue)
+
+    $subnets = @($zt.Subnet | Sort-Object -Unique)
+    $aliases = @($zt.Alias | Sort-Object -Unique)
+    $wanted = "managed by Parental Control; port=$Port; zerotier=$($subnets -join ','); adapters=$($aliases -join ',')"
     if ($existing.Count -eq 1 -and $existing[0].Description -eq $wanted) {
         Write-Host "  firewall rule unchanged ($wanted)"
         return $zt
     }
-    $existing | Remove-NetFirewallRule -ErrorAction SilentlyContinue
-    if ($zt) {
-        New-NetFirewallRule -DisplayName $FirewallRuleName -Description $wanted -Direction Inbound -Action Allow `
-            -Protocol TCP -LocalPort $Port -Profile Any -RemoteAddress $subnets -InterfaceAlias $aliases | Out-Null
+    try {
+        # Create the new rule first (under a temporary name) so a failure never leaves no rule.
+        $tmpName = "$FirewallRuleName (new)"
+        New-NetFirewallRule -DisplayName $tmpName -Description $wanted -Direction Inbound -Action Allow `
+            -Protocol TCP -LocalPort $Port -Profile Any -RemoteAddress $subnets -InterfaceAlias $aliases `
+            -ErrorAction Stop | Out-Null
+        $existing | Remove-NetFirewallRule -ErrorAction SilentlyContinue
+        Get-NetFirewallRule -DisplayName $tmpName -ErrorAction Stop | Set-NetFirewallRule -NewDisplayName $FirewallRuleName -ErrorAction Stop
         Write-Host "  firewall: port $Port open to ZeroTier only: $($subnets -join ', ') on $($aliases -join ', ')"
-    } else {
-        New-NetFirewallRule -DisplayName $FirewallRuleName -Description $wanted -Direction Inbound -Action Allow `
-            -Protocol TCP -LocalPort $Port -Profile Private | Out-Null
-        Write-Host "  firewall: no ZeroTier network found; port $Port open on Private networks"
+        return $zt
+    } catch {
+        try { Get-NetFirewallRule -DisplayName "$FirewallRuleName (new)" -ErrorAction Stop | Remove-NetFirewallRule } catch {}
+        Write-Warning "could not set the ZeroTier firewall rule ($($_.Exception.Message)); keeping the existing rule and settings"
+        return @()  # don't switch the config to ZeroTier-only if the firewall isn't ready for it
     }
-    return $zt
 }
 
 function Set-RemoteAccessConfig($Cfg, [bool]$ZeroTier) {
