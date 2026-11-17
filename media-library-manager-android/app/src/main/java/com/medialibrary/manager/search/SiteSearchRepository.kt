@@ -5,6 +5,8 @@ import com.medialibrary.manager.model.SiteProfile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
@@ -13,6 +15,15 @@ import java.net.URLEncoder
 
 private const val USER_AGENT = "Mozilla/5.0 (Media Library Manager Android; +mobile app) media-library-manager/0.1"
 private const val TIMEOUT_MS = 15_000
+
+/** Caps how many result rows get a detail-page follow-up fetch per search, so a results page
+ * with dozens of rows can't turn into dozens of sequential/parallel WebView round trips. */
+private const val MAX_DETAIL_PAGE_LOOKUPS = 30
+/** How many detail-page fetches run at once — bounded so headless-WebView lookups (each a real
+ * off-screen WebView load) don't pile up unboundedly, but still run well ahead of one at a time. */
+private const val DETAIL_PAGE_CONCURRENCY = 4
+
+private data class Candidate(val title: String, val downloadUrl: String, val size: String, val seeders: String)
 
 /**
  * Runs a search against a user-configured site profile and parses the results with the
@@ -32,18 +43,12 @@ class SiteSearchRepository(private val headlessFetcher: HeadlessWebViewFetcher) 
         val searchUrl = profile.searchUrlTemplate.replace("{query}", encodedQuery)
         val doc = fetch(searchUrl, profile.useHeadlessBrowser, profile.resultItemSelector)
 
-        val results = mutableListOf<SearchResultItem>()
+        val candidates = mutableListOf<Candidate>()
         for (row in doc.select(profile.resultItemSelector)) {
             val title = row.select(profile.titleSelector).firstOrNull()?.text()?.trim().orEmpty()
             val linkEl = row.select(profile.linkSelector).firstOrNull() ?: continue
-            var downloadUrl = linkEl.attr("abs:href").ifBlank { linkEl.text().trim() }
+            val downloadUrl = linkEl.attr("abs:href").ifBlank { linkEl.text().trim() }
             if (title.isBlank() || downloadUrl.isBlank()) continue
-
-            if (profile.detailPageLinkSelector.isNotBlank() && !downloadUrl.startsWith("magnet:")) {
-                downloadUrl = runCatching {
-                    resolveFromDetailPage(downloadUrl, profile.detailPageLinkSelector, profile.useHeadlessBrowser)
-                }.getOrNull() ?: continue
-            }
 
             val size = if (profile.sizeSelector.isNotBlank()) {
                 row.select(profile.sizeSelector).firstOrNull()?.text()?.trim().orEmpty()
@@ -51,10 +56,44 @@ class SiteSearchRepository(private val headlessFetcher: HeadlessWebViewFetcher) 
             val seeders = if (profile.seedersSelector.isNotBlank()) {
                 row.select(profile.seedersSelector).firstOrNull()?.text()?.trim().orEmpty()
             } else ""
-
-            results += SearchResultItem(title, downloadUrl, size, seeders, profile.id, profile.label)
+            candidates += Candidate(title, downloadUrl, size, seeders)
         }
-        results
+
+        resolveDownloadUrls(candidates, profile).map {
+            SearchResultItem(it.title, it.downloadUrl, it.size, it.seeders, profile.id, profile.label)
+        }
+    }
+
+    /**
+     * Resolves each candidate's final download URL, following through to its detail page when
+     * needed — with bounded concurrency, not one at a time, since each follow-up can itself be a
+     * multi-second headless-WebView fetch. Candidates whose detail page doesn't resolve are
+     * dropped, same as before.
+     */
+    private suspend fun resolveDownloadUrls(candidates: List<Candidate>, profile: SiteProfile): List<Candidate> {
+        if (profile.detailPageLinkSelector.isBlank()) return candidates
+
+        val limited = candidates.take(MAX_DETAIL_PAGE_LOOKUPS)
+        val semaphore = Semaphore(DETAIL_PAGE_CONCURRENCY)
+        return coroutineScope {
+            limited
+                .map { candidate ->
+                    async {
+                        semaphore.withPermit {
+                            if (candidate.downloadUrl.startsWith("magnet:")) return@withPermit candidate
+                            runCatching {
+                                val resolvedUrl = resolveFromDetailPage(
+                                    candidate.downloadUrl,
+                                    profile.detailPageLinkSelector,
+                                    profile.useHeadlessBrowser
+                                )
+                                candidate.copy(downloadUrl = resolvedUrl)
+                            }.getOrNull()
+                        }
+                    }
+                }
+                .mapNotNull { it.await() }
+        }
     }
 
     private suspend fun resolveFromDetailPage(detailPageUrl: String, selector: String, useHeadlessBrowser: Boolean): String {

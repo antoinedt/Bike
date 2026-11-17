@@ -5,6 +5,14 @@ import { fetchRenderedHtml } from "./headlessFetch.js";
 const USER_AGENT =
   "Mozilla/5.0 (Media Library Manager; +desktop app) media-library-manager/0.1";
 
+/** Caps how many result rows get a detail-page follow-up fetch per search, so a results page
+ * with dozens of rows can't turn into dozens of sequential/parallel browser round trips. */
+const MAX_DETAIL_PAGE_LOOKUPS = 30;
+/** How many detail-page fetches run at once — bounded so headless-browser lookups (each a real
+ * hidden browser window) don't pile up unboundedly, but still run well ahead of doing them one
+ * at a time. */
+const DETAIL_PAGE_CONCURRENCY = 4;
+
 function buildUrl(template: string, query: string): string {
   return template.replace("{query}", encodeURIComponent(query));
 }
@@ -41,6 +49,13 @@ function resolveUrl(maybeRelative: string, baseUrl: string): string {
   }
 }
 
+interface Candidate {
+  title: string;
+  downloadUrl: string;
+  size: string;
+  seeders: string;
+}
+
 /**
  * Runs a search against a user-configured site profile and parses the results with the
  * profile's CSS selectors. Only fetches sites the user explicitly configured in Settings.
@@ -51,7 +66,7 @@ export async function searchSite(profile: SiteProfile, query: string): Promise<S
   const $ = cheerio.load(html);
 
   const rows = $(profile.resultItemSelector).toArray();
-  const results: SearchResultItem[] = [];
+  const candidates: Candidate[] = [];
 
   for (const row of rows) {
     const $row = $(row);
@@ -61,35 +76,62 @@ export async function searchSite(profile: SiteProfile, query: string): Promise<S
       $row.find(profile.linkSelector).first().text().trim();
     if (!title || !rawLink) continue;
 
-    let downloadUrl = resolveUrl(rawLink, finalUrl);
+    const downloadUrl = resolveUrl(rawLink, finalUrl);
     const size = profile.sizeSelector ? $row.find(profile.sizeSelector).first().text().trim() : "";
     const seeders = profile.seedersSelector
       ? $row.find(profile.seedersSelector).first().text().trim()
       : "";
+    candidates.push({ title, downloadUrl, size, seeders });
+  }
 
-    if (profile.detailPageLinkSelector && !downloadUrl.startsWith("magnet:")) {
+  const resolved = await resolveDownloadUrls(candidates, profile);
+
+  return resolved.map((c) => ({
+    title: c.title,
+    downloadUrl: c.downloadUrl,
+    size: c.size,
+    seeders: c.seeders,
+    sourceProfileId: profile.id,
+    sourceProfileLabel: profile.label
+  }));
+}
+
+/**
+ * Resolves each candidate's final download URL, following through to its detail page when
+ * needed — with bounded concurrency, not one at a time, since each follow-up can itself be a
+ * multi-second headless-browser fetch. Candidates whose detail page doesn't resolve are
+ * dropped, same as before.
+ */
+async function resolveDownloadUrls(candidates: Candidate[], profile: SiteProfile): Promise<Candidate[]> {
+  if (!profile.detailPageLinkSelector) return candidates;
+
+  const limited = candidates.slice(0, MAX_DETAIL_PAGE_LOOKUPS);
+  const resolved: (Candidate | null)[] = new Array(limited.length).fill(null);
+
+  let cursor = 0;
+  async function worker(): Promise<void> {
+    while (cursor < limited.length) {
+      const index = cursor++;
+      const candidate = limited[index];
+      if (candidate.downloadUrl.startsWith("magnet:")) {
+        resolved[index] = candidate;
+        continue;
+      }
       try {
-        downloadUrl = await resolveFromDetailPage(
-          downloadUrl,
+        const downloadUrl = await resolveFromDetailPage(
+          candidate.downloadUrl,
           profile.detailPageLinkSelector,
           profile.useHeadlessBrowser
         );
+        resolved[index] = { ...candidate, downloadUrl };
       } catch {
-        continue;
+        // drop this one, matching the previous "continue" behavior
       }
     }
-
-    results.push({
-      title,
-      downloadUrl,
-      size,
-      seeders,
-      sourceProfileId: profile.id,
-      sourceProfileLabel: profile.label
-    });
   }
 
-  return results;
+  await Promise.all(Array.from({ length: Math.min(DETAIL_PAGE_CONCURRENCY, limited.length) }, worker));
+  return resolved.filter((c): c is Candidate => c !== null);
 }
 
 async function resolveFromDetailPage(
