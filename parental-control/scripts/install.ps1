@@ -7,7 +7,8 @@
   * creates C:\ProgramData\ParentalControl, readable only by SYSTEM and Administrators
   * registers the service as a scheduled task running as SYSTEM at boot (auto-restart)
   * registers the agent to start at every user logon (HKLM Run key)
-  * opens the dashboard port in the Windows firewall (Private networks only)
+  * opens the dashboard port in the Windows firewall: to the ZeroTier network only if
+    this PC has joined one, otherwise to Private (home) networks
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File scripts\install.ps1
@@ -25,6 +26,7 @@ $DataDir    = Join-Path $env:ProgramData  "ParentalControl"
 $TaskName   = "ParentalControlService"
 $RunKey     = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
 $SrcDir     = Join-Path (Split-Path -Parent $PSScriptRoot) "src"
+. (Join-Path $PSScriptRoot "remote-access.ps1")
 
 # ---------------------------------------------------------------- Python ---
 # The agent runs as each child, so Python must be installed for all users
@@ -88,6 +90,8 @@ if (Test-Path $cfgFile) {
 } else {
     $cfg = [pscustomobject]@{ port = $Port }
 }
+$zt = @(Get-ZeroTierAddresses)
+Set-RemoteAccessConfig $cfg ($zt.Count -gt 0) | Out-Null
 $cfg | ConvertTo-Json -Depth 5 | Set-Content -Path $cfgFile -Encoding UTF8
 
 # -------------------------------------------------------------- password ---
@@ -116,21 +120,23 @@ Set-ItemProperty -Path $RunKey -Name "ParentalControlAgent" `
     -Value "`"$pythonw`" `"$InstallDir\agent.py`" --port $Port"
 
 # -------------------------------------------------------------- firewall ---
-Write-Host "Opening TCP port $Port on Private networks..."
-Get-NetFirewallRule -DisplayName "Parental Control dashboard" -ErrorAction SilentlyContinue | Remove-NetFirewallRule
-New-NetFirewallRule -DisplayName "Parental Control dashboard" -Direction Inbound -Protocol TCP `
-    -LocalPort $Port -Action Allow -Profile Private | Out-Null
+Write-Host "Opening TCP port $Port in the firewall..."
+$zt = @(Set-DashboardFirewallRule $Port)
 
 # ----------------------------------------------------------------- start ---
 Start-ScheduledTask -TaskName $TaskName
 # Start the agent for the admin session doing the install (other users get it at their next logon).
 Start-Process -FilePath $pythonw -ArgumentList "`"$InstallDir\agent.py`" --port $Port"
 
-$ips = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notlike "127.*" -and $_.IPAddress -notlike "169.254.*" }).IPAddress
 Write-Host ""
 Write-Host "Done. Dashboard:" -ForegroundColor Green
 Write-Host "  http://localhost:$Port"
-foreach ($ip in $ips) { Write-Host "  http://${ip}:$Port" }
+if ($zt) {
+    foreach ($a in $zt) { Write-Host "  http://$(if ($a.IP -like '*:*') { "[$($a.IP)]" } else { $a.IP }):$Port   (ZeroTier, from your phone)" }
+} else {
+    $ips = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notlike "127.*" -and $_.IPAddress -notlike "169.254.*" }).IPAddress
+    foreach ($ip in $ips) { Write-Host "  http://${ip}:$Port" }
+}
 Write-Host ""
 Write-Host "Make sure the children's accounts are STANDARD users (not Administrators)."
 Write-Host "Users already logged in will be tracked after they sign out and back in."

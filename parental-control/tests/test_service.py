@@ -1,4 +1,5 @@
 """End-to-end tests for the service (run on any OS): python -m unittest discover tests"""
+import collections
 import json
 import os
 import shutil
@@ -8,6 +9,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest import mock
 import urllib.error
 import urllib.request
 from datetime import date, datetime
@@ -228,6 +230,46 @@ class ServiceTest(unittest.TestCase):
         self.assertEqual(r("g.exe", "bob", defaults, overrides), (90, "today"))
         self.assertEqual(r("g.exe", "bob", defaults, {("g.exe", "bob"): None}), (None, "today"))
         self.assertEqual(r("x.exe", "bob", defaults, overrides), (None, None))
+
+    # ----------------------------------------------------- remote access --
+    def test_allow_from(self):
+        svc = self.svc
+        try:
+            svc.cfg["allow_from"] = []
+            svc.refresh_allowed()
+            self.assertTrue(svc.client_allowed("192.168.1.20"))      # default: anyone (firewall decides)
+            svc.cfg["allow_from"] = ["10.147.17.0/24"]
+            svc.refresh_allowed()
+            self.assertTrue(svc.client_allowed("10.147.17.5"))
+            self.assertTrue(svc.client_allowed("::ffff:10.147.17.5"))
+            self.assertFalse(svc.client_allowed("192.168.1.20"))
+            self.assertTrue(svc.client_allowed("127.0.0.1"))         # agents always get in
+            self.assertTrue(svc.client_allowed("::1"))
+            self.assertFalse(svc.client_allowed("garbage"))
+            fake = [service.ipaddress.ip_network("172.27.0.0/16")]
+            with mock.patch.object(service, "zerotier_networks", return_value=fake):
+                svc.cfg["allow_from"] = ["zerotier"]
+                svc.refresh_allowed()
+                self.assertTrue(svc.client_allowed("172.27.3.4"))
+                self.assertFalse(svc.client_allowed("10.147.17.5"))
+            with mock.patch.object(service, "zerotier_networks", return_value=[]):
+                svc.refresh_allowed()                                  # ZeroTier gone: localhost only
+                self.assertFalse(svc.client_allowed("172.27.3.4"))
+                self.assertTrue(svc.client_allowed("127.0.0.1"))
+            # Over HTTP: localhost still served while remote addresses are restricted.
+            self.assertEqual(self.call("/api/session")[0], 200)
+        finally:
+            svc.cfg["allow_from"] = []
+            svc.refresh_allowed()
+
+    def test_zerotier_networks_detection(self):
+        snic = collections.namedtuple("snicaddr", "family address netmask broadcast ptp")
+        fake = {
+            "ZeroTier One [8056c2e21c000001]": [snic(service.socket.AF_INET, "10.147.17.42", "255.255.255.0", None, None)],
+            "Wi-Fi": [snic(service.socket.AF_INET, "192.168.1.20", "255.255.255.0", None, None)],
+        }
+        with mock.patch.object(service.psutil, "net_if_addrs", return_value=fake):
+            self.assertEqual([str(n) for n in service.zerotier_networks()], ["10.147.17.0/24"])
 
     def test_zero_minute_limit_kills_process(self):
         """0 minutes = not allowed: the running program is closed by the same

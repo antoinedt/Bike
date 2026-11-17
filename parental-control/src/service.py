@@ -13,6 +13,7 @@ Usage:
 from __future__ import annotations
 
 import getpass
+import ipaddress
 import json
 import logging
 import logging.handlers
@@ -20,6 +21,7 @@ import math
 import os
 import re
 import secrets
+import socket
 import sqlite3
 import ssl
 import sys
@@ -81,6 +83,30 @@ CREATE TABLE IF NOT EXISTS events (
 """
 
 DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def zerotier_networks() -> list:
+    """Subnets of the ZeroTier virtual adapters on this PC (named "ZeroTier One [network id]"
+    on Windows, "zt..." on Linux/macOS). Empty if ZeroTier isn't installed or not joined."""
+    nets = []
+    try:
+        interfaces = psutil.net_if_addrs()
+    except Exception:
+        return nets
+    for name, addrs in interfaces.items():
+        if "zerotier" not in name.lower() and not name.startswith("zt"):
+            continue
+        for a in addrs:
+            if a.family not in (socket.AF_INET, socket.AF_INET6) or not a.netmask:
+                continue
+            ip = a.address.split("%")[0]
+            try:
+                net = ipaddress.ip_interface(f"{ip}/{a.netmask}").network
+            except ValueError:
+                continue
+            if not net.is_link_local and net not in nets:
+                nets.append(net)
+    return nets
 
 
 def program_name_error(name: str) -> str | None:
@@ -237,6 +263,47 @@ class Service:
         self.lock = threading.Lock()
         self.stop = threading.Event()
         self.own_dir = str(HERE).lower()
+        self.allowed_nets: list | None = None  # None = any client; see refresh_allowed()
+        self.refresh_allowed()
+
+    # ----------------------------------------------------- remote access --
+    def refresh_allowed(self) -> None:
+        """Work out which networks may reach the dashboard, from config `allow_from`:
+        empty = anyone (the firewall decides); otherwise a list of CIDR subnets and/or
+        "zerotier" = the subnets of this PC's ZeroTier adapters, looked up again every
+        minute so a ZeroTier network that comes up (or changes) later is picked up.
+        Localhost is always allowed (the agents use it)."""
+        spec = self.cfg.get("allow_from") or []
+        if isinstance(spec, str):
+            spec = [spec]
+        if not spec:
+            nets = None
+        else:
+            nets = []
+            for item in spec:
+                if str(item).strip().lower() == "zerotier":
+                    nets += zerotier_networks()
+                else:
+                    try:
+                        nets.append(ipaddress.ip_network(str(item).strip(), strict=False))
+                    except ValueError:
+                        log.warning("ignoring bad allow_from entry %r", item)
+        if nets != self.allowed_nets:
+            log.info("dashboard reachable from: %s", "any address" if nets is None else
+                     ", ".join(map(str, nets)) + " and localhost" if nets else "localhost only (no ZeroTier network found)")
+        self.allowed_nets = nets
+
+    def client_allowed(self, ip: str) -> bool:
+        try:
+            addr = ipaddress.ip_address(ip.split("%")[0])
+        except ValueError:
+            return False
+        if getattr(addr, "ipv4_mapped", None):
+            addr = addr.ipv4_mapped
+        if addr.is_loopback:
+            return True
+        nets = self.allowed_nets
+        return nets is None or any(addr in n for n in nets)
 
     # ------------------------------------------------------------ helpers --
     def is_protected(self, proc: psutil.Process, name: str) -> bool:
@@ -441,6 +508,7 @@ class Service:
                 if time.time() - last_check > 60:
                     last_check = time.time()
                     self.check_agents()
+                    self.refresh_allowed()
             except Exception:
                 log.exception("background loop error")
             self.stop.wait(2)
@@ -570,11 +638,21 @@ class Handler(BaseHTTPRequestHandler):
     def is_local(self) -> bool:
         return self.client_address[0] in ("127.0.0.1", "::1", "::ffff:127.0.0.1")
 
+    def refuse_outsider(self) -> bool:
+        """403 for clients outside `allow_from` (in addition to the firewall rule)."""
+        if self.svc.client_allowed(self.client_address[0]):
+            return False
+        log.info("refused dashboard request from %s (not in allow_from)", self.client_address[0])
+        self.send_json({"error": "forbidden"}, 403)
+        return True
+
     # -- GET
     def do_GET(self):
         url = urlparse(self.path)
         q = {k: v[0] for k, v in parse_qs(url.query).items()}
         svc = self.svc
+        if self.refuse_outsider():
+            return
         try:
             if url.path in ("/", "/index.html"):
                 data = (HERE / "dashboard.html").read_bytes()
@@ -626,6 +704,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         url = urlparse(self.path)
         svc = self.svc
+        if self.refuse_outsider():
+            return
         try:
             body = self.read_json()
         except (ValueError, json.JSONDecodeError) as e:

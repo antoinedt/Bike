@@ -83,8 +83,11 @@ def config_path() -> Path:
 def load_config() -> dict:
     cfg = {
         "port": DEFAULT_PORT,
-        "bind": "0.0.0.0",
-        "idle_seconds": 300,      # no keyboard/mouse input for this long = idle, not counted
+        "bind": "0.0.0.0",        # all interfaces: the agents need 127.0.0.1, remote access its own IP
+        # Who may open the dashboard besides localhost: [] = anyone the firewall lets in,
+        # or CIDR subnets and/or "zerotier" (= this PC's ZeroTier subnets, detected live).
+        "allow_from": [],
+        "idle_seconds": 300,     # no keyboard/mouse input for this long = idle, not counted
         "report_seconds": 10,     # how often agents report to the service
         "limit_grace_seconds": 30,  # "time is up" pop-up -> program closed and blocked
         "tls_cert": "",

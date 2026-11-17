@@ -80,11 +80,41 @@ from an Administrator prompt, then restart the `ParentalControlService` schedule
 
 ## Accessing it remotely
 
-The firewall rule opens the port on **Private** networks only, so it works from your home
-Wi-Fi. To reach it from outside home, **do not** forward the port on your router.
-Instead, install [Tailscale](https://tailscale.com) (free) on the PC and on your phone,
-then open `http://<pc-tailscale-name>:8765`. Tailscale encrypts the traffic and only your
-devices can reach it.
+**Do not** forward the port on your router. Use ZeroTier (below) or another private
+VPN such as [Tailscale](https://tailscale.com).
+
+Without ZeroTier on the PC, the firewall rule opens the port on **Private** networks only,
+so the dashboard works from your home Wi-Fi.
+
+### From your phone with ZeroTier
+
+ZeroTier puts the PC and your phone on a private, encrypted network that works from
+anywhere (home Wi-Fi, mobile data, elsewhere).
+
+1. **On the PC**: install [ZeroTier One](https://www.zerotier.com/download/) and join
+   your network (tray icon → *Join New Network…* → your 16-character network ID). In
+   [my.zerotier.com](https://my.zerotier.com), tick *Auth* for the PC, like you did for the phone.
+2. **Apply it to Parental Control**: from an Administrator PowerShell in this folder, run
+   `powershell -ExecutionPolicy Bypass -File scripts\update.ps1` (or `install.ps1` on a
+   new install). It detects the ZeroTier adapter, then:
+   - limits the firewall rule to your ZeroTier subnet, on the ZeroTier adapter only
+     (any Windows network profile: ZeroTier networks often show as "Public").
+     **Home Wi-Fi access stops**: use ZeroTier from the phone at home too;
+   - sets `allow_from: ["zerotier"]`, so the service itself also refuses anything else.
+     It re-reads the ZeroTier subnet every minute. Localhost always works.
+
+   At the end it prints the address to use, e.g. `from your phone (ZeroTier): http://10.147.17.42:8765`.
+3. **Find the PC's ZeroTier IP yourself** if needed: in *my.zerotier.com* → your network →
+   *Members* → the PC's *Managed IPs*. You can also run `ipconfig` on the PC and look at
+   the *ZeroTier One [network id]* adapter, or run
+   `& "C:\Program Files (x86)\ZeroTier\One\zerotier-cli.bat" listnetworks` as Administrator.
+4. **On the phone**: turn ZeroTier One on (the network toggle), then open
+   `http://<pc-zerotier-ip>:8765` in the browser and sign in.
+
+If the PC's ZeroTier subnet changes (different network, new IP range in my.zerotier.com),
+run `update.ps1` again: it rewrites the firewall rule only when something changed.
+To go back to home-Wi-Fi access, set `allow_from` to `[]` in the config, leave the
+ZeroTier network, and run `update.ps1`.
 
 HTTPS is supported as an option: put `tls_cert` and `tls_key` (paths to PEM files) in
 `C:\ProgramData\ParentalControl\config.json`.
@@ -96,7 +126,8 @@ HTTPS is supported as an option: put `tls_cert` and `tls_key` (paths to PEM file
 | key              | default   | meaning                                               |
 |------------------|-----------|-------------------------------------------------------|
 | `port`           | `8765`    | dashboard port (re-run install with `-Port` to change) |
-| `bind`           | `0.0.0.0` | listen address (`127.0.0.1` = local only)             |
+| `bind`           | `0.0.0.0` | listen address (`127.0.0.1` = local only). Keep `0.0.0.0`: the agents use 127.0.0.1 |
+| `allow_from`     | `[]`      | who may open the dashboard besides localhost: `[]` = anyone the firewall lets in; CIDR subnets and/or `"zerotier"` (set automatically when ZeroTier is found) |
 | `idle_seconds`   | `300`     | no input for this long: time is not counted           |
 | `report_seconds` | `10`      | how often agents send data (2 s while a limit is close) |
 | `limit_grace_seconds` | `30` | time between the "time is up" pop-up and the program closing |

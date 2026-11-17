@@ -2,10 +2,12 @@
 <#
 .SYNOPSIS
   Updates an existing Parental Control install to the code in ..\src and restarts it
-  everywhere, without touching settings, password, data, firewall or the agent Run key.
+  everywhere. Keeps the password, data, settings and agent Run key.
 
   * stops the service (scheduled task) and the agent in every user session
   * copies the new files to C:\Program Files\ParentalControl
+  * refreshes the firewall rule if the ZeroTier network changed (joined, left, new
+    subnet), and switches the config to ZeroTier-only access when ZeroTier is present
   * starts the service again and waits for the dashboard to answer
   * starts the agent again in every logged-in user session, as that user
     (a one-off scheduled task per user, deleted right after)
@@ -25,6 +27,7 @@ $DataDir    = Join-Path $env:ProgramData  "ParentalControl"
 $TaskName   = "ParentalControlService"
 $RunKey     = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
 $SrcDir     = Join-Path (Split-Path -Parent $PSScriptRoot) "src"
+. (Join-Path $PSScriptRoot "remote-access.ps1")
 
 function Get-PcProcesses([string]$script) {
     Get-CimInstance Win32_Process -Filter "Name='python.exe' OR Name='pythonw.exe'" |
@@ -71,6 +74,13 @@ try {
     Write-Host "Copying $SrcDir to $InstallDir..."
     Remove-Item (Join-Path $InstallDir "__pycache__") -Recurse -Force -ErrorAction SilentlyContinue
     Copy-Item -Path (Join-Path $SrcDir "*") -Destination $InstallDir -Recurse -Force
+
+    # ---------------------------------------------------- remote access ---
+    Write-Host "Checking remote access (ZeroTier)..."
+    $zt = @(Set-DashboardFirewallRule $port)
+    if (Set-RemoteAccessConfig $cfg ($zt.Count -gt 0)) {
+        $cfg | ConvertTo-Json -Depth 5 | Set-Content -Path (Join-Path $DataDir "config.json") -Encoding UTF8
+    }
 
     # ----------------------------------------------------------- service ---
     Write-Host "Starting the service..."
@@ -125,6 +135,10 @@ try {
         Write-Host "  agent for ${user}: $(if ($new) { "running, pid $($new.ProcessId -join ',') session $($new[0].SessionId)" } else { 'NOT running' })"
         if (-not $new) { $ok = $false }
     }
+    $listen = (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue).LocalAddress -join ", "
+    Write-Host "  listening on: $listen port $port"
+    Write-Host "  firewall rule: $((Get-NetFirewallRule -DisplayName $FirewallRuleName -ErrorAction SilentlyContinue).Description)"
+    foreach ($a in $zt) { Write-Host "  from your phone (ZeroTier): ${scheme}://$(if ($a.IP -like '*:*') { "[$($a.IP)]" } else { $a.IP }):$port" }
     if ($ok) { Write-Host "Update complete." -ForegroundColor Green }
     else { Write-Host "Update finished with problems (see above)." -ForegroundColor Yellow; exit 1 }
 } catch {
