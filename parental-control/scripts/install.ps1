@@ -122,6 +122,7 @@ Set-ItemProperty -Path $RunKey -Name "ParentalControlAgent" `
 # -------------------------------------------------------------- firewall ---
 Write-Host "Opening TCP port $Port in the firewall..."
 $zt = @(Set-DashboardFirewallRule $Port)
+Confirm-DashboardFirewallRule $Port | Out-Null  # never leave the dashboard without a rule
 
 # ----------------------------------------------------------------- start ---
 Start-ScheduledTask -TaskName $TaskName

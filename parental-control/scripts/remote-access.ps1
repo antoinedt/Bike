@@ -96,21 +96,68 @@ function Set-DashboardFirewallRule([int]$Port) {
         Write-Host "  firewall rule unchanged ($wanted)"
         return $zt
     }
+    # Create the new rule first (under a temporary name) so a failure never leaves no rule.
+    $tmpName = "$FirewallRuleName (new)"
+    $rule = @{
+        DisplayName = $tmpName; Direction = "Inbound"; Action = "Allow"; Protocol = "TCP"
+        LocalPort = $Port; Profile = "Any"; RemoteAddress = $subnets; ErrorAction = "Stop"
+    }
     try {
-        # Create the new rule first (under a temporary name) so a failure never leaves no rule.
-        $tmpName = "$FirewallRuleName (new)"
-        New-NetFirewallRule -DisplayName $tmpName -Description $wanted -Direction Inbound -Action Allow `
-            -Protocol TCP -LocalPort $Port -Profile Any -RemoteAddress $subnets -InterfaceAlias $aliases `
-            -ErrorAction Stop | Out-Null
+        try {
+            # Adapter names look like "ZeroTier One [8850338390ed627c]" and -InterfaceAlias
+            # takes wildcards, where "[...]" is a character class: escape the brackets or
+            # the name doesn't match itself ("The specified interface was not found").
+            $escaped = @($aliases | ForEach-Object { [Management.Automation.WildcardPattern]::Escape($_) })
+            New-NetFirewallRule @rule -Description $wanted -InterfaceAlias $escaped | Out-Null
+            $scope = "on $($aliases -join ', ')"
+        } catch {
+            Write-Warning "could not limit the rule to the ZeroTier adapter ($($_.Exception.Message.Trim())); limiting it to the ZeroTier subnet only"
+            Remove-RuleQuietly $tmpName
+            # Different Description, so the next update tries the adapter restriction again.
+            New-NetFirewallRule @rule -Description "$wanted; adapter restriction failed" | Out-Null
+            $scope = "(any adapter)"
+        }
         $existing | Remove-NetFirewallRule -ErrorAction SilentlyContinue
         Get-NetFirewallRule -DisplayName $tmpName -ErrorAction Stop | Set-NetFirewallRule -NewDisplayName $FirewallRuleName -ErrorAction Stop
-        Write-Host "  firewall: port $Port open to ZeroTier only: $($subnets -join ', ') on $($aliases -join ', ')"
+        Write-Host "  firewall: port $Port open to ZeroTier only: $($subnets -join ', ') $scope"
         return $zt
     } catch {
-        try { Get-NetFirewallRule -DisplayName "$FirewallRuleName (new)" -ErrorAction Stop | Remove-NetFirewallRule } catch {}
-        Write-Warning "could not set the ZeroTier firewall rule ($($_.Exception.Message)); keeping the existing rule and settings"
+        Remove-RuleQuietly $tmpName
+        Write-Warning "could not set the ZeroTier firewall rule ($($_.Exception.Message.Trim())); keeping the existing rule and settings"
+        Confirm-DashboardFirewallRule $Port | Out-Null
         return @()  # don't switch the config to ZeroTier-only if the firewall isn't ready for it
     }
+}
+
+function Remove-RuleQuietly([string]$DisplayName) {
+    try { Get-NetFirewallRule -DisplayName $DisplayName -ErrorAction Stop | Remove-NetFirewallRule -ErrorAction Stop } catch {}
+}
+
+function Confirm-DashboardFirewallRule([int]$Port) {
+    <# Safety net: the dashboard must never be left without a firewall rule. If none
+       exists, (re)create the original Private-network rule. Never throws.
+       Returns $true if a rule exists afterwards. #>
+    if (@(Get-DashboardFirewallRules).Count) { return $true }
+    try {
+        New-PrivateFirewallRule $Port
+        Write-Host "  safety net: no dashboard firewall rule existed; created one for port $Port on Private networks"
+        return $true
+    } catch {
+        Write-Warning "safety net: could not create any firewall rule ($($_.Exception.Message.Trim())): the dashboard only works from this PC"
+        return $false
+    }
+}
+
+function Get-DashboardFirewallSummary {
+    <# One line describing the rule(s), including which adapter they are limited to. #>
+    $rules = @(Get-DashboardFirewallRules)
+    if (-not $rules) { return "none" }
+    ($rules | ForEach-Object {
+        $desc = if ($_.Description) { $_.Description } else { "'$($_.DisplayName)' (created by an older install)" }
+        $iface = try { ($_ | Get-NetFirewallInterfaceFilter -ErrorAction Stop).InterfaceAlias -join "," } catch { "?" }
+        $addr  = try { ($_ | Get-NetFirewallAddressFilter -ErrorAction Stop).RemoteAddress -join "," } catch { "?" }
+        "$desc [profile=$($_.Profile); remote=$addr; interface=$iface]"
+    }) -join " | "
 }
 
 function Set-RemoteAccessConfig($Cfg, [bool]$ZeroTier) {

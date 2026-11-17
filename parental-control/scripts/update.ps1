@@ -88,6 +88,7 @@ try {
         $zt = @()
         Write-Warning "remote access (ZeroTier) step skipped: $($_.Exception.Message). Firewall rule and settings left as they were."
     }
+    Confirm-DashboardFirewallRule $port | Out-Null  # never leave the dashboard without a rule
 
     # ----------------------------------------------------------- service ---
     Write-Host "Starting the service..."
@@ -146,8 +147,9 @@ try {
         $listen = (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction Stop).LocalAddress -join ", "
         Write-Host "  listening on: $listen port $port"
     } catch { Write-Host "  listening on: (could not read: $($_.Exception.Message))" }
-    $rules = @(Get-DashboardFirewallRules)
-    Write-Host "  firewall rule: $(if ($rules) { ($rules | ForEach-Object { if ($_.Description) { $_.Description } else { "'$($_.DisplayName)' (created by an older install)" } }) -join ' | ' } else { 'none' })"
+    $fw = Get-DashboardFirewallSummary
+    Write-Host "  firewall rule: $fw"
+    if ($fw -eq "none") { $ok = $false }
     foreach ($a in $zt) { Write-Host "  from your phone (ZeroTier): ${scheme}://$(if ($a.IP -like '*:*') { "[$($a.IP)]" } else { $a.IP }):$port" }
     if ($ok) { Write-Host "Update complete." -ForegroundColor Green }
     else { Write-Host "Update finished with problems (see above)." -ForegroundColor Yellow; exit 1 }
