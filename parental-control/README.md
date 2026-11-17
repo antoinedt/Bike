@@ -9,7 +9,13 @@ A small, self-hosted parental control for a Windows PC where you are the adminis
 - **Remote control** from your phone or another computer: list running programs,
   **stop** one, or **block** a program (for one child or for everyone). A blocked program
   is closed within about 2 seconds each time it starts, and the child sees a message.
-- **Activity log**: stops, blocks, failed dashboard logins, and a warning when a
+- **Daily time limits** per program, for one child or for each child (*Limits* tab).
+  Programs are unlimited unless you set a limit. A limit counts minutes of focused use
+  per day. You can set a permanent daily limit, or change it **for today only**
+  (more or less time, unlimited, or 0 = not allowed today). The child gets a pop-up at
+  15 and 5 minutes left. At 0, a "time is up" pop-up appears, and 30 seconds later the
+  program is closed and blocked until midnight (the same blocking as above).
+- **Activity log**: stops, blocks, limits reached, failed dashboard logins, and a warning when a
   logged-in user's tracking agent stops reporting (for example, if someone kills it).
 
 ## How it works
@@ -62,6 +68,10 @@ sign-in.
 
 Options: `-Port 9000` to use another port.
 
+Update to a newer version (keeps settings, password and data, and restarts the service and
+the agent of every logged-in user): `powershell -ExecutionPolicy Bypass -File scripts\update.ps1`
+from an Administrator PowerShell.
+
 Uninstall: `scripts\uninstall.ps1` (add `-RemoveData` to also delete the usage history).
 
 Change the password: `python "C:\Program Files\ParentalControl\service.py" set-password`
@@ -88,7 +98,8 @@ HTTPS is supported as an option: put `tls_cert` and `tls_key` (paths to PEM file
 | `port`           | `8765`    | dashboard port (re-run install with `-Port` to change) |
 | `bind`           | `0.0.0.0` | listen address (`127.0.0.1` = local only)             |
 | `idle_seconds`   | `300`     | no input for this long: time is not counted           |
-| `report_seconds` | `10`      | how often agents send data                            |
+| `report_seconds` | `10`      | how often agents send data (2 s while a limit is close) |
+| `limit_grace_seconds` | `30` | time between the "time is up" pop-up and the program closing |
 | `tls_cert/key`   | empty     | enable HTTPS                                          |
 
 Logs: `C:\ProgramData\ParentalControl\service.log`.

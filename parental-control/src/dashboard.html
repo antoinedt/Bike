@@ -57,6 +57,8 @@
   #login form { background: var(--card); padding: 24px; border-radius: 12px; border: 1px solid var(--line); width: min(340px, calc(100% - 32px)); display: grid; gap: 12px; }
   #toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 9px 14px; border-radius: 8px; display: none; z-index: 20; max-width: calc(100% - 32px); }
   .tag { display: inline-block; font-size: 12px; padding: 1px 7px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); }
+  .tag.warn { background: transparent; border: 1px solid var(--warn); color: var(--warn); }
+  .tag.bad { background: transparent; border: 1px solid var(--danger); color: var(--danger); }
   .hidden { display: none !important; }
   @media (max-width: 560px) { .bars .row { grid-template-columns: 100px 1fr 58px; } .hide-sm { display: none; } }
 </style>
@@ -78,6 +80,7 @@
     <button data-tab="stats">Stats</button>
     <button data-tab="processes">Processes</button>
     <button data-tab="blocklist">Blocked</button>
+    <button data-tab="limits">Limits</button>
     <button data-tab="events">Activity</button>
   </nav>
   <button class="btn small" onclick="logout()">Sign out</button>
@@ -135,6 +138,49 @@
       <div class="tablewrap"><table>
         <thead><tr><th>Program</th><th>Applies to</th><th class="hide-sm">Since</th><th></th></tr></thead>
         <tbody id="blocks"></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <section id="tab-limits" class="hidden">
+    <div class="card">
+      <h2>Set a time limit</h2>
+      <div class="controls">
+        <input id="lmName" placeholder="program.exe" style="flex:1;min-width:160px">
+        <select id="lmUser"></select>
+        <input id="lmMinutes" type="number" min="0" max="1440" step="1" placeholder="minutes" style="width:110px">
+        <select id="lmScope">
+          <option value="default">Every day</option>
+          <option value="today">Today only</option>
+        </select>
+        <button class="btn primary" onclick="saveLimit()">Save</button>
+      </div>
+      <div class="muted small">
+        Programs have no limit unless you set one. The limit counts minutes the program is in front (focused) per day,
+        for each user separately. The child gets a warning at 15 and 5 minutes left. At 0, the program closes
+        <span id="lmGrace">30</span> seconds later and stays blocked until midnight.
+        <b>Today only</b> replaces the daily limit for today: leave minutes empty for unlimited today. 0 minutes = not allowed.
+      </div>
+    </div>
+    <div class="card">
+      <h2>Today</h2>
+      <div class="tablewrap"><table>
+        <thead><tr><th>User</th><th>Program</th><th>Used</th><th>Limit</th><th>Left</th><th></th></tr></thead>
+        <tbody id="lmStatus"></tbody>
+      </table></div>
+    </div>
+    <div class="card">
+      <h2>Daily limits</h2>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Program</th><th>Applies to</th><th>Per day</th><th></th></tr></thead>
+        <tbody id="lmDefaults"></tbody>
+      </table></div>
+    </div>
+    <div class="card">
+      <h2>Changes for today only</h2>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Program</th><th>Applies to</th><th>Today</th><th></th></tr></thead>
+        <tbody id="lmOverrides"></tbody>
       </table></div>
     </div>
   </section>
@@ -239,6 +285,7 @@ function renderProcesses() {
   $("procs").innerHTML = list.map(p => `<tr><td>${esc(p.name)} <span class="muted small">#${p.pid}</span></td><td>${esc(p.user)}</td>
     <td class="hide-sm">${p.memory_mb ?? ""} MB</td><td class="hide-sm small muted">${esc((p.started || "").replace("T", " "))}</td>
     <td class="actions"><button class="btn danger" data-act="kill" data-pid="${p.pid}" data-name="${esc(p.name)}">Stop</button>
+    <button class="btn" data-act="limitfor" data-name="${esc(p.name)}" data-user="${esc(p.user)}">Limit</button>
     <button class="btn danger solid" data-act="block" data-name="${esc(p.name)}" data-user="${esc(p.user)}">Block</button></td></tr>`).join("")
     || '<tr><td colspan="5" class="muted">No processes.</td></tr>';
 }
@@ -275,8 +322,63 @@ async function unblock(name, user) {
   loadBlocklist();
 }
 
+// ---------- time limits
+const whoTag = (u) => u ? esc(u) : '<span class="tag">everyone</span>';
+const fmtMin = (m) => m === null || m === undefined ? "unlimited" : m === 0 ? "not allowed" : fmt(m * 60);
+async function loadLimits() {
+  userOptions($("lmUser"), "Each user");
+  const d = await api("/api/limits");
+  $("lmGrace").textContent = d.grace_seconds;
+  $("lmStatus").innerHTML = d.status.map(s => {
+    const left = s.state === "blocked" ? '<span class="tag bad">blocked until midnight</span>'
+      : s.state === "closing" ? '<span class="tag bad">time up, closing</span>'
+      : s.state === "unlimited" ? '<span class="muted">unlimited</span>'
+      : s.remaining_seconds <= 300 ? `<span class="tag warn">${fmt(s.remaining_seconds)}</span>` : fmt(s.remaining_seconds);
+    const limited = s.minutes !== null;
+    return `<tr><td>${esc(s.user)}</td><td><b>${esc(s.app)}</b></td><td>${fmt(s.used_seconds)}</td>
+      <td>${fmtMin(s.minutes)}${s.source === "today" ? ' <span class="tag">today</span>' : ""}</td><td>${left}</td>
+      <td class="actions">${limited ? `<button class="btn" data-act="extend" data-name="${esc(s.app)}" data-user="${esc(s.user)}" data-min="${s.minutes}">+15 min today</button>
+        <button class="btn" data-act="unlimit" data-name="${esc(s.app)}" data-user="${esc(s.user)}">Unlimited today</button>` : ""}</td></tr>`;
+  }).join("") || '<tr><td colspan="6" class="muted">No limits set: every program is unlimited.</td></tr>';
+  $("lmDefaults").innerHTML = d.defaults.map(l => `<tr><td><b>${esc(l.name)}</b></td><td>${whoTag(l.user)}</td><td>${fmtMin(l.minutes)}</td>
+    <td class="actions"><button class="btn" data-act="editlimit" data-name="${esc(l.name)}" data-user="${esc(l.user)}" data-min="${l.minutes}">Edit</button>
+    <button class="btn danger" data-act="rmlimit" data-scope="default" data-name="${esc(l.name)}" data-user="${esc(l.user)}">Remove</button></td></tr>`).join("")
+    || '<tr><td colspan="4" class="muted">No daily limits.</td></tr>';
+  $("lmOverrides").innerHTML = d.overrides.map(l => `<tr><td><b>${esc(l.name)}</b></td><td>${whoTag(l.user)}</td><td>${fmtMin(l.minutes)}</td>
+    <td class="actions"><button class="btn danger" data-act="rmlimit" data-scope="today" data-name="${esc(l.name)}" data-user="${esc(l.user)}">Remove</button></td></tr>`).join("")
+    || '<tr><td colspan="4" class="muted">No changes for today.</td></tr>';
+}
+async function setLimit(name, user, minutes, scope) {
+  try {
+    const r = await api("/api/limit", { name, user, minutes, scope });
+    toast(`${name}: ${fmtMin(minutes)}${scope === "today" ? " today" : " per day"}${r.killed ? ` (${r.killed} closed)` : ""}`);
+    return true;
+  } catch (e) { toast(e.message); return false; }
+  finally { loadLimits(); }
+}
+async function saveLimit() {
+  let name = $("lmName").value.trim();
+  if (!name) return;
+  if (!name.includes(".")) name += ".exe";
+  const raw = $("lmMinutes").value.trim(), scope = $("lmScope").value;
+  if (raw === "" && scope === "default") { toast("Enter minutes, or remove the daily limit to make it unlimited"); return; }
+  if (await setLimit(name, $("lmUser").value, raw === "" ? null : Number(raw), scope)) { $("lmName").value = ""; $("lmMinutes").value = ""; }
+}
+async function removeLimit(name, user, scope) {
+  try { await api("/api/limit/remove", { name, user, scope }); toast(`${name}: ${scope === "today" ? "today's change removed" : "daily limit removed"}`); }
+  catch (e) { toast(e.message); }
+  loadLimits();
+}
+function prefillLimit(name, user, minutes) {
+  showTab("limits");
+  $("lmName").value = name; $("lmMinutes").value = minutes ?? ""; $("lmScope").value = "default";
+  setTimeout(() => { $("lmUser").value = user; $("lmMinutes").focus(); }, 0);  // after userOptions() ran
+}
+
 const EVENT_LABELS = { killed: "Stopped", blocked: "Blocked start", block_added: "Block added", block_removed: "Block removed",
-  agent_missing: "⚠ Tracking stopped", agent_back: "Tracking resumed", service_started: "Service started", login_failed: "Failed login" };
+  agent_missing: "⚠ Tracking stopped", agent_back: "Tracking resumed", service_started: "Service started", login_failed: "Failed login",
+  limit_set: "Daily limit set", limit_removed: "Daily limit removed", limit_override_set: "Limit changed for today",
+  limit_override_removed: "Today's change removed", limit_reached: "⏱ Time limit reached", limit_blocked: "Closed (time limit)" };
 async function loadEvents() {
   const ev = await api("/api/events");
   $("events").innerHTML = ev.map(e => `<tr><td class="small muted" style="white-space:nowrap">${esc(e.ts.replace("T", " "))}</td>
@@ -284,7 +386,7 @@ async function loadEvents() {
     || '<tr><td colspan="4" class="muted">Nothing yet.</td></tr>';
 }
 
-const loaders = { overview: loadOverview, stats: loadStats, processes: loadProcesses, blocklist: loadBlocklist, events: loadEvents };
+const loaders = { overview: loadOverview, stats: loadStats, processes: loadProcesses, blocklist: loadBlocklist, limits: loadLimits, events: loadEvents };
 function showTab(tab) {
   currentTab = tab;
   document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
@@ -300,12 +402,18 @@ document.addEventListener("click", e => {
   if (d.act === "kill") killPid(Number(d.pid), d.name);
   else if (d.act === "block") blockName(d.name, d.user);
   else if (d.act === "unblock") unblock(d.name, d.user);
+  else if (d.act === "limitfor") prefillLimit(d.name.toLowerCase(), d.user);
+  else if (d.act === "editlimit") prefillLimit(d.name, d.user, Number(d.min));
+  else if (d.act === "rmlimit") removeLimit(d.name, d.user, d.scope);
+  else if (d.act === "extend") setLimit(d.name, d.user, Number(d.min) + 15, "today");
+  else if (d.act === "unlimit") setLimit(d.name, d.user, null, "today");
 });
 $("tabs").addEventListener("click", e => { if (e.target.dataset.tab) showTab(e.target.dataset.tab); });
 $("stUser").onchange = $("stRange").onchange = loadStats;
 $("prUser").onchange = renderProcesses;
 $("blName").addEventListener("keydown", e => { if (e.key === "Enter") addBlock(); });
-setInterval(() => { if (currentTab === "overview" && document.visibilityState === "visible") refresh(); }, 10000);
+["lmName", "lmMinutes"].forEach(id => $(id).addEventListener("keydown", e => { if (e.key === "Enter") saveLimit(); }));
+setInterval(() => { if ((currentTab === "overview" || currentTab === "limits") && document.visibilityState === "visible") refresh(); }, 10000);
 
 fetch("/api/session").then(r => r.json()).then(s => s.logged_in ? init() : showLogin());
 </script>

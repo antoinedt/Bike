@@ -4,7 +4,8 @@ so there is no window).
 Every second it looks at which application owns the focused window and adds
 that second to the app's counter, unless the user is idle or the session is
 locked. Counters are sent to the local service every few seconds. Messages
-from the service (e.g. "Game.exe is blocked") are shown in a message box.
+from the service (e.g. "Game.exe is blocked", "5 minutes left on game.exe
+today") are shown in a message box.
 """
 from __future__ import annotations
 
@@ -82,9 +83,11 @@ if IS_WIN:
         kernel32.CreateMutexW(None, False, "Local\\ParentalControlAgent")
         return ctypes.get_last_error() != 183  # ERROR_ALREADY_EXISTS
 
-    def show_message(text: str) -> None:
-        # MB_ICONINFORMATION | MB_TOPMOST | MB_SETFOREGROUND
-        threading.Thread(target=user32.MessageBoxW, args=(None, text, "Parental control", 0x40 | 0x40000 | 0x10000),
+    def show_message(text: str, level: str = "info") -> None:
+        # MB_ICONWARNING (time-limit warnings) or MB_ICONINFORMATION, | MB_TOPMOST | MB_SETFOREGROUND
+        icon = 0x30 if level == "warning" else 0x40
+        title = "Parental control - time limit" if level == "warning" else "Parental control"
+        threading.Thread(target=user32.MessageBoxW, args=(None, text, title, icon | 0x40000 | 0x10000),
                          daemon=True).start()
 
     def current_user() -> str:
@@ -99,8 +102,8 @@ else:  # non-Windows: lets the agent run for development/testing
     def single_instance() -> bool:
         return True
 
-    def show_message(text: str) -> None:
-        print("[message]", text)
+    def show_message(text: str, level: str = "info") -> None:
+        print(f"[{level}]", text)
 
     def current_user() -> str:
         return os.environ.get("USER", "")
@@ -165,9 +168,14 @@ class Agent:
         for k in [(r["day"], r["hour"], r["app"]) for r in rows]:
             self.pending.pop(k, None)
         self.idle_limit = int(resp.get("idle_seconds", self.idle_limit))
+        # The service lowers report_seconds while a time limit is close, so that the
+        # count is precise and the 5 / 0 minute warnings arrive on time.
         self.report_every = max(2, int(resp.get("report_seconds", self.report_every)))
         for msg in resp.get("notices", []):
-            show_message(msg)
+            if isinstance(msg, dict):  # {"text": ..., "level": "info" | "warning"}
+                show_message(str(msg.get("text", "")), str(msg.get("level", "info")))
+            else:  # older service versions sent plain strings
+                show_message(str(msg))
 
     def run(self) -> None:
         last = time.monotonic()

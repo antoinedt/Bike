@@ -24,6 +24,31 @@ PROTECTED_NAMES = {
     "shellexperiencehost.exe", "textinputhost.exe", "conhost.exe", "lockapp.exe",
 }
 
+# ----------------------------------------------------------- time limits ----
+# A limit is a number of minutes of *focused* use per day, per program, per user
+# ('' = applies to each user separately). No limit = unlimited.
+MAX_LIMIT_MINUTES = 24 * 60
+# Pop-up warnings at these numbers of minutes remaining. 0 is the "time is up"
+# notice, shown `limit_grace_seconds` before the program is closed and blocked.
+LIMIT_WARN_MINUTES = (15, 5, 0)
+
+
+def parse_limit_minutes(value, allow_none: bool = False) -> int | None:
+    """Validate a limit coming from the dashboard. None/'' = unlimited (if allowed)."""
+    if value is None or value == "":
+        if allow_none:
+            return None
+        raise ValueError("minutes is required")
+    if isinstance(value, bool):
+        raise ValueError("minutes must be a whole number")
+    try:
+        m = int(value)
+    except (TypeError, ValueError):
+        raise ValueError("minutes must be a whole number") from None
+    if m != float(value) or not 0 <= m <= MAX_LIMIT_MINUTES:
+        raise ValueError(f"minutes must be a whole number between 0 and {MAX_LIMIT_MINUTES}")
+    return m
+
 
 def data_dir() -> Path:
     """Directory holding the database, config and logs (service side only)."""
@@ -61,6 +86,7 @@ def load_config() -> dict:
         "bind": "0.0.0.0",
         "idle_seconds": 300,      # no keyboard/mouse input for this long = idle, not counted
         "report_seconds": 10,     # how often agents report to the service
+        "limit_grace_seconds": 30,  # "time is up" pop-up -> program closed and blocked
         "tls_cert": "",
         "tls_key": "",
         "password": None,

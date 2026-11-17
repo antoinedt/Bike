@@ -16,6 +16,7 @@ import getpass
 import json
 import logging
 import logging.handlers
+import math
 import os
 import re
 import secrets
@@ -33,8 +34,8 @@ from urllib.parse import parse_qs, urlparse
 import psutil
 
 from common import (
-    PROTECTED_NAMES, SYSTEM_ACCOUNTS, check_password, data_dir, hash_password,
-    load_config, norm_app, norm_user, save_config,
+    LIMIT_WARN_MINUTES, PROTECTED_NAMES, SYSTEM_ACCOUNTS, check_password, data_dir, hash_password,
+    load_config, norm_app, norm_user, parse_limit_minutes, save_config,
 )
 
 HERE = Path(__file__).resolve().parent
@@ -55,6 +56,21 @@ CREATE TABLE IF NOT EXISTS blocklist (
     created TEXT NOT NULL,
     PRIMARY KEY (name, user)
 );
+CREATE TABLE IF NOT EXISTS limits (     -- permanent daily limits (no row = unlimited)
+    name    TEXT    NOT NULL,          -- executable name, lower case
+    user    TEXT    NOT NULL DEFAULT '',  -- '' = each user
+    minutes INTEGER NOT NULL,          -- focused minutes per day
+    created TEXT    NOT NULL,
+    PRIMARY KEY (name, user)
+);
+CREATE TABLE IF NOT EXISTS limit_overrides (  -- one-day overrides, win over `limits`
+    day     TEXT    NOT NULL,          -- YYYY-MM-DD the override applies to
+    name    TEXT    NOT NULL,
+    user    TEXT    NOT NULL DEFAULT '',
+    minutes INTEGER,                   -- NULL = unlimited for that day
+    created TEXT    NOT NULL,
+    PRIMARY KEY (day, name, user)
+);
 CREATE TABLE IF NOT EXISTS events (
     id     INTEGER PRIMARY KEY AUTOINCREMENT,
     ts     TEXT NOT NULL,
@@ -65,6 +81,15 @@ CREATE TABLE IF NOT EXISTS events (
 """
 
 DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def program_name_error(name: str) -> str | None:
+    """Why `name` can't be blocked or limited, or None if it can."""
+    if not name or "\\" in name or "/" in name:
+        return "give an executable name, e.g. robloxplayerbeta.exe"
+    if name in PROTECTED_NAMES:
+        return f"{name} is a Windows component and cannot be blocked or limited"
+    return None
 
 
 def now_iso() -> str:
@@ -145,6 +170,39 @@ class Store:
     def remove_block(self, name: str, user: str) -> None:
         self._x("DELETE FROM blocklist WHERE name=? AND user=?", (name, user))
 
+    # -- time limits
+    def limits(self) -> list[dict]:
+        return [dict(r) for r in self._q("SELECT name, user, minutes, created FROM limits ORDER BY name, user")]
+
+    def set_limit(self, name: str, user: str, minutes: int) -> None:
+        self._x("INSERT INTO limits(name,user,minutes,created) VALUES(?,?,?,?) "
+                "ON CONFLICT(name,user) DO UPDATE SET minutes = excluded.minutes", (name, user, minutes, now_iso()))
+
+    def remove_limit(self, name: str, user: str) -> None:
+        self._x("DELETE FROM limits WHERE name=? AND user=?", (name, user))
+
+    def overrides(self, day: str) -> list[dict]:
+        return [dict(r) for r in self._q(
+            "SELECT day, name, user, minutes, created FROM limit_overrides WHERE day=? ORDER BY name, user", (day,))]
+
+    def set_override(self, day: str, name: str, user: str, minutes: int | None) -> None:
+        self._x("INSERT INTO limit_overrides(day,name,user,minutes,created) VALUES(?,?,?,?,?) "
+                "ON CONFLICT(day,name,user) DO UPDATE SET minutes = excluded.minutes", (day, name, user, minutes, now_iso()))
+
+    def remove_override(self, day: str, name: str, user: str) -> None:
+        self._x("DELETE FROM limit_overrides WHERE day=? AND name=? AND user=?", (day, name, user))
+
+    def purge_overrides(self, before_day: str) -> None:
+        self._x("DELETE FROM limit_overrides WHERE day < ?", (before_day,))
+
+    def usage_by_user_app(self, day: str, apps: set[str]) -> dict[tuple[str, str], float]:
+        if not apps:
+            return {}
+        marks = ",".join("?" * len(apps))
+        rows = self._q(f"SELECT user, app, SUM(seconds) FROM usage WHERE day=? AND app IN ({marks}) GROUP BY user, app",
+                       [day, *sorted(apps)])
+        return {(r[0], r[1]): r[2] for r in rows}
+
     # -- events
     def event(self, kind: str, user: str = "", detail: str = "") -> None:
         log.info("event %s user=%s %s", kind, user, detail)
@@ -164,7 +222,14 @@ class Service:
         self.port = int(cfg["port"])
         self.sessions: dict[str, float] = {}          # token -> expiry
         self.live: dict[str, dict] = {}                # user -> last agent heartbeat
-        self.notices: dict[str, list[str]] = {}        # user -> messages for the agent to display
+        self.notices: dict[str, list[dict]] = {}       # user -> messages for the agent to display
+        self.known_users: set[str] = set(store.users())
+        # Time limits: recomputed by check_limits() every couple of seconds.
+        self.limit_lock = threading.Lock()
+        self.limit_day = ""
+        self.limit_state: dict[tuple, dict] = {}       # (user, app, minutes) -> warnings sent / time-up moment
+        self.limit_blocked: set[tuple[str, str]] = set()  # (app, user) blocked until midnight
+        self.limit_near: set[str] = set()              # users close to a limit: agent reports faster
         self.missing_reported: set[str] = set()
         self.kill_log_throttle: dict[tuple, float] = {}
         self.failed_logins: list[float] = []
@@ -184,11 +249,11 @@ class Service:
                 return False
         return False
 
-    def notify(self, user: str, msg: str) -> None:
+    def notify(self, user: str, msg: str, level: str = "info") -> None:
         with self.lock:
             lst = self.notices.setdefault(user, [])
-            if msg not in lst:
-                lst.append(msg)
+            if all(n["text"] != msg for n in lst):
+                lst.append({"text": msg, "level": level})
 
     def user_processes(self) -> list[dict]:
         out = []
@@ -225,20 +290,25 @@ class Service:
 
     # -------------------------------------------------------- enforcement --
     def enforce_once(self) -> int:
-        rules = self.store.block_rules()
-        if not rules:
+        """Kill processes that are blocked, either permanently (blocklist) or until
+        midnight because their daily time limit is used up."""
+        by_name: dict[str, dict[str, str]] = {}  # name -> {user ('' = all): "block" | "limit"}
+        for name, user in self.limit_blocked:
+            by_name.setdefault(name, {})[user] = "limit"
+        for r in self.store.block_rules():
+            by_name.setdefault(r["name"], {})[r["user"]] = "block"  # a permanent block wins
+        if not by_name:
             return 0
-        by_name: dict[str, set[str]] = {}
-        for r in rules:
-            by_name.setdefault(r["name"], set()).add(r["user"])
         killed = 0
         for p in psutil.process_iter(["pid", "name", "username"]):
             name = norm_app(p.info["name"])
-            users = by_name.get(name)
-            if not users:
+            kinds = by_name.get(name)
+            if not kinds:
                 continue
             user = norm_user(p.info["username"])
-            if user in SYSTEM_ACCOUNTS or not ("" in users or user in users) or self.is_protected(p, name):
+            matched = {kinds.get(user), kinds.get("")}
+            kind = "block" if "block" in matched else "limit" if "limit" in matched else None
+            if user in SYSTEM_ACCOUNTS or kind is None or self.is_protected(p, name):
                 continue
             try:
                 p.kill()
@@ -248,9 +318,104 @@ class Service:
             key = (name, user)
             if time.time() - self.kill_log_throttle.get(key, 0) > 60:
                 self.kill_log_throttle[key] = time.time()
-                self.store.event("blocked", user, f"{p.info['name']} was started and closed (blocked)")
-                self.notify(user, f"{p.info['name']} is blocked by parental control.")
+                if kind == "limit":
+                    self.store.event("limit_blocked", user, f"{p.info['name']} was closed: daily time limit reached")
+                    self.notify(user, f"{p.info['name']} has used up today's time and is blocked until midnight.",
+                                "warning")
+                else:
+                    self.store.event("blocked", user, f"{p.info['name']} was started and closed (blocked)")
+                    self.notify(user, f"{p.info['name']} is blocked by parental control.")
         return killed
+
+    # -------------------------------------------------------- time limits --
+    @staticmethod
+    def resolve_limit(app: str, user: str, defaults: dict, overrides: dict) -> tuple[int | None, str | None]:
+        """Effective limit for one user and app: (minutes or None = unlimited, source).
+        Today's overrides win over permanent limits; a rule for the user wins over
+        a rule for everyone. source is None when no rule applies at all."""
+        for source, table, u in (("today", overrides, user), ("today", overrides, ""),
+                                 ("default", defaults, user), ("default", defaults, "")):
+            if (app, u) in table:
+                return table[(app, u)], source
+        return None, None
+
+    def limit_status(self, day: str) -> list[dict]:
+        defaults = {(r["name"], r["user"]): r["minutes"] for r in self.store.limits()}
+        overrides = {(r["name"], r["user"]): r["minutes"] for r in self.store.overrides(day)}
+        apps = {k[0] for k in defaults} | {k[0] for k in overrides}
+        if not apps:
+            return []
+        used = self.store.usage_by_user_app(day, apps)
+        with self.lock:
+            users = set(self.known_users) | set(self.live)
+        users |= {k[1] for k in defaults} | {k[1] for k in overrides} | {k[0] for k in used}
+        try:
+            users |= {norm_user(u.name) for u in psutil.users()}
+        except Exception:
+            pass
+        users -= SYSTEM_ACCOUNTS
+        out = []
+        for app in sorted(apps):
+            for user in sorted(users):
+                minutes, source = self.resolve_limit(app, user, defaults, overrides)
+                if source is None:
+                    continue
+                sec = used.get((user, app), 0.0)
+                out.append({
+                    "user": user, "app": app, "minutes": minutes, "source": source,
+                    "used_seconds": round(sec),
+                    "remaining_seconds": None if minutes is None else max(0, round(minutes * 60 - sec)),
+                })
+        return out
+
+    def check_limits(self, now: float | None = None) -> list[dict]:
+        """Send the 15 / 5 / 0 minute warnings and work out which programs are
+        blocked until midnight. Returns today's per-user status for the dashboard."""
+        now = time.time() if now is None else now
+        grace = max(0, int(self.cfg.get("limit_grace_seconds", 30)))
+        with self.limit_lock:
+            day = date.today().isoformat()
+            if day != self.limit_day:  # midnight: everything starts again from zero
+                self.limit_day, self.limit_state = day, {}
+                self.store.purge_overrides((date.today() - timedelta(days=30)).isoformat())
+            status = self.limit_status(day)
+            blocked, near = set(), set()
+            for s in status:
+                user, app, minutes, rem = s["user"], s["app"], s["minutes"], s["remaining_seconds"]
+                if minutes is None:
+                    s["state"] = "unlimited"
+                    continue
+                # Keyed by the limit too: if the parent changes it, warnings start over.
+                st = self.limit_state.setdefault((user, app, minutes), {"warned": set(), "up_at": None})
+                if rem <= 0:
+                    if st["up_at"] is None:
+                        if minutes == 0:  # not allowed at all today: no countdown
+                            st["up_at"] = now - grace
+                        else:
+                            st["up_at"] = now
+                            self.notify(user, f"Time is up for {app} today. It will close in {grace} seconds: "
+                                              f"save your work now.", "warning")
+                            self.store.event("limit_reached", user, f"{app}: {minutes} min used")
+                    if now - st["up_at"] >= grace:
+                        blocked.add((app, user))
+                        s["state"] = "blocked"
+                    else:
+                        near.add(user)
+                        s["state"] = "closing"
+                    continue
+                s["state"] = "ok"
+                if rem <= 120:
+                    near.add(user)
+                if s["used_seconds"] <= 0:
+                    continue  # not started yet today: nothing to warn about
+                due = [t for t in LIMIT_WARN_MINUTES if t > 0 and rem <= t * 60]
+                if due and min(due) not in st["warned"]:
+                    st["warned"].update(due)  # a limit set late skips the warnings already passed
+                    mins = max(1, math.ceil(rem / 60))
+                    self.notify(user, f"{mins} minute{'s' if mins != 1 else ''} left on {app} today.", "warning")
+            self.limit_blocked = blocked
+            self.limit_near = near
+        return status
 
     def check_agents(self) -> None:
         """Log when a logged-in user has no agent reporting (agent killed / not started)."""
@@ -271,6 +436,7 @@ class Service:
         last_check = 0.0
         while not self.stop.is_set():
             try:
+                self.check_limits()
                 self.enforce_once()
                 if time.time() - last_check > 60:
                     last_check = time.time()
@@ -325,13 +491,18 @@ class Service:
                 "locked": bool(body.get("locked")),
             }
             notices = self.notices.pop(user, [])
-        blocked = sorted({r["name"] for r in self.store.block_rules() if r["user"] in ("", user)})
+            self.known_users.add(user)
+        blocked = {r["name"] for r in self.store.block_rules() if r["user"] in ("", user)}
+        blocked |= {app for app, u in self.limit_blocked if u in ("", user)}
+        report = int(self.cfg["report_seconds"])
+        if user in self.limit_near:  # close to a limit: count precisely, deliver warnings fast
+            report = min(report, 2)
         return {
             "user": user,
-            "blocked": blocked,
+            "blocked": sorted(blocked),
             "notices": notices,
             "idle_seconds": int(self.cfg["idle_seconds"]),
-            "report_seconds": int(self.cfg["report_seconds"]),
+            "report_seconds": report,
         }
 
     def live_view(self) -> list[dict]:
@@ -435,6 +606,15 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(svc.user_processes())
             if url.path == "/api/blocklist":
                 return self.send_json(svc.store.block_rules())
+            if url.path == "/api/limits":
+                today = date.today().isoformat()
+                return self.send_json({
+                    "day": today,
+                    "grace_seconds": int(svc.cfg.get("limit_grace_seconds", 30)),
+                    "defaults": svc.store.limits(),
+                    "overrides": svc.store.overrides(today),
+                    "status": svc.check_limits(),
+                })
             if url.path == "/api/events":
                 return self.send_json(svc.store.events(int(q.get("limit", 200))))
             return self.send_json({"error": "not found"}, 404)
@@ -475,10 +655,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"ok": ok, "message": msg}, 200 if ok else 400)
             if url.path == "/api/block":
                 name, user = norm_app(body.get("name")), norm_user(body.get("user"))
-                if not name or "\\" in name or "/" in name:
-                    return self.send_json({"error": "give an executable name, e.g. robloxplayerbeta.exe"}, 400)
-                if name in PROTECTED_NAMES:
-                    return self.send_json({"error": f"{name} is a Windows component and cannot be blocked"}, 400)
+                err = program_name_error(name)
+                if err:
+                    return self.send_json({"error": err}, 400)
                 svc.store.add_block(name, user)
                 svc.store.event("block_added", user, name)
                 killed = svc.enforce_once() if body.get("kill_now", True) else 0
@@ -488,6 +667,35 @@ class Handler(BaseHTTPRequestHandler):
                 svc.store.remove_block(name, user)
                 svc.store.event("block_removed", user, name)
                 return self.send_json({"ok": True})
+            if url.path in ("/api/limit", "/api/limit/remove"):
+                name, user = norm_app(body.get("name")), norm_user(body.get("user"))
+                scope = body.get("scope", "default")
+                if scope not in ("default", "today"):
+                    return self.send_json({"error": "scope must be 'default' or 'today'"}, 400)
+                today = date.today().isoformat()
+                if url.path == "/api/limit/remove":
+                    if scope == "today":
+                        svc.store.remove_override(today, name, user)
+                        svc.store.event("limit_override_removed", user, name)
+                    else:
+                        svc.store.remove_limit(name, user)
+                        svc.store.event("limit_removed", user, name)
+                else:
+                    err = program_name_error(name)
+                    if err:
+                        return self.send_json({"error": err}, 400)
+                    # A one-day override may be "unlimited" (empty); a permanent limit may not:
+                    # remove it instead.
+                    minutes = parse_limit_minutes(body.get("minutes"), allow_none=scope == "today")
+                    shown = "unlimited" if minutes is None else f"{minutes} min"
+                    if scope == "today":
+                        svc.store.set_override(today, name, user, minutes)
+                        svc.store.event("limit_override_set", user, f"{name}: {shown} today only")
+                    else:
+                        svc.store.set_limit(name, user, minutes)
+                        svc.store.event("limit_set", user, f"{name}: {shown} per day")
+                svc.check_limits()
+                return self.send_json({"ok": True, "killed": svc.enforce_once()})
             return self.send_json({"error": "not found"}, 404)
         except (KeyError, ValueError, TypeError) as e:
             self.send_json({"error": f"bad request: {e}"}, 400)
