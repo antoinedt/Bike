@@ -24,6 +24,12 @@ export interface PreloadApi {
   openItem(item: MediaItem): Promise<void>;
   /** Fetches artwork (via the iTunes Search API) for every library item missing it, local or network. */
   fetchArtwork(): Promise<MediaItem[]>;
+  /**
+   * Fills in title/year/length (and artwork where missing) for every video/audio item missing
+   * them, and writes a metadata sidecar file next to each one on disk/share. Can take a while for
+   * a large library — each item needs a real (hidden) duration probe, not just an HTTP lookup.
+   */
+  scanMetadata(): Promise<MediaItem[]>;
   scanNetwork(): Promise<MediaItem[]>;
   /** Starts a live byte-range relay for a network item and returns a URL an in-app <video>/<audio> element can play directly. */
   openNetworkStream(item: MediaItem): Promise<{ url: string; token: string }>;

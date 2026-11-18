@@ -31,6 +31,9 @@ export function guessTitle(filename: string): { title: string; year?: string } {
 
 interface ITunesResult {
   artworkUrl100?: string;
+  trackName?: string;
+  collectionName?: string;
+  releaseDate?: string;
 }
 
 interface ITunesResponse {
@@ -41,13 +44,49 @@ function upsizeArtwork(url: string): string {
   return url.replace(/\d+x\d+bb(\.\w+)$/, "600x600bb$1");
 }
 
-async function lookup(term: string, entity: string): Promise<string | null> {
+async function searchItunes(term: string, entity: string): Promise<ITunesResult | null> {
   const url = `https://itunes.apple.com/search?term=${encodeURIComponent(term)}&entity=${entity}&limit=1`;
   const res = await fetch(url, { headers: { "User-Agent": USER_AGENT } });
   if (!res.ok) return null;
   const data = (await res.json()) as ITunesResponse;
-  const artwork = data.results[0]?.artworkUrl100;
+  return data.results[0] ?? null;
+}
+
+async function lookup(term: string, entity: string): Promise<string | null> {
+  const result = await searchItunes(term, entity);
+  const artwork = result?.artworkUrl100;
   return artwork ? upsizeArtwork(artwork) : null;
+}
+
+export interface ItunesMetadata {
+  title?: string;
+  year?: string;
+  artworkUrl?: string;
+}
+
+/**
+ * Looks up title/release-year/artwork for one item in a single iTunes Search API call — used by
+ * the metadata scanner, distinct from fetchArtworkUrl (which only ever needed the artwork and is
+ * kept as-is so the existing "Fetch artwork" button's behavior doesn't change).
+ */
+export async function fetchMetadataFromItunes(item: MediaItem): Promise<ItunesMetadata | null> {
+  const { title, year } = guessTitle(item.name);
+  if (!title) return null;
+  const term = year ? `${title} ${year}` : title;
+
+  let result: ITunesResult | null = null;
+  if (item.kind === "video") {
+    result = await searchItunes(term, "movie");
+  } else if (item.kind === "audio") {
+    result = await searchItunes(title, "song");
+  }
+  if (!result) return null;
+
+  return {
+    title: result.trackName || result.collectionName,
+    year: result.releaseDate ? result.releaseDate.slice(0, 4) : undefined,
+    artworkUrl: result.artworkUrl100 ? upsizeArtwork(result.artworkUrl100) : undefined
+  };
 }
 
 /**

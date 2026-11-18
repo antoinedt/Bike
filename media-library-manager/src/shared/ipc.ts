@@ -14,6 +14,7 @@ export const IPC = {
   libraryGetItems: "library:getItems",
   libraryOpenItem: "library:openItem",
   libraryFetchArtwork: "library:fetchArtwork",
+  metadataScan: "metadata:scan",
   networkScan: "network:scan",
   networkStreamOpen: "network:streamOpen",
   networkStreamClose: "network:streamClose",

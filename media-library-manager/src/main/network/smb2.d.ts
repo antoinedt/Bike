@@ -17,6 +17,7 @@ declare module "smb2" {
       filename: string,
       callback: (err: Error | null, data: Buffer) => void
     ): void;
+    writeFile(filename: string, data: string | Buffer, callback: (err: Error | null) => void): void;
     close(): void;
   }
 

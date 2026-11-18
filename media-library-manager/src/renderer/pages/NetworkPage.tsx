@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import type { AppSettings, MediaItem } from "../../shared/types.js";
-import MediaGrid from "../components/MediaGrid.js";
+import MediaBrowser from "../components/MediaBrowser.js";
 import StreamPlayer from "../components/StreamPlayer.js";
 
 interface ActiveStream {
@@ -27,11 +27,6 @@ export default function NetworkPage({ settings }: { settings: AppSettings }) {
       void window.api.closeNetworkStream(stream.token);
     };
   }, [stream]);
-
-  const filtered = useMemo(
-    () => items.filter((i) => i.name.toLowerCase().includes(filter.toLowerCase())),
-    [items, filter]
-  );
 
   async function scan() {
     setScanning(true);
@@ -82,7 +77,7 @@ export default function NetworkPage({ settings }: { settings: AppSettings }) {
         to disk first.
       </p>
       {error && <p className="error">{error}</p>}
-      <MediaGrid items={filtered} onOpen={(item) => void play(item)} />
+      <MediaBrowser items={items} settings={settings} filter={filter} onOpen={(item) => void play(item)} />
       {stream && <StreamPlayer item={stream.item} url={stream.url} onClose={() => setStream(null)} />}
     </div>
   );

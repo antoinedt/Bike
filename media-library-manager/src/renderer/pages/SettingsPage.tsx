@@ -29,7 +29,43 @@ export default function SettingsPage({
       <FoldersSection settings={settings} refreshSettings={refreshSettings} />
       <SharesSection settings={settings} refreshSettings={refreshSettings} />
       <ProfilesSection settings={settings} refreshSettings={refreshSettings} />
+      <MetadataSection />
     </div>
+  );
+}
+
+function MetadataSection() {
+  const [scanning, setScanning] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+
+  async function scan() {
+    setScanning(true);
+    setResult(null);
+    try {
+      await window.api.scanMetadata();
+      setResult("Done — Library and Network pages now show the metadata that was found.");
+    } catch (err) {
+      setResult(`Failed: ${(err as Error).message}`);
+    } finally {
+      setScanning(false);
+    }
+  }
+
+  return (
+    <section className="settings-section">
+      <h2>Metadata</h2>
+      <p className="hint">
+        Looks up title, release year, and cover art (via the iTunes catalog) and reads each
+        video/audio file's length, for every item that doesn't have this yet — local and network.
+        Writes a <code>.metadata.json</code> file next to each media file so it travels with the
+        file, not just this app's database. Can take a while on a large library; only items
+        missing metadata are processed, so re-running later only covers what's new.
+      </p>
+      <button className="btn btn-primary" onClick={() => void scan()} disabled={scanning}>
+        {scanning ? "Scanning…" : "Scan metadata"}
+      </button>
+      {result && <p className="hint-inline">{result}</p>}
+    </section>
   );
 }
 

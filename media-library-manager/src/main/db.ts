@@ -1,6 +1,6 @@
 import { JSONFilePreset } from "lowdb/node";
 import type { Low } from "lowdb";
-import type { MediaItem } from "../shared/types.js";
+import type { MediaItem, MediaMetadata } from "../shared/types.js";
 
 interface DbSchema {
   items: MediaItem[];
@@ -36,6 +36,24 @@ export async function applyArtwork(artworkByItemId: Map<string, string>): Promis
   db.data.items = db.data.items.map((item) => {
     const artworkUrl = artworkByItemId.get(item.id);
     return artworkUrl ? { ...item, artworkUrl } : item;
+  });
+  await db.write();
+  return db.data.items;
+}
+
+/** Patches title/year/durationSeconds (and artworkUrl, if not already set) onto items by id. */
+export async function applyMetadata(metadataByItemId: Map<string, MediaMetadata>): Promise<MediaItem[]> {
+  const db = await getDb();
+  db.data.items = db.data.items.map((item) => {
+    const metadata = metadataByItemId.get(item.id);
+    if (!metadata) return item;
+    return {
+      ...item,
+      title: metadata.title ?? item.title,
+      year: metadata.year ?? item.year,
+      durationSeconds: metadata.durationSeconds ?? item.durationSeconds,
+      artworkUrl: item.artworkUrl ?? metadata.artworkUrl
+    };
   });
   await db.write();
   return db.data.items;

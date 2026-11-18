@@ -1,7 +1,7 @@
 import SMB2 from "smb2";
 import { randomUUID } from "node:crypto";
 import { classifyExtension } from "../../shared/types.js";
-import type { MediaItem, NetworkShare } from "../../shared/types.js";
+import type { MediaItem, MediaMetadata, NetworkShare } from "../../shared/types.js";
 
 const MAX_DEPTH = 10;
 
@@ -103,4 +103,29 @@ export async function scanNetworkShare(share: NetworkShare): Promise<MediaItem[]
 export function relPathFromMediaPath(share: NetworkShare, mediaPath: string): string {
   const prefix = `smb://${share.host}/${share.share}/`;
   return mediaPath.startsWith(prefix) ? mediaPath.slice(prefix.length) : mediaPath;
+}
+
+function writeFile(client: SMB2, path: string, data: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    client.writeFile(path, data, (err) => (err ? reject(err) : resolve()));
+  });
+}
+
+/**
+ * Writes a metadata sidecar JSON file next to a media file on the share (same directory, same
+ * base name, ".metadata.json" appended) so the metadata travels with the file rather than living
+ * only in this app's local database.
+ */
+export async function writeNetworkSidecar(
+  share: NetworkShare,
+  relPath: string,
+  metadata: MediaMetadata
+): Promise<void> {
+  const client = createClient(share);
+  try {
+    const smbPath = `${relPath}.metadata.json`.replace(/\//g, "\\");
+    await writeFile(client, smbPath, JSON.stringify(metadata, null, 2));
+  } finally {
+    client.close();
+  }
 }

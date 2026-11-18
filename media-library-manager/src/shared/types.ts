@@ -16,6 +16,18 @@ export interface MediaItem {
   source: MediaSource;
   /** Populated on demand by the artwork fetcher; absent until fetched (or if nothing suitable was found). */
   artworkUrl?: string;
+  /** The fields below are populated on demand by the metadata scanner (Settings -> Scan metadata). */
+  title?: string;
+  year?: string;
+  durationSeconds?: number;
+}
+
+/** The subset of MediaItem's on-demand fields that the metadata scanner produces and persists as a sidecar. */
+export interface MediaMetadata {
+  title?: string;
+  year?: string;
+  durationSeconds?: number;
+  artworkUrl?: string;
 }
 
 export interface LocalFolder {

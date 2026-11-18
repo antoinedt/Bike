@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import type { AppSettings, MediaItem } from "../../shared/types.js";
-import MediaGrid from "../components/MediaGrid.js";
+import MediaBrowser from "../components/MediaBrowser.js";
 
 export default function LibraryPage({ settings }: { settings: AppSettings }) {
   const [items, setItems] = useState<MediaItem[]>([]);
@@ -12,11 +12,6 @@ export default function LibraryPage({ settings }: { settings: AppSettings }) {
   useEffect(() => {
     void window.api.getLibraryItems().then((all) => setItems(all.filter((i) => i.source.type === "local")));
   }, []);
-
-  const filtered = useMemo(
-    () => items.filter((i) => i.name.toLowerCase().includes(filter.toLowerCase())),
-    [items, filter]
-  );
 
   async function scan() {
     setScanning(true);
@@ -81,7 +76,7 @@ export default function LibraryPage({ settings }: { settings: AppSettings }) {
         </p>
       )}
       {error && <p className="error">{error}</p>}
-      <MediaGrid items={filtered} onOpen={(item) => void openItem(item)} />
+      <MediaBrowser items={items} settings={settings} filter={filter} onOpen={(item) => void openItem(item)} />
     </div>
   );
 }
