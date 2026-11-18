@@ -318,6 +318,12 @@ body {
   max-width: 720px;
 }
 
+.form-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .player-overlay {
   position: fixed;
   inset: 0;

@@ -165,18 +165,35 @@ function ProfilesSection({
   refreshSettings: () => Promise<void>;
 }) {
   const [form, setForm] = useState({ ...EMPTY_PROFILE });
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   function set<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
-  async function add() {
+  function edit(profile: SiteProfile) {
+    const { id, ...rest } = profile;
+    setForm(rest);
+    setEditingId(id);
+  }
+
+  function cancelEdit() {
+    setForm({ ...EMPTY_PROFILE });
+    setEditingId(null);
+  }
+
+  async function save() {
     if (!form.label || !form.searchUrlTemplate || !form.resultItemSelector) return;
     setBusy(true);
     try {
-      await window.api.addSiteProfile(form as Omit<SiteProfile, "id">);
+      if (editingId) {
+        await window.api.updateSiteProfile({ ...form, id: editingId });
+      } else {
+        await window.api.addSiteProfile(form as Omit<SiteProfile, "id">);
+      }
       setForm({ ...EMPTY_PROFILE });
+      setEditingId(null);
       await refreshSettings();
     } finally {
       setBusy(false);
@@ -184,6 +201,7 @@ function ProfilesSection({
   }
 
   async function remove(id: string) {
+    if (id === editingId) cancelEdit();
     await window.api.removeSiteProfile(id);
     await refreshSettings();
   }
@@ -204,12 +222,16 @@ function ProfilesSection({
               {p.useHeadlessBrowser && <span className="hint-inline"> · JS-rendered</span>}
             </span>
             <span className="settings-item-sub">{p.searchUrlTemplate}</span>
+            <button className="btn btn-small" onClick={() => edit(p)}>
+              Edit
+            </button>
             <button className="btn btn-small btn-danger" onClick={() => void remove(p.id)}>
               Remove
             </button>
           </li>
         ))}
       </ul>
+      {editingId && <p className="hint-inline">Editing "{form.label}" — Save changes to apply, or Cancel.</p>}
       <div className="form-grid">
         <input className="text-input" placeholder="Label" value={form.label} onChange={(e) => set("label", e.target.value)} />
         <input
@@ -264,13 +286,20 @@ function ProfilesSection({
         Site renders results with JavaScript (use a hidden browser window to fetch it — slower,
         but works when "View Page Source" doesn't show the results)
       </label>
-      <button
-        className="btn"
-        onClick={() => void add()}
-        disabled={busy || !form.label || !form.searchUrlTemplate || !form.resultItemSelector}
-      >
-        Add site
-      </button>
+      <div className="form-actions">
+        <button
+          className="btn"
+          onClick={() => void save()}
+          disabled={busy || !form.label || !form.searchUrlTemplate || !form.resultItemSelector}
+        >
+          {editingId ? "Save changes" : "Add site"}
+        </button>
+        {editingId && (
+          <button className="btn btn-small" onClick={cancelEdit}>
+            Cancel
+          </button>
+        )}
+      </div>
     </section>
   );
 }
