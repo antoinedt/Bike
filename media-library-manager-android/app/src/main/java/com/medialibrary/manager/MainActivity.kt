@@ -57,16 +57,32 @@ class MainActivity : ComponentActivity() {
 
     private val viewModel: MediaLibraryViewModel by viewModels()
 
+    /** Set just before launching [pickFolder] when the picker is replacing an existing folder's
+     *  URI (Settings' "Change folder…") rather than adding a new one. */
+    private var pendingFolderEditId: String? = null
+
     private val requestPermissions =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { /* handled via re-check on scan */ }
 
     /** SAF folder picker backing "which folders are considered" in Settings. */
     private val pickFolder = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-        if (uri == null) return@registerForActivityResult
+        if (uri == null) {
+            pendingFolderEditId = null
+            return@registerForActivityResult
+        }
         contentResolver.takePersistableUriPermission(
             uri,
             Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
         )
+        val editId = pendingFolderEditId
+        pendingFolderEditId = null
+        if (editId != null) {
+            val existing = viewModel.settings.value.localFolders.find { it.id == editId }
+            if (existing != null) {
+                viewModel.updateLocalFolder(existing.copy(treeUri = uri.toString()))
+                return@registerForActivityResult
+            }
+        }
         val label = DocumentFile.fromTreeUri(this, uri)?.name ?: uri.lastPathSegment ?: "Folder"
         viewModel.addLocalFolder(uri.toString(), label)
     }
@@ -81,21 +97,41 @@ class MainActivity : ComponentActivity() {
         setContent {
             MediaLibraryTheme {
                 Surface {
-                    MediaLibraryApp(viewModel = viewModel, onPickFolder = { pickFolder.launch(null) })
+                    MediaLibraryApp(
+                        viewModel = viewModel,
+                        onPickFolder = { pickFolder.launch(null) },
+                        onChangeFolder = { id ->
+                            pendingFolderEditId = id
+                            pickFolder.launch(null)
+                        }
+                    )
                 }
             }
         }
     }
 
-    private fun requiredMediaPermissions(): Array<String> = if (Build.VERSION.SDK_INT >= 33) {
-        arrayOf(Manifest.permission.READ_MEDIA_VIDEO, Manifest.permission.READ_MEDIA_AUDIO, Manifest.permission.READ_MEDIA_IMAGES)
-    } else {
-        arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+    private fun requiredMediaPermissions(): Array<String> {
+        val readPermissions = if (Build.VERSION.SDK_INT >= 33) {
+            arrayOf(Manifest.permission.READ_MEDIA_VIDEO, Manifest.permission.READ_MEDIA_AUDIO, Manifest.permission.READ_MEDIA_IMAGES)
+        } else {
+            arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+        // Needed to save a network item's download pre-scoped-storage; API 29+ writes to
+        // MediaStore.Downloads instead, which needs no extra permission.
+        return if (Build.VERSION.SDK_INT < 29) {
+            readPermissions + Manifest.permission.WRITE_EXTERNAL_STORAGE
+        } else {
+            readPermissions
+        }
     }
 }
 
 @Composable
-private fun MediaLibraryApp(viewModel: MediaLibraryViewModel, onPickFolder: () -> Unit) {
+private fun MediaLibraryApp(
+    viewModel: MediaLibraryViewModel,
+    onPickFolder: () -> Unit,
+    onChangeFolder: (String) -> Unit
+) {
     val navController = rememberNavController()
     val playback by viewModel.playback.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
@@ -139,7 +175,7 @@ private fun MediaLibraryApp(viewModel: MediaLibraryViewModel, onPickFolder: () -
             composable("library") { LibraryScreen(viewModel) }
             composable("network") { NetworkScreen(viewModel) }
             composable("search") { SearchScreen(viewModel) }
-            composable("settings") { SettingsScreen(viewModel, onPickFolder) }
+            composable("settings") { SettingsScreen(viewModel, onPickFolder, onChangeFolder) }
         }
     }
 

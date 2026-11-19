@@ -29,7 +29,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.medialibrary.manager.model.MediaItem
 import com.medialibrary.manager.ui.MediaLibraryViewModel
-import com.medialibrary.manager.ui.components.MediaGrid
+import com.medialibrary.manager.ui.components.MediaBrowser
 
 @Composable
 fun LibraryScreen(viewModel: MediaLibraryViewModel) {
@@ -79,9 +79,9 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel) {
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Spacer(Modifier.height(12.dp))
-        val filtered = remember(items, filter) { items.filter { it.name.contains(filter, ignoreCase = true) } }
-        MediaGrid(
-            items = filtered,
+        MediaBrowser(
+            items = items,
+            filter = filter,
             onOpen = { item: MediaItem -> viewModel.openLocalItem(context, item) },
             modifier = Modifier.weight(1f)
         )

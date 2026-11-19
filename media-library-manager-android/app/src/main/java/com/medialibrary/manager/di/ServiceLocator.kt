@@ -5,6 +5,7 @@ import com.medialibrary.manager.artwork.ArtworkFetcher
 import com.medialibrary.manager.data.SettingsRepository
 import com.medialibrary.manager.library.LocalFolderScanner
 import com.medialibrary.manager.library.MediaStoreScanner
+import com.medialibrary.manager.network.NetworkDownloader
 import com.medialibrary.manager.network.SmbShareBrowser
 import com.medialibrary.manager.search.HeadlessWebViewFetcher
 import com.medialibrary.manager.search.SiteSearchRepository
@@ -22,6 +23,7 @@ object ServiceLocator {
     val mediaStoreScanner: MediaStoreScanner by lazy { MediaStoreScanner(appContext) }
     val localFolderScanner: LocalFolderScanner by lazy { LocalFolderScanner(appContext) }
     val smbShareBrowser: SmbShareBrowser by lazy { SmbShareBrowser() }
+    val networkDownloader: NetworkDownloader by lazy { NetworkDownloader(appContext) }
     val headlessWebViewFetcher: HeadlessWebViewFetcher by lazy { HeadlessWebViewFetcher(appContext) }
     val siteSearchRepository: SiteSearchRepository by lazy { SiteSearchRepository(headlessWebViewFetcher) }
     val torrentHandoff: TorrentHandoff by lazy { TorrentHandoff(appContext) }

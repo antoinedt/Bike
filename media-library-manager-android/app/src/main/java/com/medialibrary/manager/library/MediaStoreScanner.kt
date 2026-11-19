@@ -31,7 +31,8 @@ class MediaStoreScanner(private val context: Context) {
             MediaStore.MediaColumns._ID,
             MediaStore.MediaColumns.DISPLAY_NAME,
             MediaStore.MediaColumns.SIZE,
-            MediaStore.MediaColumns.DATE_MODIFIED
+            MediaStore.MediaColumns.DATE_MODIFIED,
+            MediaStore.MediaColumns.RELATIVE_PATH
         )
         val items = mutableListOf<MediaItem>()
         context.contentResolver.query(collection, projection, null, null, null)?.use { cursor ->
@@ -39,6 +40,7 @@ class MediaStoreScanner(private val context: Context) {
             val nameCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
             val sizeCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE)
             val modifiedCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATE_MODIFIED)
+            val relPathCol = cursor.getColumnIndex(MediaStore.MediaColumns.RELATIVE_PATH)
             while (cursor.moveToNext()) {
                 val id = cursor.getLong(idCol)
                 val name = cursor.getString(nameCol) ?: continue
@@ -46,6 +48,9 @@ class MediaStoreScanner(private val context: Context) {
                 val kind = classifyExtension(extension)
                 if (kind == MediaKind.OTHER) continue
                 val uri = ContentUris.withAppendedId(collection, id)
+                // RELATIVE_PATH (API 29+ only; absent/null below that) looks like "Movies/Action/" —
+                // trim the trailing slash so it matches the no-trailing-slash convention folderPath uses.
+                val relativePath = if (relPathCol >= 0) cursor.getString(relPathCol)?.trimEnd('/') ?: "" else ""
                 items += MediaItem(
                     name = name,
                     path = uri.toString(),
@@ -53,7 +58,8 @@ class MediaStoreScanner(private val context: Context) {
                     extension = extension.lowercase(),
                     sizeBytes = cursor.getLong(sizeCol),
                     modifiedAtMillis = cursor.getLong(modifiedCol) * 1000L,
-                    sourceType = MediaSourceType.LOCAL
+                    sourceType = MediaSourceType.LOCAL,
+                    folderPath = relativePath
                 )
             }
         }

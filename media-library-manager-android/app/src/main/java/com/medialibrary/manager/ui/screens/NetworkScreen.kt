@@ -27,13 +27,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.medialibrary.manager.ui.MediaLibraryViewModel
-import com.medialibrary.manager.ui.components.MediaGrid
+import com.medialibrary.manager.ui.components.MediaBrowser
 
 @Composable
 fun NetworkScreen(viewModel: MediaLibraryViewModel) {
     val settings by viewModel.settings.collectAsState()
     val items by viewModel.networkItems.collectAsState()
     val scanning by viewModel.isScanningNetwork.collectAsState()
+    val downloadingItemId by viewModel.downloadingItemId.collectAsState()
     var filter by remember { mutableStateOf("") }
 
     Column(Modifier.fillMaxSize().padding(16.dp)) {
@@ -61,12 +62,19 @@ fun NetworkScreen(viewModel: MediaLibraryViewModel) {
         }
         Spacer(Modifier.height(4.dp))
         Text(
-            "Playback streams live from the share (seekable) — nothing is downloaded to disk first.",
+            "Tap an item to stream it live (seekable, nothing saved to disk); use the download " +
+                "icon on a card to save a full local copy to Downloads/MediaLibraryManager instead.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Spacer(Modifier.height(8.dp))
-        val filtered = remember(items, filter) { items.filter { it.name.contains(filter, ignoreCase = true) } }
-        MediaGrid(items = filtered, onOpen = { viewModel.playNetworkItem(it) }, modifier = Modifier.weight(1f))
+        MediaBrowser(
+            items = items,
+            filter = filter,
+            onOpen = { viewModel.playNetworkItem(it) },
+            onDownload = { viewModel.downloadNetworkItem(it) },
+            downloadingItemId = downloadingItemId,
+            modifier = Modifier.weight(1f)
+        )
     }
 }

@@ -31,7 +31,7 @@ import com.medialibrary.manager.model.SiteProfile
 import com.medialibrary.manager.ui.MediaLibraryViewModel
 
 @Composable
-fun SettingsScreen(viewModel: MediaLibraryViewModel, onPickFolder: () -> Unit) {
+fun SettingsScreen(viewModel: MediaLibraryViewModel, onPickFolder: () -> Unit, onChangeFolder: (String) -> Unit) {
     val settings by viewModel.settings.collectAsState()
     val shareTestResult by viewModel.shareTestResult.collectAsState()
 
@@ -39,7 +39,7 @@ fun SettingsScreen(viewModel: MediaLibraryViewModel, onPickFolder: () -> Unit) {
         modifier = Modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
-        item { FoldersSection(settings.localFolders, onPickFolder, viewModel) }
+        item { FoldersSection(settings.localFolders, onPickFolder, onChangeFolder, viewModel) }
         item { HorizontalDivider() }
         item { SharesSection(settings.networkShares, shareTestResult, viewModel) }
         item { HorizontalDivider() }
@@ -48,7 +48,15 @@ fun SettingsScreen(viewModel: MediaLibraryViewModel, onPickFolder: () -> Unit) {
 }
 
 @Composable
-private fun FoldersSection(folders: List<LocalFolder>, onPickFolder: () -> Unit, viewModel: MediaLibraryViewModel) {
+private fun FoldersSection(
+    folders: List<LocalFolder>,
+    onPickFolder: () -> Unit,
+    onChangeFolder: (String) -> Unit,
+    viewModel: MediaLibraryViewModel
+) {
+    var editingId by remember { mutableStateOf<String?>(null) }
+    var label by remember { mutableStateOf("") }
+
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Local folders", style = MaterialTheme.typography.titleMedium)
         Text(
@@ -58,10 +66,37 @@ private fun FoldersSection(folders: List<LocalFolder>, onPickFolder: () -> Unit,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         folders.forEach { folder ->
-            ListItem(
-                headlineContent = { Text(folder.label) },
-                trailingContent = { TextButton(onClick = { viewModel.removeLocalFolder(folder.id) }) { Text("Remove") } }
-            )
+            if (editingId == folder.id) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    OutlinedTextField(
+                        label, { label = it },
+                        label = { Text("Label") }, singleLine = true, modifier = Modifier.fillMaxWidth()
+                    )
+                    Text(
+                        folder.treeUri,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        TextButton(onClick = { onChangeFolder(folder.id) }) { Text("Change folder…") }
+                        TextButton(onClick = {
+                            viewModel.updateLocalFolder(folder.copy(label = label))
+                            editingId = null
+                        }) { Text("Save") }
+                        TextButton(onClick = { editingId = null }) { Text("Cancel") }
+                    }
+                }
+            } else {
+                ListItem(
+                    headlineContent = { Text(folder.label) },
+                    trailingContent = {
+                        Row {
+                            TextButton(onClick = { editingId = folder.id; label = folder.label }) { Text("Edit") }
+                            TextButton(onClick = { viewModel.removeLocalFolder(folder.id) }) { Text("Remove") }
+                        }
+                    }
+                )
+            }
         }
         Button(onClick = onPickFolder) { Text("Add folder…") }
     }
@@ -69,6 +104,7 @@ private fun FoldersSection(folders: List<LocalFolder>, onPickFolder: () -> Unit,
 
 @Composable
 private fun SharesSection(shares: List<NetworkShare>, testResult: String?, viewModel: MediaLibraryViewModel) {
+    var editingId by remember { mutableStateOf<String?>(null) }
     var label by remember { mutableStateOf("") }
     var host by remember { mutableStateOf("") }
     var share by remember { mutableStateOf("") }
@@ -76,6 +112,16 @@ private fun SharesSection(shares: List<NetworkShare>, testResult: String?, viewM
     var domain by remember { mutableStateOf("") }
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+
+    fun clearForm() {
+        label = ""; host = ""; share = ""; subPath = ""; domain = ""; username = ""; password = ""
+    }
+
+    fun startEdit(s: NetworkShare) {
+        editingId = s.id
+        label = s.label; host = s.host; share = s.share; subPath = s.subPath
+        domain = s.domain; username = s.username; password = s.password
+    }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Local network (SMB shares)", style = MaterialTheme.typography.titleMedium)
@@ -93,12 +139,19 @@ private fun SharesSection(shares: List<NetworkShare>, testResult: String?, viewM
                 trailingContent = {
                     Row {
                         TextButton(onClick = { viewModel.testShare(s) }) { Text("Test") }
-                        TextButton(onClick = { viewModel.removeShare(s.id) }) { Text("Remove") }
+                        TextButton(onClick = { startEdit(s) }) { Text("Edit") }
+                        TextButton(onClick = {
+                            if (s.id == editingId) { editingId = null; clearForm() }
+                            viewModel.removeShare(s.id)
+                        }) { Text("Remove") }
                     }
                 }
             )
         }
         testResult?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+        if (editingId != null) {
+            Text("Editing \"${label.ifBlank { host }}\" — Save changes to apply, or Cancel.", style = MaterialTheme.typography.bodySmall)
+        }
 
         OutlinedTextField(label, { label = it }, label = { Text("Label") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(host, { host = it }, label = { Text("Host / IP") }, singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -114,28 +167,40 @@ private fun SharesSection(shares: List<NetworkShare>, testResult: String?, viewM
             visualTransformation = PasswordVisualTransformation(),
             modifier = Modifier.fillMaxWidth()
         )
-        Button(
-            onClick = {
-                viewModel.addShare(
-                    NetworkShare(
-                        label = label,
-                        host = host,
-                        share = share,
-                        subPath = subPath,
-                        domain = domain.ifBlank { "WORKGROUP" },
-                        username = username,
-                        password = password
-                    )
-                )
-                label = ""; host = ""; share = ""; subPath = ""; domain = ""; username = ""; password = ""
-            },
-            enabled = host.isNotBlank() && share.isNotBlank()
-        ) { Text("Add share") }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(
+                onClick = {
+                    val id = editingId
+                    if (id != null) {
+                        viewModel.updateShare(
+                            NetworkShare(
+                                id = id, label = label, host = host, share = share, subPath = subPath,
+                                domain = domain.ifBlank { "WORKGROUP" }, username = username, password = password
+                            )
+                        )
+                    } else {
+                        viewModel.addShare(
+                            NetworkShare(
+                                label = label, host = host, share = share, subPath = subPath,
+                                domain = domain.ifBlank { "WORKGROUP" }, username = username, password = password
+                            )
+                        )
+                    }
+                    editingId = null
+                    clearForm()
+                },
+                enabled = host.isNotBlank() && share.isNotBlank()
+            ) { Text(if (editingId != null) "Save changes" else "Add share") }
+            if (editingId != null) {
+                TextButton(onClick = { editingId = null; clearForm() }) { Text("Cancel") }
+            }
+        }
     }
 }
 
 @Composable
 private fun ProfilesSection(profiles: List<SiteProfile>, viewModel: MediaLibraryViewModel) {
+    var editingId by remember { mutableStateOf<String?>(null) }
     var label by remember { mutableStateOf("") }
     var searchUrlTemplate by remember { mutableStateOf("") }
     var resultItemSelector by remember { mutableStateOf("") }
@@ -145,6 +210,20 @@ private fun ProfilesSection(profiles: List<SiteProfile>, viewModel: MediaLibrary
     var seedersSelector by remember { mutableStateOf("") }
     var detailPageLinkSelector by remember { mutableStateOf("") }
     var useHeadlessBrowser by remember { mutableStateOf(false) }
+
+    fun clearForm() {
+        label = ""; searchUrlTemplate = ""; resultItemSelector = ""; titleSelector = ""
+        linkSelector = ""; sizeSelector = ""; seedersSelector = ""; detailPageLinkSelector = ""
+        useHeadlessBrowser = false
+    }
+
+    fun startEdit(p: SiteProfile) {
+        editingId = p.id
+        label = p.label; searchUrlTemplate = p.searchUrlTemplate; resultItemSelector = p.resultItemSelector
+        titleSelector = p.titleSelector; linkSelector = p.linkSelector; sizeSelector = p.sizeSelector
+        seedersSelector = p.seedersSelector; detailPageLinkSelector = p.detailPageLinkSelector
+        useHeadlessBrowser = p.useHeadlessBrowser
+    }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Search sites", style = MaterialTheme.typography.titleMedium)
@@ -158,8 +237,19 @@ private fun ProfilesSection(profiles: List<SiteProfile>, viewModel: MediaLibrary
             ListItem(
                 headlineContent = { Text(if (p.useHeadlessBrowser) "${p.label} · JS-rendered" else p.label) },
                 supportingContent = { Text(p.searchUrlTemplate) },
-                trailingContent = { TextButton(onClick = { viewModel.removeSiteProfile(p.id) }) { Text("Remove") } }
+                trailingContent = {
+                    Row {
+                        TextButton(onClick = { startEdit(p) }) { Text("Edit") }
+                        TextButton(onClick = {
+                            if (p.id == editingId) { editingId = null; clearForm() }
+                            viewModel.removeSiteProfile(p.id)
+                        }) { Text("Remove") }
+                    }
+                }
             )
+        }
+        if (editingId != null) {
+            Text("Editing \"$label\" — Save changes to apply, or Cancel.", style = MaterialTheme.typography.bodySmall)
         }
         OutlinedTextField(label, { label = it }, label = { Text("Label") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(
@@ -198,10 +288,12 @@ private fun ProfilesSection(profiles: List<SiteProfile>, viewModel: MediaLibrary
                 style = MaterialTheme.typography.bodySmall
             )
         }
-        Button(
-            onClick = {
-                viewModel.addSiteProfile(
-                    SiteProfile(
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(
+                onClick = {
+                    val id = editingId
+                    val profile = SiteProfile(
+                        id = id ?: java.util.UUID.randomUUID().toString(),
                         label = label,
                         searchUrlTemplate = searchUrlTemplate,
                         resultItemSelector = resultItemSelector,
@@ -212,12 +304,15 @@ private fun ProfilesSection(profiles: List<SiteProfile>, viewModel: MediaLibrary
                         detailPageLinkSelector = detailPageLinkSelector,
                         useHeadlessBrowser = useHeadlessBrowser
                     )
-                )
-                label = ""; searchUrlTemplate = ""; resultItemSelector = ""; titleSelector = ""
-                linkSelector = ""; sizeSelector = ""; seedersSelector = ""; detailPageLinkSelector = ""
-                useHeadlessBrowser = false
-            },
-            enabled = label.isNotBlank() && searchUrlTemplate.isNotBlank() && resultItemSelector.isNotBlank()
-        ) { Text("Add site") }
+                    if (id != null) viewModel.updateSiteProfile(profile) else viewModel.addSiteProfile(profile)
+                    editingId = null
+                    clearForm()
+                },
+                enabled = label.isNotBlank() && searchUrlTemplate.isNotBlank() && resultItemSelector.isNotBlank()
+            ) { Text(if (editingId != null) "Save changes" else "Add site") }
+            if (editingId != null) {
+                TextButton(onClick = { editingId = null; clearForm() }) { Text("Cancel") }
+            }
+        }
     }
 }

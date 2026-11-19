@@ -33,6 +33,7 @@ class MediaLibraryViewModel : ViewModel() {
     private val localFolderScanner = ServiceLocator.localFolderScanner
     private val artworkFetcher = ServiceLocator.artworkFetcher
     private val smbBrowser = ServiceLocator.smbShareBrowser
+    private val networkDownloader = ServiceLocator.networkDownloader
     private val siteSearch = ServiceLocator.siteSearchRepository
     private val torrentHandoff = ServiceLocator.torrentHandoff
 
@@ -59,6 +60,9 @@ class MediaLibraryViewModel : ViewModel() {
 
     private val _downloadingUrl = MutableStateFlow<String?>(null)
     val downloadingUrl: StateFlow<String?> = _downloadingUrl.asStateFlow()
+
+    private val _downloadingItemId = MutableStateFlow<String?>(null)
+    val downloadingItemId: StateFlow<String?> = _downloadingItemId.asStateFlow()
 
     private val _shareTestResult = MutableStateFlow<String?>(null)
     val shareTestResult: StateFlow<String?> = _shareTestResult.asStateFlow()
@@ -115,6 +119,8 @@ class MediaLibraryViewModel : ViewModel() {
     fun addLocalFolder(treeUri: String, label: String) =
         viewModelScope.launch { settingsRepo.addLocalFolder(LocalFolder(treeUri = treeUri, label = label)) }
 
+    fun updateLocalFolder(folder: LocalFolder) = viewModelScope.launch { settingsRepo.updateLocalFolder(folder) }
+
     fun removeLocalFolder(id: String) = viewModelScope.launch { settingsRepo.removeLocalFolder(id) }
 
     fun scanNetwork() {
@@ -129,6 +135,8 @@ class MediaLibraryViewModel : ViewModel() {
 
     fun addShare(share: NetworkShare) = viewModelScope.launch { settingsRepo.addShare(share) }
 
+    fun updateShare(share: NetworkShare) = viewModelScope.launch { settingsRepo.updateShare(share) }
+
     fun removeShare(id: String) = viewModelScope.launch { settingsRepo.removeShare(id) }
 
     fun testShare(share: NetworkShare) {
@@ -140,6 +148,8 @@ class MediaLibraryViewModel : ViewModel() {
     }
 
     fun addSiteProfile(profile: SiteProfile) = viewModelScope.launch { settingsRepo.addSiteProfile(profile) }
+
+    fun updateSiteProfile(profile: SiteProfile) = viewModelScope.launch { settingsRepo.updateSiteProfile(profile) }
 
     fun removeSiteProfile(id: String) = viewModelScope.launch { settingsRepo.removeSiteProfile(id) }
 
@@ -202,5 +212,27 @@ class MediaLibraryViewModel : ViewModel() {
 
     fun stopPlayback() {
         _playback.value = null
+    }
+
+    /** Saves a full local copy of a network item to Downloads/MediaLibraryManager — distinct from streaming. */
+    fun downloadNetworkItem(item: MediaItem) {
+        viewModelScope.launch {
+            val share = item.shareId?.let { settingsRepo.shareById(it) }
+            if (share == null) {
+                _errorMessage.value = "Network share for this item is no longer configured."
+                return@launch
+            }
+            _downloadingItemId.value = item.id
+            runCatching {
+                val relPath = item.path.removePrefix("smb://${share.id}/")
+                val url = SmbContextFactory.urlFor(share, relPath)
+                networkDownloader.download(item.name, item.extension, url, SmbContextFactory.contextFor(share))
+            }.onSuccess {
+                _errorMessage.value = "Downloaded \"${item.name}\" to Downloads/MediaLibraryManager."
+            }.onFailure {
+                _errorMessage.value = "Download failed: ${it.message}"
+            }
+            _downloadingItemId.value = null
+        }
     }
 }

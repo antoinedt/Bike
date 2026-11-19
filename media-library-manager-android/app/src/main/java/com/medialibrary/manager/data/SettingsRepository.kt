@@ -39,13 +39,22 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun addLocalFolder(folder: LocalFolder) = update { it.copy(localFolders = it.localFolders + folder) }
 
+    suspend fun updateLocalFolder(folder: LocalFolder) =
+        update { it.copy(localFolders = it.localFolders.map { f -> if (f.id == folder.id) folder else f }) }
+
     suspend fun removeLocalFolder(id: String) = update { it.copy(localFolders = it.localFolders.filterNot { f -> f.id == id }) }
 
     suspend fun addShare(share: NetworkShare) = update { it.copy(networkShares = it.networkShares + share) }
 
+    suspend fun updateShare(share: NetworkShare) =
+        update { it.copy(networkShares = it.networkShares.map { s -> if (s.id == share.id) share else s }) }
+
     suspend fun removeShare(id: String) = update { it.copy(networkShares = it.networkShares.filterNot { s -> s.id == id }) }
 
     suspend fun addSiteProfile(profile: SiteProfile) = update { it.copy(siteProfiles = it.siteProfiles + profile) }
+
+    suspend fun updateSiteProfile(profile: SiteProfile) =
+        update { it.copy(siteProfiles = it.siteProfiles.map { p -> if (p.id == profile.id) profile else p }) }
 
     suspend fun removeSiteProfile(id: String) = update { it.copy(siteProfiles = it.siteProfiles.filterNot { p -> p.id == id }) }
 

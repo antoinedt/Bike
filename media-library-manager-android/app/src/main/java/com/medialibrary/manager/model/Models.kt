@@ -43,7 +43,14 @@ data class MediaItem(
     /** Only meaningful when [sourceType] is NETWORK. */
     val shareId: String? = null,
     /** Populated on demand by ArtworkFetcher; null until fetched (or if nothing suitable was found). */
-    val artworkUrl: String? = null
+    val artworkUrl: String? = null,
+    /**
+     * The folder this item sits in, relative to its configured local folder / network share root
+     * ("" for the root itself, "Movies/Action" for a nested one) — captured at scan time by each
+     * scanner, since it's cheap to track while walking and far more reliable than trying to parse
+     * it back out of a content:// URI or MediaStore id after the fact.
+     */
+    val folderPath: String = ""
 )
 
 /** A user-picked device folder (SAF tree URI) to scope the local scan to. */

@@ -51,7 +51,8 @@ class SmbShareBrowser {
                     sizeBytes = runCatching { child.length() }.getOrDefault(0L),
                     modifiedAtMillis = runCatching { child.lastModified() }.getOrDefault(0L),
                     sourceType = MediaSourceType.NETWORK,
-                    shareId = share.id
+                    shareId = share.id,
+                    folderPath = relPath
                 )
             }
         }
