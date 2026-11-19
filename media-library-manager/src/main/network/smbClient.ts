@@ -1,5 +1,4 @@
 import SMB2 from "smb2";
-import { randomUUID } from "node:crypto";
 import { classifyExtension } from "../../shared/types.js";
 import type { MediaItem, MediaMetadata, NetworkShare } from "../../shared/types.js";
 
@@ -85,10 +84,14 @@ export async function scanNetworkShare(share: NetworkShare): Promise<MediaItem[]
       const ext = name.includes(".") ? name.split(".").pop()! : "";
       const kind = classifyExtension(ext);
       if (kind === "other") continue;
+      const mediaPath = `smb://${share.host}/${share.share}/${entryPath.replace(/\\/g, "/")}`;
       items.push({
-        id: randomUUID(),
+        // Stable (not random) so a rescan's items line up by id with what was there before —
+        // db.ts's replaceItemsForSource relies on that to carry forward fetched artwork/info
+        // instead of silently losing it on every rescan.
+        id: mediaPath,
         name,
-        path: `smb://${share.host}/${share.share}/${entryPath.replace(/\\/g, "/")}`,
+        path: mediaPath,
         kind,
         extension: ext.toLowerCase(),
         sizeBytes: 0,
@@ -111,10 +114,21 @@ function writeFile(client: SMB2, path: string, data: string): Promise<void> {
   });
 }
 
+function readFile(client: SMB2, path: string): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    client.readFile(path, (err, data) => (err ? reject(err) : resolve(data)));
+  });
+}
+
+function sidecarSmbPath(relPath: string): string {
+  return `${relPath}.metadata.json`.replace(/\//g, "\\");
+}
+
 /**
  * Writes a metadata sidecar JSON file next to a media file on the share (same directory, same
  * base name, ".metadata.json" appended) so the metadata travels with the file rather than living
- * only in this app's local database.
+ * only in this app's local database — any other device browsing this same share (or this device,
+ * after wiping its own local database) picks it up via readNetworkSidecar instead of re-fetching.
  */
 export async function writeNetworkSidecar(
   share: NetworkShare,
@@ -123,8 +137,20 @@ export async function writeNetworkSidecar(
 ): Promise<void> {
   const client = createClient(share);
   try {
-    const smbPath = `${relPath}.metadata.json`.replace(/\//g, "\\");
-    await writeFile(client, smbPath, JSON.stringify(metadata, null, 2));
+    await writeFile(client, sidecarSmbPath(relPath), JSON.stringify(metadata, null, 2));
+  } finally {
+    client.close();
+  }
+}
+
+/** Reads a previously-written metadata sidecar from the share, if one exists; null otherwise. */
+export async function readNetworkSidecar(share: NetworkShare, relPath: string): Promise<MediaMetadata | null> {
+  const client = createClient(share);
+  try {
+    const buf = await readFile(client, sidecarSmbPath(relPath));
+    return JSON.parse(buf.toString("utf8")) as MediaMetadata;
+  } catch {
+    return null;
   } finally {
     client.close();
   }

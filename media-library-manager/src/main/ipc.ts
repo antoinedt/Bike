@@ -19,8 +19,7 @@ import { downloadRawFile } from "./network/smbRawClient.js";
 import { ensureStreamServer, registerStream, unregisterStream } from "./network/streamServer.js";
 import { searchSites } from "./search/siteSearch.js";
 import { handOffDownload } from "./torrent/handoff.js";
-import { applyArtwork, applyMetadata, getAllItems, replaceItemsForSource } from "./db.js";
-import { fetchArtworkForLibrary } from "./artwork/artworkFetcher.js";
+import { applyMetadata, getAllItems, replaceItemsForSource } from "./db.js";
 import { scanMetadataForLibrary } from "./metadata/metadataScanner.js";
 
 export function registerIpcHandlers(): void {
@@ -53,12 +52,6 @@ export function registerIpcHandlers(): void {
   });
 
   ipcMain.handle(IPC.libraryGetItems, () => getAllItems());
-
-  ipcMain.handle(IPC.libraryFetchArtwork, async () => {
-    const items = await getAllItems();
-    const found = await fetchArtworkForLibrary(items);
-    return applyArtwork(found);
-  });
 
   ipcMain.handle(IPC.metadataScan, async () => {
     const items = await getAllItems();

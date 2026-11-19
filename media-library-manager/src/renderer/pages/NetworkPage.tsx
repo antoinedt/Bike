@@ -13,6 +13,7 @@ export default function NetworkPage({ settings }: { settings: AppSettings }) {
   const [items, setItems] = useState<MediaItem[]>([]);
   const [filter, setFilter] = useState("");
   const [scanning, setScanning] = useState(false);
+  const [fetchingInfo, setFetchingInfo] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [stream, setStream] = useState<ActiveStream | null>(null);
   const [downloading, setDownloading] = useState<string | null>(null);
@@ -52,6 +53,19 @@ export default function NetworkPage({ settings }: { settings: AppSettings }) {
     }
   }
 
+  async function fetchInfo() {
+    setFetchingInfo(true);
+    setError(null);
+    try {
+      const all = await window.api.scanMetadata();
+      setItems(all.filter((i) => i.source.type === "network"));
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setFetchingInfo(false);
+    }
+  }
+
   async function download(item: MediaItem) {
     setError(null);
     setDownloading(item.id);
@@ -78,6 +92,9 @@ export default function NetworkPage({ settings }: { settings: AppSettings }) {
           <button className="btn btn-primary" onClick={() => void scan()} disabled={scanning}>
             {scanning ? "Scanning…" : "Scan shares"}
           </button>
+          <button className="btn" onClick={() => void fetchInfo()} disabled={fetchingInfo}>
+            {fetchingInfo ? "Fetching artwork & info…" : "Fetch artwork & info"}
+          </button>
         </div>
       </div>
       {settings.networkShares.length === 0 && (
@@ -87,7 +104,9 @@ export default function NetworkPage({ settings }: { settings: AppSettings }) {
       )}
       <p className="hint">
         Playback streams live from the share (byte-range reads, seekable) — nothing is downloaded
-        to disk first.
+        to disk first. "Fetch artwork & info" looks up title/year/cover art and each file's length
+        and writes a <code>.metadata.json</code> sidecar onto the share itself, so any device
+        browsing it sees the same info without re-fetching.
       </p>
       {error && <p className="error">{error}</p>}
       {downloading && <p className="hint-inline">Downloading…</p>}

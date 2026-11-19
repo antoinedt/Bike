@@ -24,12 +24,13 @@ export interface PreloadApi {
   getLibraryItems(): Promise<MediaItem[]>;
   /** Opens a local-device item with the OS's default app. Not valid for network items. */
   openItem(item: MediaItem): Promise<void>;
-  /** Fetches artwork (via the iTunes Search API) for every library item missing it, local or network. */
-  fetchArtwork(): Promise<MediaItem[]>;
   /**
-   * Fills in title/year/length (and artwork where missing) for every video/audio item missing
-   * them, and writes a metadata sidecar file next to each one on disk/share. Can take a while for
-   * a large library — each item needs a real (hidden) duration probe, not just an HTTP lookup.
+   * Fills in title/year/length/cover art for every video/audio item missing them, local and
+   * network, and writes a metadata sidecar file next to each one (uploaded to the share for
+   * network items) so it's there for next time — on this device or any other that browses the
+   * same share. Checks for an existing sidecar before fetching anything, so a re-run only costs
+   * time for items that are genuinely new. Can take a while on a large library the first time —
+   * each un-cached item needs a real (hidden) duration probe, not just an HTTP lookup.
    */
   scanMetadata(): Promise<MediaItem[]>;
   scanNetwork(): Promise<MediaItem[]>;

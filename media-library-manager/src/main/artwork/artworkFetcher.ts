@@ -52,12 +52,6 @@ async function searchItunes(term: string, entity: string): Promise<ITunesResult 
   return data.results[0] ?? null;
 }
 
-async function lookup(term: string, entity: string): Promise<string | null> {
-  const result = await searchItunes(term, entity);
-  const artwork = result?.artworkUrl100;
-  return artwork ? upsizeArtwork(artwork) : null;
-}
-
 export interface ItunesMetadata {
   title?: string;
   year?: string;
@@ -66,8 +60,8 @@ export interface ItunesMetadata {
 
 /**
  * Looks up title/release-year/artwork for one item in a single iTunes Search API call — used by
- * the metadata scanner, distinct from fetchArtworkUrl (which only ever needed the artwork and is
- * kept as-is so the existing "Fetch artwork" button's behavior doesn't change).
+ * the metadata scanner (Settings -> Scan metadata), which also covers duration and sidecar
+ * persistence; this is just the iTunes half of that.
  */
 export async function fetchMetadataFromItunes(item: MediaItem): Promise<ItunesMetadata | null> {
   const { title, year } = guessTitle(item.name);
@@ -87,46 +81,4 @@ export async function fetchMetadataFromItunes(item: MediaItem): Promise<ItunesMe
     year: result.releaseDate ? result.releaseDate.slice(0, 4) : undefined,
     artworkUrl: result.artworkUrl100 ? upsizeArtwork(result.artworkUrl100) : undefined
   };
-}
-
-/**
- * Looks up artwork for one item via the iTunes Search API (Apple's public, keyless catalog
- * search — no scraping, no API key to configure). Returns null if nothing suitable was found;
- * callers should treat that as "no artwork available" rather than retry indefinitely.
- */
-export async function fetchArtworkUrl(item: MediaItem): Promise<string | null> {
-  const { title, year } = guessTitle(item.name);
-  if (!title) return null;
-  const term = year ? `${title} ${year}` : title;
-
-  if (item.kind === "video") {
-    return lookup(term, "movie");
-  }
-  if (item.kind === "audio") {
-    return lookup(title, "song");
-  }
-  return null;
-}
-
-const CONCURRENCY = 4;
-
-/**
- * Fetches artwork for every item missing it, bounded concurrency to stay polite to the API.
- * Returns a Map of item id -> artwork URL for the items where something was found.
- */
-export async function fetchArtworkForLibrary(items: MediaItem[]): Promise<Map<string, string>> {
-  const candidates = items.filter((item) => !item.artworkUrl && (item.kind === "video" || item.kind === "audio"));
-  const found = new Map<string, string>();
-
-  let cursor = 0;
-  async function worker(): Promise<void> {
-    while (cursor < candidates.length) {
-      const item = candidates[cursor++];
-      const url = await fetchArtworkUrl(item).catch(() => null);
-      if (url) found.set(item.id, url);
-    }
-  }
-
-  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, candidates.length) }, worker));
-  return found;
 }

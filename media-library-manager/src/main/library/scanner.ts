@@ -1,6 +1,5 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
 import { classifyExtension } from "../../shared/types.js";
 import type { LocalFolder, MediaItem } from "../../shared/types.js";
 
@@ -38,7 +37,10 @@ export async function scanLocalFolder(folder: LocalFolder): Promise<MediaItem[]>
           continue;
         }
         items.push({
-          id: randomUUID(),
+          // Stable (not random) so a rescan's items line up by id with what was there before —
+          // db.ts's replaceItemsForSource relies on that to carry forward fetched artwork/info
+          // instead of silently losing it on every rescan.
+          id: fullPath,
           name: entry.name,
           path: fullPath,
           kind,
