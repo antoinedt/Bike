@@ -43,9 +43,14 @@ class SmbShareBrowser {
                 val extension = childName.substringAfterLast('.', "")
                 val kind = classifyExtension(extension)
                 if (kind == MediaKind.OTHER) continue
+                val mediaPath = "smb://${share.id}/$childRel"
                 items += MediaItem(
+                    // Stable (not the random default) so a rescan's items line up by id with what
+                    // was there before — ItemCacheRepository relies on that to carry forward
+                    // fetched artwork/info instead of silently losing it on every rescan.
+                    id = mediaPath,
                     name = childName,
-                    path = "smb://${share.id}/$childRel",
+                    path = mediaPath,
                     kind = kind,
                     extension = extension.lowercase(),
                     sizeBytes = runCatching { child.length() }.getOrDefault(0L),

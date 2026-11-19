@@ -52,6 +52,10 @@ class MediaStoreScanner(private val context: Context) {
                 // trim the trailing slash so it matches the no-trailing-slash convention folderPath uses.
                 val relativePath = if (relPathCol >= 0) cursor.getString(relPathCol)?.trimEnd('/') ?: "" else ""
                 items += MediaItem(
+                    // Stable (not the random default) so a rescan's items line up by id with what
+                    // was there before — ItemCacheRepository relies on that to carry forward
+                    // fetched artwork/info instead of silently losing it on every rescan.
+                    id = uri.toString(),
                     name = name,
                     path = uri.toString(),
                     kind = kind,

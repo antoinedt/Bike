@@ -89,13 +89,13 @@ fun MediaGrid(
                         }
                         Box(Modifier.height(4.dp))
                         Text(
-                            item.name,
+                            item.title ?: item.name,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             style = MaterialTheme.typography.bodySmall
                         )
                         Text(
-                            "${item.extension.uppercase()} · ${formatSize(item.sizeBytes)}",
+                            (item.year?.let { "$it · " } ?: "") + "${item.extension.uppercase()} · ${formatSize(item.sizeBytes)}",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

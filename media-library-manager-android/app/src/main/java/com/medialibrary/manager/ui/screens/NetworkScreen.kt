@@ -34,6 +34,7 @@ fun NetworkScreen(viewModel: MediaLibraryViewModel) {
     val settings by viewModel.settings.collectAsState()
     val items by viewModel.networkItems.collectAsState()
     val scanning by viewModel.isScanningNetwork.collectAsState()
+    val fetchingArtwork by viewModel.isFetchingArtwork.collectAsState()
     val downloadingItemId by viewModel.downloadingItemId.collectAsState()
     var filter by remember { mutableStateOf("") }
 
@@ -56,6 +57,11 @@ fun NetworkScreen(viewModel: MediaLibraryViewModel) {
                 Text(if (scanning) "Scanning…" else "Scan shares")
             }
         }
+        Row {
+            Button(onClick = { viewModel.fetchInfo() }, enabled = !fetchingArtwork) {
+                Text(if (fetchingArtwork) "Fetching artwork & info…" else "Fetch artwork & info")
+            }
+        }
         if (settings.networkShares.isEmpty()) {
             Spacer(Modifier.height(8.dp))
             Text("No SMB shares configured yet. Add one in Settings.", style = MaterialTheme.typography.bodySmall)
@@ -63,7 +69,9 @@ fun NetworkScreen(viewModel: MediaLibraryViewModel) {
         Spacer(Modifier.height(4.dp))
         Text(
             "Tap an item to stream it live (seekable, nothing saved to disk); use the download " +
-                "icon on a card to save a full local copy to Downloads/MediaLibraryManager instead.",
+                "icon on a card to save a full local copy to Downloads/MediaLibraryManager instead. " +
+                "\"Fetch artwork & info\" writes a .metadata.json sidecar onto the share itself, so " +
+                "any device browsing it sees the same info without re-fetching.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

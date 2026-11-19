@@ -2,6 +2,7 @@ package com.medialibrary.manager.di
 
 import android.content.Context
 import com.medialibrary.manager.artwork.ArtworkFetcher
+import com.medialibrary.manager.data.ItemCacheRepository
 import com.medialibrary.manager.data.SettingsRepository
 import com.medialibrary.manager.library.LocalFolderScanner
 import com.medialibrary.manager.library.MediaStoreScanner
@@ -20,6 +21,7 @@ object ServiceLocator {
     }
 
     val settingsRepository: SettingsRepository by lazy { SettingsRepository(appContext) }
+    val itemCacheRepository: ItemCacheRepository by lazy { ItemCacheRepository(appContext) }
     val mediaStoreScanner: MediaStoreScanner by lazy { MediaStoreScanner(appContext) }
     val localFolderScanner: LocalFolderScanner by lazy { LocalFolderScanner(appContext) }
     val smbShareBrowser: SmbShareBrowser by lazy { SmbShareBrowser() }
@@ -27,5 +29,5 @@ object ServiceLocator {
     val headlessWebViewFetcher: HeadlessWebViewFetcher by lazy { HeadlessWebViewFetcher(appContext) }
     val siteSearchRepository: SiteSearchRepository by lazy { SiteSearchRepository(headlessWebViewFetcher) }
     val torrentHandoff: TorrentHandoff by lazy { TorrentHandoff(appContext) }
-    val artworkFetcher: ArtworkFetcher by lazy { ArtworkFetcher() }
+    val artworkFetcher: ArtworkFetcher by lazy { ArtworkFetcher(appContext) }
 }

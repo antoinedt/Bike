@@ -32,6 +32,7 @@ class MediaLibraryViewModel : ViewModel() {
     private val mediaStoreScanner = ServiceLocator.mediaStoreScanner
     private val localFolderScanner = ServiceLocator.localFolderScanner
     private val artworkFetcher = ServiceLocator.artworkFetcher
+    private val itemCache = ServiceLocator.itemCacheRepository
     private val smbBrowser = ServiceLocator.smbShareBrowser
     private val networkDownloader = ServiceLocator.networkDownloader
     private val siteSearch = ServiceLocator.siteSearchRepository
@@ -86,7 +87,13 @@ class MediaLibraryViewModel : ViewModel() {
         _errorMessage.value = null
     }
 
-    /** Scoped to the configured folders when there are any; falls back to a whole-device MediaStore scan otherwise. */
+    /**
+     * Scoped to the configured folders when there are any; falls back to a whole-device
+     * MediaStore scan otherwise. Merges in previously-fetched artwork/title/year from the
+     * on-device cache (keyed by each item's stable, path-derived id) — without this, a fresh
+     * scan's items (which never carry that data themselves) would silently lose everything
+     * "Fetch artwork & info" had already found, on every rescan and every app restart.
+     */
     fun scanLocal() {
         viewModelScope.launch {
             _isScanningLocal.value = true
@@ -97,20 +104,36 @@ class MediaLibraryViewModel : ViewModel() {
                 } else {
                     folders.flatMap { localFolderScanner.scan(it) }
                 }
-            }.onSuccess { _localItems.value = it }
-                .onFailure { _errorMessage.value = it.message }
+            }.onSuccess { fresh ->
+                val cache = itemCache.load()
+                _localItems.value = itemCache.mergeWithCache(fresh, cache)
+            }.onFailure { _errorMessage.value = it.message }
             _isScanningLocal.value = false
         }
     }
 
-    /** Fetches artwork (via the iTunes Search API) for every item missing it, local and network combined. */
-    fun fetchArtwork() {
+    /**
+     * Fetches title/year/artwork for every item missing them, local and network combined — via
+     * iTunes, falling back to a frame pulled from the video itself (local items only) when
+     * iTunes has nothing, which is most of a home library's camera footage/home videos. Persists
+     * results to the on-device cache (so they survive rescans and app restarts) and, for network
+     * items, as a sidecar uploaded to the share itself (so any other device sees it too).
+     */
+    fun fetchInfo() {
         viewModelScope.launch {
             _isFetchingArtwork.value = true
             runCatching {
-                val found = artworkFetcher.fetchForLibrary(_localItems.value + _networkItems.value)
-                _localItems.value = _localItems.value.map { item -> found[item.id]?.let { item.copy(artworkUrl = it) } ?: item }
-                _networkItems.value = _networkItems.value.map { item -> found[item.id]?.let { item.copy(artworkUrl = it) } ?: item }
+                val found = artworkFetcher.fetchForLibrary(_localItems.value + _networkItems.value, _settings.value.networkShares)
+                fun apply(item: MediaItem) = found[item.id]?.let {
+                    item.copy(
+                        artworkUrl = item.artworkUrl ?: it.artworkUrl,
+                        title = item.title ?: it.title,
+                        year = item.year ?: it.year
+                    )
+                } ?: item
+                _localItems.value = _localItems.value.map(::apply)
+                _networkItems.value = _networkItems.value.map(::apply)
+                itemCache.save(_localItems.value + _networkItems.value)
             }.onFailure { _errorMessage.value = it.message }
             _isFetchingArtwork.value = false
         }
@@ -123,11 +146,15 @@ class MediaLibraryViewModel : ViewModel() {
 
     fun removeLocalFolder(id: String) = viewModelScope.launch { settingsRepo.removeLocalFolder(id) }
 
+    /** Merges in previously-fetched artwork/title/year from the on-device cache — see scanLocal(). */
     fun scanNetwork() {
         viewModelScope.launch {
             _isScanningNetwork.value = true
             runCatching { _settings.value.networkShares.flatMap { share -> smbBrowser.scan(share) } }
-                .onSuccess { _networkItems.value = it }
+                .onSuccess { fresh ->
+                    val cache = itemCache.load()
+                    _networkItems.value = itemCache.mergeWithCache(fresh, cache)
+                }
                 .onFailure { _errorMessage.value = it.message }
             _isScanningNetwork.value = false
         }

@@ -1,7 +1,13 @@
 package com.medialibrary.manager.artwork
 
+import android.content.Context
+import android.net.Uri
 import com.medialibrary.manager.model.MediaItem
 import com.medialibrary.manager.model.MediaKind
+import com.medialibrary.manager.model.MediaMetadata
+import com.medialibrary.manager.model.MediaSourceType
+import com.medialibrary.manager.model.NetworkShare
+import com.medialibrary.manager.network.SmbSidecar
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -49,7 +55,12 @@ fun guessTitle(filename: String): GuessedTitle {
 }
 
 @Serializable
-private data class ITunesResult(val artworkUrl100: String? = null)
+private data class ITunesResult(
+    val artworkUrl100: String? = null,
+    val trackName: String? = null,
+    val collectionName: String? = null,
+    val releaseDate: String? = null
+)
 
 @Serializable
 private data class ITunesResponse(val results: List<ITunesResult> = emptyList())
@@ -57,46 +68,89 @@ private data class ITunesResponse(val results: List<ITunesResult> = emptyList())
 private fun upsizeArtwork(url: String): String = url.replace(Regex("\\d+x\\d+bb(\\.\\w+)$"), "600x600bb$1")
 
 /**
- * Looks up artwork via the iTunes Search API (Apple's public, keyless catalog search — same
- * approach as the desktop app's artworkFetcher.ts, not scraping or requiring an API key).
+ * Looks up title/year/artwork via the iTunes Search API (keyless, no scraping), falling back to
+ * a frame pulled from the video itself — via VideoThumbnailExtractor, local items only — when
+ * iTunes has nothing, which covers most of a home library (camera footage, home videos) that no
+ * commercial catalog would ever know about.
+ *
+ * Persists results two ways: every item's fetched metadata is merged into ItemCacheRepository by
+ * the caller (so it survives app restarts and rescans on this device), and for network items this
+ * also checks for / writes a ".metadata.json" sidecar on the share itself via SmbSidecar, so any
+ * other device browsing the same share sees it too, without re-fetching.
  */
-class ArtworkFetcher(private val httpClient: OkHttpClient = OkHttpClient()) {
-
+class ArtworkFetcher(
+    private val appContext: Context,
+    private val httpClient: OkHttpClient = OkHttpClient()
+) {
     private val json = Json { ignoreUnknownKeys = true }
 
-    suspend fun fetchArtworkUrl(item: MediaItem): String? {
-        val (title, year) = guessTitle(item.name)
-        if (title.isBlank()) return null
-        return when (item.kind) {
-            MediaKind.VIDEO -> lookup(if (year != null) "$title $year" else title, "movie")
-            MediaKind.AUDIO -> lookup(title, "song")
-            else -> null
-        }
-    }
-
-    private suspend fun lookup(term: String, entity: String): String? = withContext(Dispatchers.IO) {
+    private suspend fun lookupItunes(term: String, entity: String): ITunesResult? = withContext(Dispatchers.IO) {
         val url = "https://itunes.apple.com/search?term=${URLEncoder.encode(term, "UTF-8")}&entity=$entity&limit=1"
         val request = Request.Builder().url(url).build()
         runCatching {
             httpClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return@use null
                 val body = response.body?.string() ?: return@use null
-                val parsed = json.decodeFromString<ITunesResponse>(body)
-                parsed.results.firstOrNull()?.artworkUrl100?.let(::upsizeArtwork)
+                json.decodeFromString<ITunesResponse>(body).results.firstOrNull()
             }
         }.getOrNull()
     }
 
-    /** Fetches artwork for every item missing it (video/audio only), bounded concurrency. Returns id -> url. */
-    suspend fun fetchForLibrary(items: List<MediaItem>): Map<String, String> = coroutineScope {
-        val candidates = items.filter {
-            it.artworkUrl == null && (it.kind == MediaKind.VIDEO || it.kind == MediaKind.AUDIO)
+    private suspend fun fetchMetadata(item: MediaItem): MediaMetadata? {
+        val (guessedTitle, guessedYear) = guessTitle(item.name)
+        val term = if (guessedYear != null) "$guessedTitle $guessedYear" else guessedTitle
+        val result = when (item.kind) {
+            MediaKind.VIDEO -> lookupItunes(term, "movie")
+            MediaKind.AUDIO -> lookupItunes(guessedTitle, "song")
+            else -> null
         }
-        val semaphore = Semaphore(CONCURRENCY)
-        candidates
-            .map { item -> async { semaphore.withPermit { item.id to fetchArtworkUrl(item) } } }
-            .map { it.await() }
-            .mapNotNull { (id, url) -> url?.let { id to it } }
-            .toMap()
+
+        var artworkUrl = result?.artworkUrl100?.let(::upsizeArtwork)
+        if (artworkUrl == null && item.kind == MediaKind.VIDEO && item.sourceType == MediaSourceType.LOCAL) {
+            artworkUrl = VideoThumbnailExtractor.extract(appContext, Uri.parse(item.path))
+        }
+
+        val title = (result?.trackName ?: result?.collectionName ?: guessedTitle).ifBlank { null }
+        val year = result?.releaseDate?.take(4) ?: guessedYear
+        if (title == null && year == null && artworkUrl == null) return null
+        return MediaMetadata(title = title, year = year, artworkUrl = artworkUrl)
+    }
+
+    /**
+     * Fetches title/year/artwork for every video/audio item missing them, local and network.
+     * Network items check for an existing sidecar on the share before fetching; a fresh fetch is
+     * written back as one. Returns id -> metadata for everything found.
+     */
+    suspend fun fetchForLibrary(items: List<MediaItem>, networkShares: List<NetworkShare>): Map<String, MediaMetadata> =
+        coroutineScope {
+            val candidates = items.filter {
+                it.title == null && (it.kind == MediaKind.VIDEO || it.kind == MediaKind.AUDIO)
+            }
+            val semaphore = Semaphore(CONCURRENCY)
+            candidates
+                .map { item -> async { semaphore.withPermit { runCatching { item.id to resolve(item, networkShares) }.getOrNull() } } }
+                .mapNotNull { it.await() }
+                .mapNotNull { (id, metadata) -> metadata?.let { id to it } }
+                .toMap()
+        }
+
+    private suspend fun resolve(item: MediaItem, networkShares: List<NetworkShare>): MediaMetadata? {
+        val share = if (item.sourceType == MediaSourceType.NETWORK) {
+            item.shareId?.let { shareId -> networkShares.find { it.id == shareId } }
+        } else {
+            null
+        }
+        val relPath = share?.let { item.path.removePrefix("smb://${it.id}/") }
+
+        if (share != null && relPath != null) {
+            val cached = SmbSidecar.read(share, relPath)
+            if (cached != null) return cached
+        }
+
+        val metadata = fetchMetadata(item) ?: return null
+        if (share != null && relPath != null) {
+            runCatching { SmbSidecar.write(share, relPath, metadata) }
+        }
+        return metadata
     }
 }

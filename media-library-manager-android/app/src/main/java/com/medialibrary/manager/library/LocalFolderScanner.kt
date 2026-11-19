@@ -43,6 +43,10 @@ class LocalFolderScanner(private val context: Context) {
             val kind = classifyExtension(extension)
             if (kind == MediaKind.OTHER) continue
             out += MediaItem(
+                // Stable (not the random default) so a rescan's items line up by id with what
+                // was there before — ItemCacheRepository relies on that to carry forward fetched
+                // artwork/info instead of silently losing it on every rescan.
+                id = child.uri.toString(),
                 name = name,
                 path = child.uri.toString(),
                 kind = kind,

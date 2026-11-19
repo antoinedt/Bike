@@ -50,7 +50,18 @@ data class MediaItem(
      * scanner, since it's cheap to track while walking and far more reliable than trying to parse
      * it back out of a content:// URI or MediaStore id after the fact.
      */
-    val folderPath: String = ""
+    val folderPath: String = "",
+    /** The fields below are populated on demand by "Fetch artwork & info"; null until fetched. */
+    val title: String? = null,
+    val year: String? = null
+)
+
+/** The subset of MediaItem's on-demand fields that "Fetch artwork & info" produces, and that an SMB sidecar persists. */
+@Serializable
+data class MediaMetadata(
+    val title: String? = null,
+    val year: String? = null,
+    val artworkUrl: String? = null
 )
 
 /** A user-picked device folder (SAF tree URI) to scope the local scan to. */

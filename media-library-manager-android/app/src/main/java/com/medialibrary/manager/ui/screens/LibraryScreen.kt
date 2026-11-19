@@ -60,12 +60,15 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel) {
             }
         }
         Row {
-            Button(onClick = { viewModel.fetchArtwork() }, enabled = !fetchingArtwork) {
-                Text(if (fetchingArtwork) "Fetching artwork…" else "Fetch artwork")
+            Button(onClick = { viewModel.fetchInfo() }, enabled = !fetchingArtwork) {
+                Text(if (fetchingArtwork) "Fetching artwork & info…" else "Fetch artwork & info")
             }
         }
         Text(
-            "Looks up covers/posters via the iTunes catalog based on each file's name — best-effort, covers the whole library.",
+            "Looks up title/year/cover art via iTunes, falling back to a frame pulled from the " +
+                "video itself when nothing matches (most useful for home videos, which iTunes " +
+                "won't know about) — covers the whole library, local and network. Saved on this " +
+                "device so it only needs to happen once.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
