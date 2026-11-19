@@ -22,14 +22,27 @@ export default function MediaDetailsPanel({
   const [year, setYear] = useState(item.year ?? "");
   const [tags, setTags] = useState<string[]>(item.tags ?? []);
   const [tagInput, setTagInput] = useState("");
+  const [artworkUrl, setArtworkUrl] = useState(item.artworkUrl);
   const [saving, setSaving] = useState(false);
+  const [pickingImage, setPickingImage] = useState(false);
 
   function startEdit() {
     setTitle(item.title ?? "");
     setYear(item.year ?? "");
     setTags(item.tags ?? []);
     setTagInput("");
+    setArtworkUrl(item.artworkUrl);
     setEditing(true);
+  }
+
+  async function chooseImage() {
+    setPickingImage(true);
+    try {
+      const picked = await window.api.pickImageFile();
+      if (picked) setArtworkUrl(picked);
+    } finally {
+      setPickingImage(false);
+    }
   }
 
   function addTag(raw: string) {
@@ -49,7 +62,7 @@ export default function MediaDetailsPanel({
   async function save() {
     setSaving(true);
     try {
-      const updated = await window.api.updateItemMetadata(item.id, { title, year, tags });
+      const updated = await window.api.updateItemMetadata(item.id, { title, year, tags, artworkUrl });
       const fresh = updated.find((i) => i.id === item.id);
       if (fresh) onItemUpdated(fresh);
       setEditing(false);
@@ -70,13 +83,16 @@ export default function MediaDetailsPanel({
           </button>
         </div>
         <div className="details-body">
-          {item.artworkUrl ? (
-            <img className="details-artwork" src={item.artworkUrl} alt="" />
+          {(editing ? artworkUrl : item.artworkUrl) ? (
+            <img className="details-artwork" src={editing ? artworkUrl : item.artworkUrl} alt="" />
           ) : (
             <div className="details-artwork-placeholder">{KIND_ICON[item.kind]}</div>
           )}
           {editing ? (
             <div className="details-edit-form">
+              <button className="btn btn-small" onClick={() => void chooseImage()} disabled={pickingImage}>
+                {pickingImage ? "Choosing…" : "Choose image…"}
+              </button>
               <input
                 className="text-input"
                 placeholder="Title"
@@ -115,6 +131,12 @@ export default function MediaDetailsPanel({
             </div>
           ) : (
             <dl className="details-meta">
+              {!item.infoFetched && (
+                <p className="hint">No info fetched yet — run "Fetch artwork &amp; info" or edit manually below.</p>
+              )}
+              {item.infoFetched && !item.artworkUrl && (
+                <p className="hint">No artwork found online — add it yourself below.</p>
+              )}
               <dt>Year</dt>
               <dd>{item.year || "—"}</dd>
               <dt>Length</dt>
@@ -155,7 +177,7 @@ export default function MediaDetailsPanel({
               <button className="btn btn-primary" onClick={onOpen}>
                 {item.source.type === "network" ? "Play" : "Open"}
               </button>
-              {onDownload && (
+              {onDownload && item.source.type === "network" && (
                 <button className="btn" onClick={onDownload}>
                   Download…
                 </button>

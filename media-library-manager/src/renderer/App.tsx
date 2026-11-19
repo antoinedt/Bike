@@ -2,11 +2,10 @@ import { useCallback, useEffect, useState } from "react";
 import type { AppSettings } from "../shared/types.js";
 import Sidebar from "./components/Sidebar.js";
 import LibraryPage from "./pages/LibraryPage.js";
-import NetworkPage from "./pages/NetworkPage.js";
 import SearchPage from "./pages/SearchPage.js";
 import SettingsPage from "./pages/SettingsPage.js";
 
-export type Tab = "library" | "network" | "search" | "settings";
+export type Tab = "library" | "search" | "settings";
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("library");
@@ -28,8 +27,6 @@ export default function App() {
           <div className="empty-state">Loading…</div>
         ) : tab === "library" ? (
           <LibraryPage settings={settings} />
-        ) : tab === "network" ? (
-          <NetworkPage settings={settings} />
         ) : tab === "search" ? (
           <SearchPage settings={settings} />
         ) : (

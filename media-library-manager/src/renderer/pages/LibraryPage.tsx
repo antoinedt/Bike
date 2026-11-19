@@ -2,6 +2,13 @@ import { useEffect, useState } from "react";
 import type { AppSettings, MediaItem } from "../../shared/types.js";
 import FilterBar from "../components/FilterBar.js";
 import MediaBrowser from "../components/MediaBrowser.js";
+import StreamPlayer from "../components/StreamPlayer.js";
+
+interface ActiveStream {
+  item: MediaItem;
+  url: string;
+  token: string;
+}
 
 export default function LibraryPage({ settings }: { settings: AppSettings }) {
   const [items, setItems] = useState<MediaItem[]>([]);
@@ -9,45 +16,71 @@ export default function LibraryPage({ settings }: { settings: AppSettings }) {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
-  const [scanning, setScanning] = useState(false);
-  const [fetchingInfo, setFetchingInfo] = useState(false);
+  const [scanningFolders, setScanningFolders] = useState(false);
+  const [scanningShares, setScanningShares] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [stream, setStream] = useState<ActiveStream | null>(null);
+  const [downloading, setDownloading] = useState<string | null>(null);
 
   useEffect(() => {
-    void window.api.getLibraryItems().then((all) => setItems(all.filter((i) => i.source.type === "local")));
+    void window.api.getLibraryItems().then(setItems);
   }, []);
 
-  async function scan() {
-    setScanning(true);
+  // Closes whichever stream was active whenever a new one starts, and on unmount.
+  useEffect(() => {
+    if (!stream) return;
+    return () => {
+      void window.api.closeNetworkStream(stream.token);
+    };
+  }, [stream]);
+
+  async function scanFolders() {
+    setScanningFolders(true);
     setError(null);
     try {
-      const all = await window.api.scanLibrary();
-      setItems(all.filter((i) => i.source.type === "local"));
+      setItems(await window.api.scanLibrary());
     } catch (err) {
       setError((err as Error).message);
     } finally {
-      setScanning(false);
+      setScanningFolders(false);
     }
   }
 
-  async function fetchInfo() {
-    setFetchingInfo(true);
+  async function scanShares() {
+    setScanningShares(true);
     setError(null);
     try {
-      const all = await window.api.scanMetadata();
-      setItems(all.filter((i) => i.source.type === "local"));
+      setItems(await window.api.scanNetwork());
     } catch (err) {
       setError((err as Error).message);
     } finally {
-      setFetchingInfo(false);
+      setScanningShares(false);
     }
   }
 
-  async function openItem(item: MediaItem) {
+  async function open(item: MediaItem) {
+    setError(null);
     try {
-      await window.api.openItem(item);
+      if (item.source.type === "local") {
+        await window.api.openItem(item);
+      } else {
+        const { url, token } = await window.api.openNetworkStream(item);
+        setStream({ item, url, token });
+      }
     } catch (err) {
       setError((err as Error).message);
+    }
+  }
+
+  async function download(item: MediaItem) {
+    setError(null);
+    setDownloading(item.id);
+    try {
+      await window.api.downloadNetworkItem(item);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setDownloading(null);
     }
   }
 
@@ -70,27 +103,31 @@ export default function LibraryPage({ settings }: { settings: AppSettings }) {
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
           />
-          <button className="btn btn-primary" onClick={() => void scan()} disabled={scanning}>
-            {scanning ? "Scanning…" : "Scan folders"}
+          <button className="btn btn-primary" onClick={() => void scanFolders()} disabled={scanningFolders}>
+            {scanningFolders ? "Scanning…" : "Scan folders"}
           </button>
-          <button className="btn" onClick={() => void fetchInfo()} disabled={fetchingInfo}>
-            {fetchingInfo ? "Fetching artwork & info…" : "Fetch artwork & info"}
+          <button className="btn btn-primary" onClick={() => void scanShares()} disabled={scanningShares}>
+            {scanningShares ? "Scanning…" : "Scan shares"}
           </button>
         </div>
       </div>
       <p className="hint">
-        Looks up title/year/cover art (iTunes, falling back to a frame pulled from the video
-        itself when nothing matches — most useful for home videos, which iTunes won't know about)
-        and each file's length, for the whole library (local and network). Saves a
+        Local folders and network shares live in one library here — browse into "Local" or any
+        connected share's folder below. "Fetch artwork &amp; info" (further down) only covers the
+        folder you're currently browsing, with an option to include its subfolders, and saves a
         <code> .metadata.json</code> file next to each media file — uploaded to the share for
-        network items — so it only needs to happen once per file, from any device.
+        network items — so it only needs to happen once per file, from any device. Network
+        playback streams live from the share (byte-range reads, seekable); nothing is downloaded
+        to disk first unless you choose Download.
       </p>
-      {settings.localFolders.length === 0 && (
+      {settings.localFolders.length === 0 && settings.networkShares.length === 0 && (
         <p className="hint">
-          No folders configured yet. Add one in <strong>Settings</strong> to start scanning.
+          Nothing configured yet. Add a local folder or an SMB share in <strong>Settings</strong> to
+          start scanning.
         </p>
       )}
       {error && <p className="error">{error}</p>}
+      {downloading && <p className="hint-inline">Downloading…</p>}
       <FilterBar
         items={items}
         selectedTags={selectedTags}
@@ -107,9 +144,12 @@ export default function LibraryPage({ settings }: { settings: AppSettings }) {
         tagFilter={selectedTags}
         dateFrom={dateFrom ? new Date(`${dateFrom}T00:00:00`).getTime() : null}
         dateTo={dateTo ? new Date(`${dateTo}T23:59:59.999`).getTime() : null}
-        onOpen={(item) => void openItem(item)}
+        onOpen={(item) => void open(item)}
+        onDownload={(item) => void download(item)}
         onItemUpdated={handleItemUpdated}
+        onItemsChanged={setItems}
       />
+      {stream && <StreamPlayer item={stream.item} url={stream.url} onClose={() => setStream(null)} />}
     </div>
   );
 }

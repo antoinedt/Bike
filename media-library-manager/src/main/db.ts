@@ -36,7 +36,8 @@ export async function replaceItemsForSource(
       title: item.title ?? previous.title,
       year: item.year ?? previous.year,
       durationSeconds: item.durationSeconds ?? previous.durationSeconds,
-      tags: item.tags ?? previous.tags
+      tags: item.tags ?? previous.tags,
+      infoFetched: item.infoFetched ?? previous.infoFetched
     };
   });
   db.data.items = db.data.items.filter((item) => !matches(item)).concat(merged);
@@ -48,7 +49,7 @@ export async function getAllItems(): Promise<MediaItem[]> {
   return db.data.items;
 }
 
-/** Patches title/year/durationSeconds (and artworkUrl, if not already set) onto items by id. */
+/** Patches title/year/durationSeconds/infoFetched (and artworkUrl, if not already set) onto items by id. */
 export async function applyMetadata(metadataByItemId: Map<string, MediaMetadata>): Promise<MediaItem[]> {
   const db = await getDb();
   db.data.items = db.data.items.map((item) => {
@@ -60,7 +61,8 @@ export async function applyMetadata(metadataByItemId: Map<string, MediaMetadata>
       year: metadata.year ?? item.year,
       durationSeconds: metadata.durationSeconds ?? item.durationSeconds,
       artworkUrl: item.artworkUrl ?? metadata.artworkUrl,
-      tags: item.tags ?? metadata.tags
+      tags: item.tags ?? metadata.tags,
+      infoFetched: metadata.infoFetched ?? item.infoFetched
     };
   });
   await db.write();
@@ -68,14 +70,15 @@ export async function applyMetadata(metadataByItemId: Map<string, MediaMetadata>
 }
 
 /**
- * Overwrites title/year/tags on one item by id with user-provided values (unlike applyMetadata,
- * these take precedence unconditionally — the whole point is letting the user correct a wrong
- * auto-fetched title, not just fill in blanks). artworkUrl/durationSeconds are left untouched;
- * editing those isn't exposed yet.
+ * Overwrites title/year/tags/artworkUrl on one item by id with user-provided values (unlike
+ * applyMetadata, these take precedence unconditionally — the whole point is letting the user
+ * correct a wrong auto-fetched value, or add one by hand after a failed auto fetch, not just fill
+ * in blanks). Also marks the item as fetched, so a failed auto-fetch followed by a manual edit
+ * doesn't look like "never checked" and get silently re-attempted.
  */
 export async function applyManualEdit(
   itemId: string,
-  edits: { title?: string; year?: string; tags?: string[] }
+  edits: { title?: string; year?: string; tags?: string[]; artworkUrl?: string }
 ): Promise<MediaItem[]> {
   const db = await getDb();
   db.data.items = db.data.items.map((item) => {
@@ -84,7 +87,9 @@ export async function applyManualEdit(
       ...item,
       title: edits.title !== undefined ? edits.title || undefined : item.title,
       year: edits.year !== undefined ? edits.year || undefined : item.year,
-      tags: edits.tags !== undefined ? edits.tags : item.tags
+      tags: edits.tags !== undefined ? edits.tags : item.tags,
+      artworkUrl: edits.artworkUrl !== undefined ? edits.artworkUrl || undefined : item.artworkUrl,
+      infoFetched: true
     };
   });
   await db.write();

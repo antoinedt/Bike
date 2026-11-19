@@ -94,6 +94,16 @@ body {
 .page-actions {
   display: flex;
   gap: 8px;
+  align-items: center;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-dim);
+  white-space: nowrap;
 }
 
 .text-input {

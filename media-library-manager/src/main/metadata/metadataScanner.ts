@@ -10,21 +10,25 @@ import { extractVideoThumbnail } from "./thumbnailExtractor.js";
 const CONCURRENCY = 2;
 
 /**
- * Fills in title/year/length/cover art for every video/audio item that doesn't already have
- * them, local or network. For each candidate, first checks for a ".metadata.json" sidecar next
- * to the file — written there by a previous run on this device or any other device that scanned
- * the same share — and uses it directly if present, skipping the iTunes lookup and duration
- * probe entirely. Only items with no sidecar and no match do a real fetch, which is then written
- * back as a sidecar (local fs, or uploaded to the network share) so it's there next time, on any
- * device. Bounded concurrency, lower than typical — each un-cached item opens a real (hidden)
- * browser window to read its duration, which is heavier than a plain HTTP request.
+ * Fills in title/year/length/cover art for every video/audio item that hasn't been checked yet
+ * (item.infoFetched), local or network, limited to whatever `items` the caller passes in — the
+ * caller decides the scope (e.g. just the folder the user is currently browsing). For each
+ * candidate, first checks for a ".metadata.json" sidecar next to the file — written there by a
+ * previous run on this device or any other device that scanned the same share — and uses it
+ * directly if present, skipping the iTunes lookup and duration probe entirely. Only items with no
+ * sidecar and no match do a real fetch. Every attempt — success or total failure — is written back
+ * as a sidecar (local fs, or uploaded to the network share) marked infoFetched so it's there next
+ * time, on any device, and so a failed attempt doesn't get silently retried forever or look
+ * identical to "never checked": the UI uses infoFetched to show "no info found — add it yourself"
+ * rather than nothing at all. Bounded concurrency, lower than typical — each un-cached item opens
+ * a real (hidden) browser window to read its duration, which is heavier than a plain HTTP request.
  */
 export async function scanMetadataForLibrary(
   items: MediaItem[],
   networkShares: NetworkShare[]
 ): Promise<Map<string, MediaMetadata>> {
   const candidates = items.filter(
-    (item) => (item.kind === "video" || item.kind === "audio") && (!item.title || item.durationSeconds === undefined)
+    (item) => (item.kind === "video" || item.kind === "audio") && !item.infoFetched
   );
   const found = new Map<string, MediaMetadata>();
 
@@ -34,16 +38,15 @@ export async function scanMetadataForLibrary(
       const item = candidates[cursor++];
       try {
         const cached = await readSidecar(item, networkShares).catch(() => null);
-        // A sidecar with a title is a fully-resolved result from a previous fetch — use it as-is.
-        // One with only tags (e.g. the user tagged this item before ever running a fetch on it)
-        // isn't: fall through to a real fetch below, carrying the existing tags forward so they
-        // aren't lost under the fresh write.
-        if (cached?.title) {
+        // A sidecar already marked infoFetched is a fully-resolved result from a previous attempt
+        // (on this device or another) — use it as-is, success or not. One with only tags (e.g. the
+        // user tagged this item before ever running a fetch on it) isn't resolved: fall through to
+        // a real fetch below, carrying the existing tags forward so they aren't lost.
+        if (cached?.infoFetched) {
           found.set(item.id, cached);
           continue;
         }
         const metadata = await buildMetadata(item, networkShares);
-        if (!metadata) continue;
         if (cached?.tags?.length) metadata.tags = cached.tags;
         found.set(item.id, metadata);
         await writeSidecar(item, metadata, networkShares).catch(() => {
@@ -60,7 +63,7 @@ export async function scanMetadataForLibrary(
   return found;
 }
 
-async function buildMetadata(item: MediaItem, networkShares: NetworkShare[]): Promise<MediaMetadata | null> {
+async function buildMetadata(item: MediaItem, networkShares: NetworkShare[]): Promise<MediaMetadata> {
   const guessed = guessTitle(item.name);
   const itunes = await fetchMetadataFromItunes(item).catch(() => null);
   const durationSeconds = await probeDuration(item, networkShares).catch(() => null);
@@ -69,7 +72,8 @@ async function buildMetadata(item: MediaItem, networkShares: NetworkShare[]): Pr
     title: itunes?.title || guessed.title,
     year: itunes?.year || guessed.year,
     durationSeconds: durationSeconds ?? undefined,
-    artworkUrl: itunes?.artworkUrl
+    artworkUrl: itunes?.artworkUrl,
+    infoFetched: true
   };
 
   // iTunes only knows commercial movies/music — most of a home media library (camera footage,
@@ -79,8 +83,7 @@ async function buildMetadata(item: MediaItem, networkShares: NetworkShare[]): Pr
     metadata.artworkUrl = (await extractThumbnail(item, networkShares).catch(() => null)) ?? undefined;
   }
 
-  const hasAnything = metadata.title || metadata.year || metadata.durationSeconds !== undefined || metadata.artworkUrl;
-  return hasAnything ? metadata : null;
+  return metadata;
 }
 
 async function extractThumbnail(item: MediaItem, networkShares: NetworkShare[]): Promise<string | null> {

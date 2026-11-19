@@ -20,7 +20,8 @@ export default function MediaBrowser({
   dateTo,
   onOpen,
   onDownload,
-  onItemUpdated
+  onItemUpdated,
+  onItemsChanged
 }: {
   items: MediaItem[];
   settings: AppSettings;
@@ -31,8 +32,13 @@ export default function MediaBrowser({
   onOpen: (item: MediaItem) => void;
   onDownload?: (item: MediaItem) => void;
   onItemUpdated: (item: MediaItem) => void;
+  /** Called with the full, freshly-refreshed item list after a "Fetch artwork & info" run. */
+  onItemsChanged: (items: MediaItem[]) => void;
 }) {
   const [path, setPath] = useState<string[]>([]);
+  const [includeSubfolders, setIncludeSubfolders] = useState(false);
+  const [fetchingInfo, setFetchingInfo] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   const allTags = useMemo(() => {
     const set = new Set<string>();
@@ -58,19 +64,56 @@ export default function MediaBrowser({
     return true;
   }
 
+  async function fetchInfo(scope: MediaItem[]) {
+    setFetchingInfo(true);
+    setFetchError(null);
+    try {
+      const updated = await window.api.scanMetadata(scope.map((i) => i.id));
+      onItemsChanged(updated);
+    } catch (err) {
+      setFetchError((err as Error).message);
+    } finally {
+      setFetchingInfo(false);
+    }
+  }
+
+  const fetchButton = (scope: MediaItem[], showSubfolderToggle: boolean) => (
+    <div className="page-actions">
+      {showSubfolderToggle && (
+        <label className="checkbox-label">
+          <input
+            type="checkbox"
+            checked={includeSubfolders}
+            onChange={(e) => setIncludeSubfolders(e.target.checked)}
+          />
+          Include subfolders
+        </label>
+      )}
+      <button className="btn" onClick={() => void fetchInfo(scope)} disabled={fetchingInfo || scope.length === 0}>
+        {fetchingInfo ? "Fetching artwork & info…" : "Fetch artwork & info"}
+      </button>
+    </div>
+  );
+
   if (hasActiveFilter) {
     const matched = withSegments.filter(({ item }) => matches(item)).map((x) => x.item);
     return (
-      <MediaGrid items={matched} allTags={allTags} onOpen={onOpen} onDownload={onDownload} onItemUpdated={onItemUpdated} />
+      <div>
+        {fetchError && <p className="error">{fetchError}</p>}
+        {fetchButton(matched, false)}
+        <MediaGrid items={matched} allTags={allTags} onOpen={onOpen} onDownload={onDownload} onItemUpdated={onItemUpdated} />
+      </div>
     );
   }
 
   const depth = path.length;
   const subfolders = new Set<string>();
   const filesHere: MediaItem[] = [];
+  const filesHereAndBelow: MediaItem[] = [];
   for (const { item, segments } of withSegments) {
     if (segments.length < depth) continue;
     if (!path.every((seg, i) => segments[i] === seg)) continue;
+    filesHereAndBelow.push(item);
     if (segments.length === depth) {
       filesHere.push(item);
     } else {
@@ -78,6 +121,7 @@ export default function MediaBrowser({
     }
   }
   const sortedFolders = Array.from(subfolders).sort((a, b) => a.localeCompare(b));
+  const scope = includeSubfolders ? filesHereAndBelow : filesHere;
 
   return (
     <div>
@@ -96,6 +140,8 @@ export default function MediaBrowser({
           ))}
         </div>
       )}
+      {fetchError && <p className="error">{fetchError}</p>}
+      {fetchButton(scope, sortedFolders.length > 0)}
       {sortedFolders.length > 0 && (
         <div className="folder-row">
           {sortedFolders.map((name) => (

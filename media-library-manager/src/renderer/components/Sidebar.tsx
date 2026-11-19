@@ -2,7 +2,6 @@ import type { Tab } from "../App.js";
 
 const ITEMS: { id: Tab; label: string; icon: string }[] = [
   { id: "library", label: "Library", icon: "🎞" },
-  { id: "network", label: "Network", icon: "🖧" },
   { id: "search", label: "Search", icon: "🔎" },
   { id: "settings", label: "Settings", icon: "⚙" }
 ];

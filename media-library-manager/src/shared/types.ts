@@ -22,6 +22,16 @@ export interface MediaItem {
   durationSeconds?: number;
   /** User-assigned, free-form; never auto-fetched. Empty/absent means untagged. */
   tags?: string[];
+  /**
+   * True once a "Fetch artwork & info" attempt has completed for this item, win or lose. Distinct
+   * from having a title: guessTitle() always produces *something* from the filename, so "has a
+   * title" can't tell a real match from "we looked and found nothing" — without this flag, an
+   * item that genuinely has no match would look identical to one never checked, and a failed item
+   * would get silently retried forever (or, before this existed, a guessed title made it look
+   * "done" and get skipped forever instead). This is what lets the UI show "no info found — add
+   * it yourself" instead of just doing nothing.
+   */
+  infoFetched?: boolean;
 }
 
 /** The subset of MediaItem's on-demand fields that the metadata scanner produces and persists as a sidecar. */
@@ -31,6 +41,7 @@ export interface MediaMetadata {
   durationSeconds?: number;
   artworkUrl?: string;
   tags?: string[];
+  infoFetched?: boolean;
 }
 
 export interface LocalFolder {
