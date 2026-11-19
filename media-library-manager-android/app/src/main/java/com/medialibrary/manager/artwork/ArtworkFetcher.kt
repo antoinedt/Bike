@@ -42,7 +42,9 @@ fun guessTitle(filename: String): GuessedTitle {
         cleaned = cleaned.substring(0, yearMatch.range.first).trim()
     }
 
-    cleaned = cleaned.replace(Regex("[-([{].*$"), "").trim()
+    // Unlike JS, Kotlin/Java regex treats an unescaped '[' inside a character class as starting a
+    // nested class, so the '[' here must be escaped to be matched literally alongside -, (, {.
+    cleaned = cleaned.replace(Regex("[-(\\[{].*$"), "").trim()
     return GuessedTitle(cleaned.ifBlank { withoutExt }, year)
 }
 
