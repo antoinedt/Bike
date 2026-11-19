@@ -23,18 +23,18 @@ class LocalFolderScanner(private val context: Context) {
     suspend fun scan(folder: LocalFolder): List<MediaItem> = withContext(Dispatchers.IO) {
         val root = DocumentFile.fromTreeUri(context, Uri.parse(folder.treeUri)) ?: return@withContext emptyList()
         val items = mutableListOf<MediaItem>()
-        walk(root, "", 0, items)
+        walk(root, folder.id, "", 0, items)
         items
     }
 
-    private fun walk(dir: DocumentFile, relPath: String, depth: Int, out: MutableList<MediaItem>) {
+    private fun walk(dir: DocumentFile, folderId: String, relPath: String, depth: Int, out: MutableList<MediaItem>) {
         if (depth > MAX_DEPTH) return
         val children = runCatching { dir.listFiles() }.getOrNull() ?: return
         for (child in children) {
             if (child.isDirectory) {
                 val name = child.name ?: continue
                 val childRel = if (relPath.isEmpty()) name else "$relPath/$name"
-                walk(child, childRel, depth + 1, out)
+                walk(child, folderId, childRel, depth + 1, out)
                 continue
             }
             if (!child.isFile) continue
@@ -54,7 +54,7 @@ class LocalFolderScanner(private val context: Context) {
                 sizeBytes = child.length(),
                 modifiedAtMillis = child.lastModified(),
                 sourceType = MediaSourceType.LOCAL,
-                folderId = folder.id,
+                folderId = folderId,
                 folderPath = relPath
             )
         }
