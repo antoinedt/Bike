@@ -17,7 +17,26 @@ android {
         versionName = "0.1.0"
     }
 
+    signingConfigs {
+        // A fixed, committed debug keystore (password "android") so every build —
+        // including each CI run — is signed with the SAME key. Without this each
+        // ephemeral runner generates a random debug key, so new APKs can't update
+        // an installed one in place (signature mismatch) and require a reinstall.
+        // Same keystore the Bike app already uses — debug keys aren't app-specific
+        // or secret, and the repo's README/release notes already say this app's
+        // APK is debug-signed, not released under any particular identity.
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("debug")
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(

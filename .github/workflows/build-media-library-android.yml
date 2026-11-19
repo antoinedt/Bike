@@ -70,11 +70,13 @@ jobs:
           body: |
             Automated debug build of the Media Library Manager Android app.
 
-            `media-library-manager-debug.apk` is signed with the default Android
-            debug key (not the Bike app's committed one — this is a separate,
-            unrelated app), so you'll need to allow "install unknown apps" and
-            install it directly; it won't update-in-place across reinstalls
-            since the debug key is regenerated per CI run.
+            `media-library-manager-debug.apk` is signed with a fixed, committed
+            debug keystore (same one the Bike app uses), so it updates in place
+            over a previous build — you'll still need to allow "install unknown
+            apps" since it isn't a Play Store release. If you get "App not
+            installed" anyway, it's from a build before this keystore was added
+            (mlm-build-8 or earlier) — uninstall that one first, then install
+            this one; from here on, updates should install directly.
           prerelease: true
           target_commitish: ${{ github.sha }}
           files: media-library-manager-android/media-library-manager-debug.apk
