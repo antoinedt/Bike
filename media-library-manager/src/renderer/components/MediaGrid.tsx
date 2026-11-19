@@ -5,10 +5,12 @@ import MediaDetailsPanel from "./MediaDetailsPanel.js";
 
 export default function MediaGrid({
   items,
-  onOpen
+  onOpen,
+  onDownload
 }: {
   items: MediaItem[];
   onOpen: (item: MediaItem) => void;
+  onDownload?: (item: MediaItem) => void;
 }) {
   const [selected, setSelected] = useState<MediaItem | null>(null);
 
@@ -42,6 +44,14 @@ export default function MediaGrid({
             onOpen(selected);
             setSelected(null);
           }}
+          onDownload={
+            onDownload
+              ? () => {
+                  onDownload(selected);
+                  setSelected(null);
+                }
+              : undefined
+          }
         />
       )}
     </>

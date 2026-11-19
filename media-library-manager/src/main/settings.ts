@@ -36,6 +36,11 @@ export function removeLocalFolder(id: string): void {
   );
 }
 
+export function updateLocalFolder(folder: LocalFolder): void {
+  const folders = store.get("localFolders").map((f) => (f.id === folder.id ? folder : f));
+  store.set("localFolders", folders);
+}
+
 export function addNetworkShare(share: Omit<NetworkShare, "id">): NetworkShare {
   const full: NetworkShare = { ...share, id: randomUUID() };
   const shares = store.get("networkShares");
@@ -49,6 +54,11 @@ export function removeNetworkShare(id: string): void {
     "networkShares",
     store.get("networkShares").filter((s) => s.id !== id)
   );
+}
+
+export function updateNetworkShare(share: NetworkShare): void {
+  const shares = store.get("networkShares").map((s) => (s.id === share.id ? share : s));
+  store.set("networkShares", shares);
 }
 
 export function addSiteProfile(profile: Omit<SiteProfile, "id">): SiteProfile {

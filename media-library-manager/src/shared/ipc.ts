@@ -3,8 +3,10 @@ export const IPC = {
   settingsGet: "settings:get",
   folderPick: "folder:pick",
   folderAdd: "folder:add",
+  folderUpdate: "folder:update",
   folderRemove: "folder:remove",
   shareAdd: "share:add",
+  shareUpdate: "share:update",
   shareRemove: "share:remove",
   shareTest: "share:test",
   siteProfileAdd: "siteProfile:add",
@@ -18,6 +20,7 @@ export const IPC = {
   networkScan: "network:scan",
   networkStreamOpen: "network:streamOpen",
   networkStreamClose: "network:streamClose",
+  networkDownload: "network:download",
   searchRun: "search:run",
   torrentDownload: "torrent:download"
 } as const;

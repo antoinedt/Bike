@@ -4,10 +4,12 @@ import { KIND_ICON, formatDuration, formatSize } from "../lib/format.js";
 export default function MediaDetailsPanel({
   item,
   onOpen,
+  onDownload,
   onClose
 }: {
   item: MediaItem;
   onOpen: () => void;
+  onDownload?: () => void;
   onClose: () => void;
 }) {
   return (
@@ -36,9 +38,16 @@ export default function MediaDetailsPanel({
             <dd>{item.extension.toUpperCase()}</dd>
           </dl>
         </div>
-        <button className="btn btn-primary" onClick={onOpen}>
-          {item.source.type === "network" ? "Play" : "Open"}
-        </button>
+        <div className="form-actions">
+          <button className="btn btn-primary" onClick={onOpen}>
+            {item.source.type === "network" ? "Play" : "Open"}
+          </button>
+          {onDownload && (
+            <button className="btn" onClick={onDownload}>
+              Download…
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

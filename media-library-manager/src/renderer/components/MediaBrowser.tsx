@@ -13,12 +13,14 @@ export default function MediaBrowser({
   items,
   settings,
   filter,
-  onOpen
+  onOpen,
+  onDownload
 }: {
   items: MediaItem[];
   settings: AppSettings;
   filter: string;
   onOpen: (item: MediaItem) => void;
+  onDownload?: (item: MediaItem) => void;
 }) {
   const [path, setPath] = useState<string[]>([]);
 
@@ -30,7 +32,7 @@ export default function MediaBrowser({
   if (filter.trim()) {
     const q = filter.toLowerCase();
     const matched = withSegments.filter(({ item }) => item.name.toLowerCase().includes(q)).map((x) => x.item);
-    return <MediaGrid items={matched} onOpen={onOpen} />;
+    return <MediaGrid items={matched} onOpen={onOpen} onDownload={onDownload} />;
   }
 
   const depth = path.length;
@@ -73,7 +75,9 @@ export default function MediaBrowser({
           ))}
         </div>
       )}
-      {(filesHere.length > 0 || sortedFolders.length === 0) && <MediaGrid items={filesHere} onOpen={onOpen} />}
+      {(filesHere.length > 0 || sortedFolders.length === 0) && (
+        <MediaGrid items={filesHere} onOpen={onOpen} onDownload={onDownload} />
+      )}
     </div>
   );
 }

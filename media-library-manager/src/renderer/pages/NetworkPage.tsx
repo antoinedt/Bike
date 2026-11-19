@@ -15,6 +15,7 @@ export default function NetworkPage({ settings }: { settings: AppSettings }) {
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [stream, setStream] = useState<ActiveStream | null>(null);
+  const [downloading, setDownloading] = useState<string | null>(null);
 
   useEffect(() => {
     void window.api.getLibraryItems().then((all) => setItems(all.filter((i) => i.source.type === "network")));
@@ -51,6 +52,18 @@ export default function NetworkPage({ settings }: { settings: AppSettings }) {
     }
   }
 
+  async function download(item: MediaItem) {
+    setError(null);
+    setDownloading(item.id);
+    try {
+      await window.api.downloadNetworkItem(item);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setDownloading(null);
+    }
+  }
+
   return (
     <div className="page">
       <div className="page-header">
@@ -77,7 +90,14 @@ export default function NetworkPage({ settings }: { settings: AppSettings }) {
         to disk first.
       </p>
       {error && <p className="error">{error}</p>}
-      <MediaBrowser items={items} settings={settings} filter={filter} onOpen={(item) => void play(item)} />
+      {downloading && <p className="hint-inline">Downloading…</p>}
+      <MediaBrowser
+        items={items}
+        settings={settings}
+        filter={filter}
+        onOpen={(item) => void play(item)}
+        onDownload={(item) => void download(item)}
+      />
       {stream && <StreamPlayer item={stream.item} url={stream.url} onClose={() => setStream(null)} />}
     </div>
   );

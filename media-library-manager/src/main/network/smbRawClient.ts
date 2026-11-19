@@ -1,3 +1,4 @@
+import { createWriteStream } from "node:fs";
 import { createRequire } from "node:module";
 import SMB2 from "smb2";
 import type { NetworkShare } from "../../shared/types.js";
@@ -93,6 +94,33 @@ export async function readRawRange(handle: RawFileHandle, offset: number, length
     remaining -= data.length;
   }
   return Buffer.concat(chunks);
+}
+
+/** Saves a full local copy of a share file to `destPath` — distinct from streaming, which never writes to disk. */
+export async function downloadRawFile(
+  share: NetworkShare,
+  relPath: string,
+  destPath: string,
+  onProgress?: (bytesWritten: number, totalBytes: number) => void
+): Promise<void> {
+  const handle = await openRawFile(share, relPath);
+  const out = createWriteStream(destPath);
+  try {
+    let pos = 0;
+    while (pos < handle.size) {
+      const chunkLength = Math.min(MAX_SMB_READ_CHUNK, handle.size - pos);
+      const data = await readRawRange(handle, pos, chunkLength);
+      if (data.length === 0) break;
+      pos += data.length;
+      onProgress?.(pos, handle.size);
+      if (!out.write(data)) {
+        await new Promise<void>((resolve) => out.once("drain", () => resolve()));
+      }
+    }
+  } finally {
+    await new Promise<void>((resolve) => out.end(() => resolve()));
+    await closeRawFile(handle);
+  }
 }
 
 export async function closeRawFile(handle: RawFileHandle): Promise<void> {

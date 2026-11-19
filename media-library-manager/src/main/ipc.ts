@@ -1,6 +1,6 @@
 import { dialog, ipcMain, shell } from "electron";
 import { IPC } from "../shared/ipc.js";
-import type { MediaItem, NetworkShare, SiteProfile } from "../shared/types.js";
+import type { LocalFolder, MediaItem, NetworkShare, SiteProfile } from "../shared/types.js";
 import {
   addLocalFolder,
   addNetworkShare,
@@ -9,10 +9,13 @@ import {
   removeLocalFolder,
   removeNetworkShare,
   removeSiteProfile,
+  updateLocalFolder,
+  updateNetworkShare,
   updateSiteProfile
 } from "./settings.js";
 import { scanLocalFolders } from "./library/scanner.js";
 import { relPathFromMediaPath, scanNetworkShare, testShareConnection } from "./network/smbClient.js";
+import { downloadRawFile } from "./network/smbRawClient.js";
 import { ensureStreamServer, registerStream, unregisterStream } from "./network/streamServer.js";
 import { searchSites } from "./search/siteSearch.js";
 import { handOffDownload } from "./torrent/handoff.js";
@@ -30,9 +33,11 @@ export function registerIpcHandlers(): void {
   });
 
   ipcMain.handle(IPC.folderAdd, (_e, folderPath: string, label: string) => addLocalFolder(folderPath, label));
+  ipcMain.handle(IPC.folderUpdate, (_e, folder: LocalFolder) => updateLocalFolder(folder));
   ipcMain.handle(IPC.folderRemove, (_e, id: string) => removeLocalFolder(id));
 
   ipcMain.handle(IPC.shareAdd, (_e, share: Omit<NetworkShare, "id">) => addNetworkShare(share));
+  ipcMain.handle(IPC.shareUpdate, (_e, share: NetworkShare) => updateNetworkShare(share));
   ipcMain.handle(IPC.shareRemove, (_e, id: string) => removeNetworkShare(id));
   ipcMain.handle(IPC.shareTest, (_e, share: NetworkShare) => testShareConnection(share));
 
@@ -92,6 +97,21 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.networkStreamClose, (_e, token: string) => {
     unregisterStream(token);
+  });
+
+  ipcMain.handle(IPC.networkDownload, async (_e, item: MediaItem) => {
+    const source = item.source;
+    if (source.type !== "network") throw new Error("Not a network item.");
+    const { networkShares } = getSettings();
+    const share = networkShares.find((s) => s.id === source.shareId);
+    if (!share) throw new Error("Network share for this item is no longer configured.");
+
+    const result = await dialog.showSaveDialog({ defaultPath: item.name });
+    if (result.canceled || !result.filePath) return null;
+
+    const relPath = relPathFromMediaPath(share, item.path);
+    await downloadRawFile(share, relPath, result.filePath);
+    return result.filePath;
   });
 
   ipcMain.handle(IPC.searchRun, async (_e, query: string, profileIds?: string[]) => {

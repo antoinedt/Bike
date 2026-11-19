@@ -11,8 +11,10 @@ export interface PreloadApi {
   getSettings(): Promise<AppSettings>;
   pickFolder(): Promise<string | null>;
   addFolder(path: string, label: string): Promise<LocalFolder>;
+  updateFolder(folder: LocalFolder): Promise<void>;
   removeFolder(id: string): Promise<void>;
   addShare(share: Omit<NetworkShare, "id">): Promise<NetworkShare>;
+  updateShare(share: NetworkShare): Promise<void>;
   removeShare(id: string): Promise<void>;
   testShare(share: NetworkShare): Promise<{ ok: boolean; error?: string }>;
   addSiteProfile(profile: Omit<SiteProfile, "id">): Promise<SiteProfile>;
@@ -34,6 +36,8 @@ export interface PreloadApi {
   /** Starts a live byte-range relay for a network item and returns a URL an in-app <video>/<audio> element can play directly. */
   openNetworkStream(item: MediaItem): Promise<{ url: string; token: string }>;
   closeNetworkStream(token: string): Promise<void>;
+  /** Prompts for a save location and saves a full local copy of a network item. Null if the user cancels. */
+  downloadNetworkItem(item: MediaItem): Promise<string | null>;
   runSearch(query: string, profileIds?: string[]): Promise<SearchResultItem[]>;
   downloadTorrent(url: string): Promise<void>;
 }

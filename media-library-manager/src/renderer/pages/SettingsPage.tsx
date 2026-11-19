@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { AppSettings, NetworkShare, SiteProfile } from "../../shared/types.js";
+import type { AppSettings, LocalFolder, NetworkShare, SiteProfile } from "../../shared/types.js";
 
 const EMPTY_SHARE = { label: "", host: "", share: "", subPath: "", domain: "", username: "", password: "" };
 const EMPTY_PROFILE = {
@@ -76,16 +76,43 @@ function FoldersSection({
   settings: AppSettings;
   refreshSettings: () => Promise<void>;
 }) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [label, setLabel] = useState("");
+
   async function addFolder() {
     const path = await window.api.pickFolder();
     if (!path) return;
-    const label = path.split(/[\\/]/).filter(Boolean).pop() ?? path;
-    await window.api.addFolder(path, label);
+    const folderLabel = path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+    await window.api.addFolder(path, folderLabel);
     await refreshSettings();
   }
 
   async function remove(id: string) {
+    if (id === editingId) cancelEdit();
     await window.api.removeFolder(id);
+    await refreshSettings();
+  }
+
+  function startEdit(folder: LocalFolder) {
+    setEditingId(folder.id);
+    setLabel(folder.label);
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setLabel("");
+  }
+
+  async function saveLabel(folder: LocalFolder) {
+    await window.api.updateFolder({ ...folder, label });
+    cancelEdit();
+    await refreshSettings();
+  }
+
+  async function changeFolder(folder: LocalFolder) {
+    const path = await window.api.pickFolder();
+    if (!path) return;
+    await window.api.updateFolder({ ...folder, path });
     await refreshSettings();
   }
 
@@ -94,15 +121,34 @@ function FoldersSection({
       <h2>Local folders</h2>
       <p className="hint">Folders on this device to scan for media.</p>
       <ul className="settings-list">
-        {settings.localFolders.map((f) => (
-          <li key={f.id}>
-            <span className="settings-item-label">{f.label}</span>
-            <span className="settings-item-sub">{f.path}</span>
-            <button className="btn btn-small btn-danger" onClick={() => void remove(f.id)}>
-              Remove
-            </button>
-          </li>
-        ))}
+        {settings.localFolders.map((f) =>
+          editingId === f.id ? (
+            <li key={f.id}>
+              <input className="text-input" value={label} onChange={(e) => setLabel(e.target.value)} />
+              <span className="settings-item-sub">{f.path}</span>
+              <button className="btn btn-small" onClick={() => void changeFolder(f)}>
+                Change folder…
+              </button>
+              <button className="btn btn-small btn-primary" onClick={() => void saveLabel(f)}>
+                Save
+              </button>
+              <button className="btn btn-small" onClick={cancelEdit}>
+                Cancel
+              </button>
+            </li>
+          ) : (
+            <li key={f.id}>
+              <span className="settings-item-label">{f.label}</span>
+              <span className="settings-item-sub">{f.path}</span>
+              <button className="btn btn-small" onClick={() => startEdit(f)}>
+                Edit
+              </button>
+              <button className="btn btn-small btn-danger" onClick={() => void remove(f.id)}>
+                Remove
+              </button>
+            </li>
+          )
+        )}
       </ul>
       <button className="btn" onClick={() => void addFolder()}>
         Add folder…
@@ -119,6 +165,7 @@ function SharesSection({
   refreshSettings: () => Promise<void>;
 }) {
   const [form, setForm] = useState({ ...EMPTY_SHARE });
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -126,12 +173,28 @@ function SharesSection({
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
-  async function add() {
+  function edit(share: NetworkShare) {
+    const { id, ...rest } = share;
+    setForm(rest);
+    setEditingId(id);
+  }
+
+  function cancelEdit() {
+    setForm({ ...EMPTY_SHARE });
+    setEditingId(null);
+  }
+
+  async function save() {
     if (!form.host || !form.share) return;
     setBusy(true);
     try {
-      await window.api.addShare(form);
+      if (editingId) {
+        await window.api.updateShare({ ...form, id: editingId });
+      } else {
+        await window.api.addShare(form);
+      }
       setForm({ ...EMPTY_SHARE });
+      setEditingId(null);
       await refreshSettings();
     } finally {
       setBusy(false);
@@ -139,6 +202,7 @@ function SharesSection({
   }
 
   async function remove(id: string) {
+    if (id === editingId) cancelEdit();
     await window.api.removeShare(id);
     await refreshSettings();
   }
@@ -164,6 +228,9 @@ function SharesSection({
             <button className="btn btn-small" onClick={() => void test(s)}>
               Test
             </button>
+            <button className="btn btn-small" onClick={() => edit(s)}>
+              Edit
+            </button>
             <button className="btn btn-small btn-danger" onClick={() => void remove(s.id)}>
               Remove
             </button>
@@ -171,6 +238,7 @@ function SharesSection({
         ))}
       </ul>
       {testResult && <p className="hint-inline">{testResult}</p>}
+      {editingId && <p className="hint-inline">Editing "{form.label || form.host}" — Save changes to apply, or Cancel.</p>}
       <div className="form-grid">
         <input className="text-input" placeholder="Label" value={form.label} onChange={(e) => set("label", e.target.value)} />
         <input className="text-input" placeholder="Host / IP" value={form.host} onChange={(e) => set("host", e.target.value)} />
@@ -186,9 +254,16 @@ function SharesSection({
           onChange={(e) => set("password", e.target.value)}
         />
       </div>
-      <button className="btn" onClick={() => void add()} disabled={busy || !form.host || !form.share}>
-        Add share
-      </button>
+      <div className="form-actions">
+        <button className="btn" onClick={() => void save()} disabled={busy || !form.host || !form.share}>
+          {editingId ? "Save changes" : "Add share"}
+        </button>
+        {editingId && (
+          <button className="btn btn-small" onClick={cancelEdit}>
+            Cancel
+          </button>
+        )}
+      </div>
     </section>
   );
 }
