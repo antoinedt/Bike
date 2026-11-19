@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.medialibrary.manager.model.MediaItem
 import com.medialibrary.manager.model.MediaKind
+import com.medialibrary.manager.model.MediaSourceType
 import kotlin.math.ln
 import kotlin.math.pow
 
@@ -59,7 +60,8 @@ fun MediaGrid(
     items: List<MediaItem>,
     allTags: List<String>,
     onOpen: (MediaItem) -> Unit,
-    onItemUpdated: (title: String, year: String, tags: List<String>, item: MediaItem) -> Unit,
+    onItemUpdated: (title: String, year: String, tags: List<String>, artworkUrl: String?, item: MediaItem) -> Unit,
+    onPickImage: ((onPicked: (String) -> Unit) -> Unit)? = null,
     onDownload: ((MediaItem) -> Unit)? = null,
     downloadingItemId: String? = null,
     modifier: Modifier = Modifier
@@ -119,7 +121,7 @@ fun MediaGrid(
                             tint = MaterialTheme.colorScheme.primary
                         )
                     }
-                    if (onDownload != null) {
+                    if (onDownload != null && item.sourceType == MediaSourceType.NETWORK) {
                         if (item.id == downloadingItemId) {
                             CircularProgressIndicator(
                                 Modifier.align(Alignment.TopEnd).padding(4.dp).size(20.dp),
@@ -147,9 +149,10 @@ fun MediaGrid(
         MediaDetailsDialog(
             item = item,
             allTags = allTags,
+            onPickImage = onPickImage,
             onDismiss = { editingItem = null },
-            onSave = { title, year, tags ->
-                onItemUpdated(title, year, tags, item)
+            onSave = { title, year, tags, artworkUrl ->
+                onItemUpdated(title, year, tags, artworkUrl, item)
                 editingItem = null
             }
         )

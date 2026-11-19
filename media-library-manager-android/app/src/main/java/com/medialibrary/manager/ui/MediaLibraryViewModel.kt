@@ -20,8 +20,11 @@ import com.medialibrary.manager.network.SmbContextFactory
 import com.medialibrary.manager.network.SmbDataSource
 import com.medialibrary.manager.network.SmbSidecar
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 data class PlaybackRequest(
@@ -49,6 +52,11 @@ class MediaLibraryViewModel : ViewModel() {
 
     private val _networkItems = MutableStateFlow<List<MediaItem>>(emptyList())
     val networkItems: StateFlow<List<MediaItem>> = _networkItems.asStateFlow()
+
+    /** Local and network items combined into one browsable library (see MediaBrowser's "Local" + per-share top-level grouping). */
+    val libraryItems: StateFlow<List<MediaItem>> =
+        combine(_localItems, _networkItems) { local, network -> local + network }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private val _searchResults = MutableStateFlow<List<SearchResultItem>>(emptyList())
     val searchResults: StateFlow<List<SearchResultItem>> = _searchResults.asStateFlow()
@@ -116,22 +124,29 @@ class MediaLibraryViewModel : ViewModel() {
     }
 
     /**
-     * Fetches title/year/artwork for every item missing them, local and network combined — via
-     * iTunes, falling back to a frame pulled from the video itself (local items only) when
-     * iTunes has nothing, which is most of a home library's camera footage/home videos. Persists
-     * results to the on-device cache (so they survive rescans and app restarts) and, for network
-     * items, as a sidecar uploaded to the share itself (so any other device sees it too).
+     * Fetches title/year/artwork for every not-yet-checked item (win or lose — see
+     * MediaItem.infoFetched) within `itemIds`, local and network combined — via iTunes, falling
+     * back to a frame pulled from the video itself (local items only) when iTunes has nothing,
+     * which is most of a home library's camera footage/home videos. Pass null to scan the whole
+     * library; the folder-scoped "Fetch artwork & info" button in MediaBrowser passes just the
+     * ids of whatever folder (optionally + its subfolders) the user is currently browsing.
+     * Persists results to the on-device cache (so they survive rescans and app restarts) and, for
+     * network items, as a sidecar uploaded to the share itself (so any other device sees it too).
      */
-    fun fetchInfo() {
+    fun fetchInfo(itemIds: Set<String>? = null) {
         viewModelScope.launch {
             _isFetchingArtwork.value = true
             runCatching {
-                val found = artworkFetcher.fetchForLibrary(_localItems.value + _networkItems.value, _settings.value.networkShares)
+                val all = _localItems.value + _networkItems.value
+                val scope = if (itemIds == null) all else all.filter { it.id in itemIds }
+                val found = artworkFetcher.fetchForLibrary(scope, _settings.value.networkShares)
                 fun apply(item: MediaItem) = found[item.id]?.let {
                     item.copy(
                         artworkUrl = item.artworkUrl ?: it.artworkUrl,
                         title = item.title ?: it.title,
-                        year = item.year ?: it.year
+                        year = item.year ?: it.year,
+                        tags = item.tags.ifEmpty { it.tags },
+                        infoFetched = true
                     )
                 } ?: item
                 _localItems.value = _localItems.value.map(::apply)
@@ -267,15 +282,23 @@ class MediaLibraryViewModel : ViewModel() {
     }
 
     /**
-     * Manually overwrites title/year/tags for one item — unlike the auto fetch, these values take
-     * precedence unconditionally, so this is also how you correct a wrong auto-fetched title.
-     * Persisted on-device (ItemCacheRepository, both local and network items) and, for a network
-     * item, as a sidecar uploaded to the share (artworkUrl is carried forward from whatever sidecar
-     * already existed there, since editing it isn't exposed here).
+     * Manually overwrites title/year/tags/artworkUrl for one item — unlike the auto fetch, these
+     * values take precedence unconditionally, so this is also how you correct a wrong
+     * auto-fetched title, or add artwork yourself after a failed fetch (artworkUrl is a picked
+     * image's content:// URI, or null to leave whatever artwork the item already has). Also marks
+     * the item as fetched, so a failed auto-fetch followed by a manual edit doesn't look like
+     * "never checked" and get silently re-attempted. Persisted on-device (ItemCacheRepository,
+     * both local and network items) and, for a network item, as a sidecar uploaded to the share.
      */
-    fun updateItemMetadata(title: String, year: String, tags: List<String>, item: MediaItem) {
+    fun updateItemMetadata(title: String, year: String, tags: List<String>, artworkUrl: String?, item: MediaItem) {
         viewModelScope.launch {
-            val updated = item.copy(title = title.ifBlank { null }, year = year.ifBlank { null }, tags = tags)
+            val updated = item.copy(
+                title = title.ifBlank { null },
+                year = year.ifBlank { null },
+                tags = tags,
+                artworkUrl = artworkUrl ?: item.artworkUrl,
+                infoFetched = true
+            )
             if (item.sourceType == MediaSourceType.LOCAL) {
                 _localItems.value = _localItems.value.map { if (it.id == item.id) updated else it }
             } else {
@@ -283,8 +306,13 @@ class MediaLibraryViewModel : ViewModel() {
                 val share = item.shareId?.let { settingsRepo.shareById(it) }
                 if (share != null) {
                     val relPath = item.path.removePrefix("smb://${share.id}/")
-                    val existingArtwork = runCatching { SmbSidecar.read(share, relPath)?.artworkUrl }.getOrNull()
-                    val merged = MediaMetadata(title = updated.title, year = updated.year, artworkUrl = existingArtwork, tags = tags)
+                    val merged = MediaMetadata(
+                        title = updated.title,
+                        year = updated.year,
+                        artworkUrl = updated.artworkUrl,
+                        tags = tags,
+                        infoFetched = true
+                    )
                     runCatching { SmbSidecar.write(share, relPath, merged) }
                 }
             }

@@ -39,14 +39,21 @@ class ItemCacheRepository(private val context: Context) {
         }
     }
 
-    /** Carries forward artworkUrl/title/year for items still present (matched by stable id). */
+    /**
+     * Carries forward artworkUrl/title/year/tags/infoFetched for items still present (matched by
+     * stable id) — otherwise a rescan would silently wipe out everything "Fetch artwork & info"
+     * (and any manual tag/title edit) had already done, and a failed fetch's infoFetched flag
+     * would reset, making it look never-checked and eligible for silent endless retrying.
+     */
     fun mergeWithCache(fresh: List<MediaItem>, cache: Map<String, MediaItem>): List<MediaItem> =
         fresh.map { item ->
             val cached = cache[item.id] ?: return@map item
             item.copy(
                 artworkUrl = item.artworkUrl ?: cached.artworkUrl,
                 title = item.title ?: cached.title,
-                year = item.year ?: cached.year
+                year = item.year ?: cached.year,
+                tags = item.tags.ifEmpty { cached.tags },
+                infoFetched = item.infoFetched || cached.infoFetched
             )
         }
 }

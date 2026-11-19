@@ -7,6 +7,7 @@ import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.documentfile.provider.DocumentFile
@@ -15,7 +16,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.VideoLibrary
-import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -39,7 +39,6 @@ import androidx.navigation.compose.rememberNavController
 import com.medialibrary.manager.ui.MediaLibraryViewModel
 import com.medialibrary.manager.ui.components.PlayerOverlay
 import com.medialibrary.manager.ui.screens.LibraryScreen
-import com.medialibrary.manager.ui.screens.NetworkScreen
 import com.medialibrary.manager.ui.screens.SearchScreen
 import com.medialibrary.manager.ui.screens.SettingsScreen
 import com.medialibrary.manager.ui.theme.MediaLibraryTheme
@@ -48,7 +47,6 @@ private data class BottomTab(val route: String, val label: String, val icon: Ima
 
 private val TABS = listOf(
     BottomTab("library", "Library", Icons.Filled.VideoLibrary),
-    BottomTab("network", "Network", Icons.Filled.Wifi),
     BottomTab("search", "Search", Icons.Filled.Search),
     BottomTab("settings", "Settings", Icons.Filled.Settings)
 )
@@ -61,8 +59,19 @@ class MainActivity : ComponentActivity() {
      *  URI (Settings' "Change folder…") rather than adding a new one. */
     private var pendingFolderEditId: String? = null
 
+    /** Set just before launching [pickImage]; invoked with the picked image's URI once the photo picker returns. */
+    private var pendingImagePick: ((String) -> Unit)? = null
+
     private val requestPermissions =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { /* handled via re-check on scan */ }
+
+    /** Android's built-in photo picker for manually assigning cover art — grants read access to
+     *  the returned content:// URI without needing any extra permission. */
+    private val pickImage = registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        val callback = pendingImagePick
+        pendingImagePick = null
+        if (uri != null) callback?.invoke(uri.toString())
+    }
 
     /** SAF folder picker backing "which folders are considered" in Settings. */
     private val pickFolder = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
@@ -103,6 +112,10 @@ class MainActivity : ComponentActivity() {
                         onChangeFolder = { id ->
                             pendingFolderEditId = id
                             pickFolder.launch(null)
+                        },
+                        onPickImage = { onPicked ->
+                            pendingImagePick = onPicked
+                            pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                         }
                     )
                 }
@@ -130,7 +143,8 @@ class MainActivity : ComponentActivity() {
 private fun MediaLibraryApp(
     viewModel: MediaLibraryViewModel,
     onPickFolder: () -> Unit,
-    onChangeFolder: (String) -> Unit
+    onChangeFolder: (String) -> Unit,
+    onPickImage: (onPicked: (String) -> Unit) -> Unit
 ) {
     val navController = rememberNavController()
     val playback by viewModel.playback.collectAsState()
@@ -172,8 +186,7 @@ private fun MediaLibraryApp(
             startDestination = "library",
             modifier = Modifier.padding(padding)
         ) {
-            composable("library") { LibraryScreen(viewModel) }
-            composable("network") { NetworkScreen(viewModel) }
+            composable("library") { LibraryScreen(viewModel, onPickImage) }
             composable("search") { SearchScreen(viewModel) }
             composable("settings") { SettingsScreen(viewModel, onPickFolder, onChangeFolder) }
         }

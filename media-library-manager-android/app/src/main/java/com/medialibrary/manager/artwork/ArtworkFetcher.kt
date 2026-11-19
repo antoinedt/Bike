@@ -96,7 +96,7 @@ class ArtworkFetcher(
         }.getOrNull()
     }
 
-    private suspend fun fetchMetadata(item: MediaItem): MediaMetadata? {
+    private suspend fun fetchMetadata(item: MediaItem): MediaMetadata {
         val (guessedTitle, guessedYear) = guessTitle(item.name)
         val term = if (guessedYear != null) "$guessedTitle $guessedYear" else guessedTitle
         val result = when (item.kind) {
@@ -112,29 +112,30 @@ class ArtworkFetcher(
 
         val title = (result?.trackName ?: result?.collectionName ?: guessedTitle).ifBlank { null }
         val year = result?.releaseDate?.take(4) ?: guessedYear
-        if (title == null && year == null && artworkUrl == null) return null
-        return MediaMetadata(title = title, year = year, artworkUrl = artworkUrl)
+        return MediaMetadata(title = title, year = year, artworkUrl = artworkUrl, infoFetched = true)
     }
 
     /**
-     * Fetches title/year/artwork for every video/audio item missing them, local and network.
-     * Network items check for an existing sidecar on the share before fetching; a fresh fetch is
-     * written back as one. Returns id -> metadata for everything found.
+     * Fetches title/year/artwork for every video/audio item not yet checked (win or lose — see
+     * MediaItem.infoFetched) in `items` — the caller decides the scope, e.g. just the folder the
+     * user is currently browsing. Network items check for an existing sidecar on the share before
+     * fetching; every attempt, success or total failure, is written back as one (marked
+     * infoFetched) so it's there next time and a failed item isn't silently retried forever.
+     * Returns id -> metadata for everything attempted.
      */
     suspend fun fetchForLibrary(items: List<MediaItem>, networkShares: List<NetworkShare>): Map<String, MediaMetadata> =
         coroutineScope {
             val candidates = items.filter {
-                it.title == null && (it.kind == MediaKind.VIDEO || it.kind == MediaKind.AUDIO)
+                !it.infoFetched && (it.kind == MediaKind.VIDEO || it.kind == MediaKind.AUDIO)
             }
             val semaphore = Semaphore(CONCURRENCY)
             candidates
                 .map { item -> async { semaphore.withPermit { runCatching { item.id to resolve(item, networkShares) }.getOrNull() } } }
                 .mapNotNull { it.await() }
-                .mapNotNull { (id, metadata) -> metadata?.let { id to it } }
                 .toMap()
         }
 
-    private suspend fun resolve(item: MediaItem, networkShares: List<NetworkShare>): MediaMetadata? {
+    private suspend fun resolve(item: MediaItem, networkShares: List<NetworkShare>): MediaMetadata {
         val share = if (item.sourceType == MediaSourceType.NETWORK) {
             item.shareId?.let { shareId -> networkShares.find { it.id == shareId } }
         } else {
@@ -142,14 +143,14 @@ class ArtworkFetcher(
         }
         val relPath = share?.let { item.path.removePrefix("smb://${it.id}/") }
 
-        // A sidecar with a title is a fully-resolved result from a previous fetch — use it as-is.
-        // One with only tags (e.g. the user tagged this item before ever running a fetch on it)
-        // isn't: fall through to a real fetch below, carrying the existing tags forward so they
-        // aren't lost under the fresh write.
+        // A sidecar already marked infoFetched is a fully-resolved result from a previous attempt
+        // (on this device or another) — use it as-is, success or not. One with only tags (e.g. the
+        // user tagged this item before ever running a fetch on it) isn't resolved: fall through to
+        // a real fetch below, carrying the existing tags forward so they aren't lost.
         val cached = if (share != null && relPath != null) SmbSidecar.read(share, relPath) else null
-        if (cached?.title != null) return cached
+        if (cached?.infoFetched == true) return cached
 
-        val fetched = fetchMetadata(item) ?: return null
+        val fetched = fetchMetadata(item)
         val metadata = if (!cached?.tags.isNullOrEmpty()) fetched.copy(tags = cached!!.tags) else fetched
         if (share != null && relPath != null) {
             runCatching { SmbSidecar.write(share, relPath, metadata) }

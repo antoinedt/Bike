@@ -54,6 +54,7 @@ class LocalFolderScanner(private val context: Context) {
                 sizeBytes = child.length(),
                 modifiedAtMillis = child.lastModified(),
                 sourceType = MediaSourceType.LOCAL,
+                folderId = folder.id,
                 folderPath = relPath
             )
         }

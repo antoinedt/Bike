@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.medialibrary.manager.model.MediaItem
+import com.medialibrary.manager.model.MediaSourceType
 import com.medialibrary.manager.ui.MediaLibraryViewModel
 import com.medialibrary.manager.ui.components.FilterBar
 import com.medialibrary.manager.ui.components.MediaBrowser
@@ -37,13 +38,21 @@ import java.time.ZoneId
 private fun parseDateMillis(text: String): Long? =
     runCatching { LocalDate.parse(text).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli() }.getOrNull()
 
+/**
+ * Local folders and network shares live in one browsable library here (see MediaBrowser's "Local"
+ * + per-share top-level grouping) rather than two separate screens/tabs. Tapping a local item
+ * opens it with the OS's default app; tapping a network item streams it live in-app; only network
+ * items offer a Download action.
+ */
 @Composable
-fun LibraryScreen(viewModel: MediaLibraryViewModel) {
+fun LibraryScreen(viewModel: MediaLibraryViewModel, onPickImage: (onPicked: (String) -> Unit) -> Unit) {
     val context = LocalContext.current
-    val items by viewModel.localItems.collectAsState()
-    val scanning by viewModel.isScanningLocal.collectAsState()
-    val fetchingArtwork by viewModel.isFetchingArtwork.collectAsState()
+    val items by viewModel.libraryItems.collectAsState()
     val settings by viewModel.settings.collectAsState()
+    val scanningLocal by viewModel.isScanningLocal.collectAsState()
+    val scanningNetwork by viewModel.isScanningNetwork.collectAsState()
+    val fetchingArtwork by viewModel.isFetchingArtwork.collectAsState()
+    val downloadingItemId by viewModel.downloadingItemId.collectAsState()
     var filter by remember { mutableStateOf("") }
     var selectedTags by remember { mutableStateOf(listOf<String>()) }
     var dateFrom by remember { mutableStateOf("") }
@@ -58,38 +67,41 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel) {
                 singleLine = true,
                 modifier = Modifier.weight(1f)
             )
-            Button(onClick = { viewModel.scanLocal() }, enabled = !scanning) {
-                if (scanning) {
+            Button(onClick = { viewModel.scanLocal() }, enabled = !scanningLocal) {
+                if (scanningLocal) {
                     CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
                 } else {
                     Icon(Icons.Filled.Refresh, contentDescription = null)
                 }
                 Spacer(Modifier.width(4.dp))
-                Text(if (scanning) "Scanning…" else "Scan")
+                Text(if (scanningLocal) "Scanning…" else "Scan folders")
             }
-        }
-        Row {
-            Button(onClick = { viewModel.fetchInfo() }, enabled = !fetchingArtwork) {
-                Text(if (fetchingArtwork) "Fetching artwork & info…" else "Fetch artwork & info")
+            Button(onClick = { viewModel.scanNetwork() }, enabled = !scanningNetwork) {
+                if (scanningNetwork) {
+                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                } else {
+                    Icon(Icons.Filled.Refresh, contentDescription = null)
+                }
+                Spacer(Modifier.width(4.dp))
+                Text(if (scanningNetwork) "Scanning…" else "Scan shares")
             }
         }
         Text(
-            "Looks up title/year/cover art via iTunes, falling back to a frame pulled from the " +
-                "video itself when nothing matches (most useful for home videos, which iTunes " +
-                "won't know about) — covers the whole library, local and network. Saved on this " +
-                "device so it only needs to happen once.",
+            "Local folders and network shares live in one library here — browse into \"Local\" or " +
+                "any connected share's folder below. \"Fetch artwork & info\" (further down) only " +
+                "covers the folder you're currently browsing, with an option to include its " +
+                "subfolders. Network playback streams live from the share (seekable, nothing saved " +
+                "to disk); use a card's download icon to save a full local copy instead.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Text(
-            if (settings.localFolders.isEmpty()) {
-                "Scans the whole device's media via MediaStore. Add folders in Settings to scope this."
-            } else {
-                "Scanning ${settings.localFolders.size} configured folder(s)."
-            },
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        if (settings.localFolders.isEmpty() && settings.networkShares.isEmpty()) {
+            Text(
+                "Nothing configured yet. Add a local folder or an SMB share in Settings to start scanning.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
         Spacer(Modifier.height(12.dp))
         FilterBar(
             items = items,
@@ -103,12 +115,26 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel) {
         Spacer(Modifier.height(8.dp))
         MediaBrowser(
             items = items,
+            settings = settings,
             filter = filter,
             tagFilter = selectedTags,
             dateFrom = parseDateMillis(dateFrom),
             dateTo = parseDateMillis(dateTo)?.plus(86_399_999L),
-            onOpen = { item: MediaItem -> viewModel.openLocalItem(context, item) },
-            onItemUpdated = { title, year, tags, item -> viewModel.updateItemMetadata(title, year, tags, item) },
+            onOpen = { item: MediaItem ->
+                if (item.sourceType == MediaSourceType.LOCAL) {
+                    viewModel.openLocalItem(context, item)
+                } else {
+                    viewModel.playNetworkItem(item)
+                }
+            },
+            onItemUpdated = { title, year, tags, artworkUrl, item ->
+                viewModel.updateItemMetadata(title, year, tags, artworkUrl, item)
+            },
+            onFetchInfo = { itemIds -> viewModel.fetchInfo(itemIds) },
+            fetchingInfo = fetchingArtwork,
+            onPickImage = onPickImage,
+            onDownload = { viewModel.downloadNetworkItem(it) },
+            downloadingItemId = downloadingItemId,
             modifier = Modifier.weight(1f)
         )
     }

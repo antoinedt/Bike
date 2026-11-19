@@ -42,6 +42,8 @@ data class MediaItem(
     val sourceType: MediaSourceType,
     /** Only meaningful when [sourceType] is NETWORK. */
     val shareId: String? = null,
+    /** Only meaningful when [sourceType] is LOCAL and it came from a configured [LocalFolder] (not a whole-device MediaStore scan). Lets the browser tell two configured folders' items apart when their relative paths would otherwise collide. */
+    val folderId: String? = null,
     /** Populated on demand by ArtworkFetcher; null until fetched (or if nothing suitable was found). */
     val artworkUrl: String? = null,
     /**
@@ -55,7 +57,17 @@ data class MediaItem(
     val title: String? = null,
     val year: String? = null,
     /** User-assigned, free-form, via the per-item edit dialog; never auto-fetched. */
-    val tags: List<String> = emptyList()
+    val tags: List<String> = emptyList(),
+    /**
+     * True once a "Fetch artwork & info" attempt has completed for this item, win or lose. Distinct
+     * from having a title: guessTitle() always produces *something* from the filename, so "has a
+     * title" can't tell a real match from "we looked and found nothing" — without this flag, an
+     * item that genuinely has no match would look identical to one never checked, and a failed item
+     * would get silently retried forever (or, before this existed, a guessed title made it look
+     * "done" and get skipped forever instead). This is what lets the UI show "no info found — add
+     * it yourself" instead of just doing nothing.
+     */
+    val infoFetched: Boolean = false
 )
 
 /** The subset of MediaItem's on-demand fields that "Fetch artwork & info" produces, and that an SMB sidecar persists. */
@@ -64,7 +76,8 @@ data class MediaMetadata(
     val title: String? = null,
     val year: String? = null,
     val artworkUrl: String? = null,
-    val tags: List<String> = emptyList()
+    val tags: List<String> = emptyList(),
+    val infoFetched: Boolean = false
 )
 
 /** A user-picked device folder (SAF tree URI) to scope the local scan to. */
