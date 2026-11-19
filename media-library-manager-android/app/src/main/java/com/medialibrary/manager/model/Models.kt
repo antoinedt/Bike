@@ -53,7 +53,9 @@ data class MediaItem(
     val folderPath: String = "",
     /** The fields below are populated on demand by "Fetch artwork & info"; null until fetched. */
     val title: String? = null,
-    val year: String? = null
+    val year: String? = null,
+    /** User-assigned, free-form, via the per-item edit dialog; never auto-fetched. */
+    val tags: List<String> = emptyList()
 )
 
 /** The subset of MediaItem's on-demand fields that "Fetch artwork & info" produces, and that an SMB sidecar persists. */
@@ -61,7 +63,8 @@ data class MediaItem(
 data class MediaMetadata(
     val title: String? = null,
     val year: String? = null,
-    val artworkUrl: String? = null
+    val artworkUrl: String? = null,
+    val tags: List<String> = emptyList()
 )
 
 /** A user-picked device folder (SAF tree URI) to scope the local scan to. */

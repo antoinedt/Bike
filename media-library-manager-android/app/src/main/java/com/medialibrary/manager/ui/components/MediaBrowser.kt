@@ -22,27 +22,45 @@ import com.medialibrary.manager.model.MediaItem
 
 /**
  * Groups a flat item list into a navigable folder tree using each item's [MediaItem.folderPath]
- * (captured at scan time by each scanner) when [filter] is empty. A non-empty filter switches to
- * a flat, recursive name search across every folder instead — browsing one folder and searching
- * everything are different intents.
+ * (captured at scan time by each scanner) when no filter is active. Any active filter (name text,
+ * tags, or a date range) switches to a flat search across every folder instead — browsing one
+ * folder and filtering the whole library are different intents. All active filter kinds combine
+ * with AND; selecting several tags matches an item with ANY of them.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MediaBrowser(
     items: List<MediaItem>,
     filter: String,
+    tagFilter: List<String> = emptyList(),
+    dateFrom: Long? = null,
+    dateTo: Long? = null,
     onOpen: (MediaItem) -> Unit,
+    onItemUpdated: (title: String, year: String, tags: List<String>, item: MediaItem) -> Unit,
     onDownload: ((MediaItem) -> Unit)? = null,
     downloadingItemId: String? = null,
     modifier: Modifier = Modifier
 ) {
     var path by remember { mutableStateOf(listOf<String>()) }
 
-    if (filter.isNotBlank()) {
-        val matched = items.filter { it.name.contains(filter, ignoreCase = true) }
+    val allTags = remember(items) { items.flatMap { it.tags }.distinct().sorted() }
+
+    val hasActiveFilter = filter.isNotBlank() || tagFilter.isNotEmpty() || dateFrom != null || dateTo != null
+    fun matches(item: MediaItem): Boolean {
+        if (filter.isNotBlank() && !item.name.contains(filter, ignoreCase = true)) return false
+        if (tagFilter.isNotEmpty() && item.tags.none { it in tagFilter }) return false
+        if (dateFrom != null && item.modifiedAtMillis < dateFrom) return false
+        if (dateTo != null && item.modifiedAtMillis > dateTo) return false
+        return true
+    }
+
+    if (hasActiveFilter) {
+        val matched = items.filter(::matches)
         MediaGrid(
             items = matched,
+            allTags = allTags,
             onOpen = onOpen,
+            onItemUpdated = onItemUpdated,
             onDownload = onDownload,
             downloadingItemId = downloadingItemId,
             modifier = modifier
@@ -91,7 +109,9 @@ fun MediaBrowser(
         if (filesHere.isNotEmpty() || subfolders.isEmpty()) {
             MediaGrid(
                 items = filesHere,
+                allTags = allTags,
                 onOpen = onOpen,
+                onItemUpdated = onItemUpdated,
                 onDownload = onDownload,
                 downloadingItemId = downloadingItemId,
                 modifier = Modifier.weight(1f)

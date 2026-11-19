@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -22,6 +23,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -52,11 +57,15 @@ private fun iconFor(kind: MediaKind) = when (kind) {
 @Composable
 fun MediaGrid(
     items: List<MediaItem>,
+    allTags: List<String>,
     onOpen: (MediaItem) -> Unit,
+    onItemUpdated: (title: String, year: String, tags: List<String>, item: MediaItem) -> Unit,
     onDownload: ((MediaItem) -> Unit)? = null,
     downloadingItemId: String? = null,
     modifier: Modifier = Modifier
 ) {
+    var editingItem by remember { mutableStateOf<MediaItem?>(null) }
+
     if (items.isEmpty()) {
         Box(modifier.fillMaxWidth().padding(24.dp)) {
             Text("No media found yet. Try a scan.", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -100,6 +109,16 @@ fun MediaGrid(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                    IconButton(
+                        onClick = { editingItem = item },
+                        modifier = Modifier.align(Alignment.TopStart).size(28.dp)
+                    ) {
+                        Icon(
+                            Icons.Filled.Info,
+                            contentDescription = "Edit info",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
                     if (onDownload != null) {
                         if (item.id == downloadingItemId) {
                             CircularProgressIndicator(
@@ -122,5 +141,17 @@ fun MediaGrid(
                 }
             }
         }
+    }
+
+    editingItem?.let { item ->
+        MediaDetailsDialog(
+            item = item,
+            allTags = allTags,
+            onDismiss = { editingItem = null },
+            onSave = { title, year, tags ->
+                onItemUpdated(title, year, tags, item)
+                editingItem = null
+            }
+        )
     }
 }

@@ -11,11 +11,14 @@ import com.medialibrary.manager.model.AppSettings
 import com.medialibrary.manager.model.LocalFolder
 import com.medialibrary.manager.model.MediaItem
 import com.medialibrary.manager.model.MediaKind
+import com.medialibrary.manager.model.MediaMetadata
+import com.medialibrary.manager.model.MediaSourceType
 import com.medialibrary.manager.model.NetworkShare
 import com.medialibrary.manager.model.SearchResultItem
 import com.medialibrary.manager.model.SiteProfile
 import com.medialibrary.manager.network.SmbContextFactory
 import com.medialibrary.manager.network.SmbDataSource
+import com.medialibrary.manager.network.SmbSidecar
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -260,6 +263,32 @@ class MediaLibraryViewModel : ViewModel() {
                 _errorMessage.value = "Download failed: ${it.message}"
             }
             _downloadingItemId.value = null
+        }
+    }
+
+    /**
+     * Manually overwrites title/year/tags for one item — unlike the auto fetch, these values take
+     * precedence unconditionally, so this is also how you correct a wrong auto-fetched title.
+     * Persisted on-device (ItemCacheRepository, both local and network items) and, for a network
+     * item, as a sidecar uploaded to the share (artworkUrl is carried forward from whatever sidecar
+     * already existed there, since editing it isn't exposed here).
+     */
+    fun updateItemMetadata(title: String, year: String, tags: List<String>, item: MediaItem) {
+        viewModelScope.launch {
+            val updated = item.copy(title = title.ifBlank { null }, year = year.ifBlank { null }, tags = tags)
+            if (item.sourceType == MediaSourceType.LOCAL) {
+                _localItems.value = _localItems.value.map { if (it.id == item.id) updated else it }
+            } else {
+                _networkItems.value = _networkItems.value.map { if (it.id == item.id) updated else it }
+                val share = item.shareId?.let { settingsRepo.shareById(it) }
+                if (share != null) {
+                    val relPath = item.path.removePrefix("smb://${share.id}/")
+                    val existingArtwork = runCatching { SmbSidecar.read(share, relPath)?.artworkUrl }.getOrNull()
+                    val merged = MediaMetadata(title = updated.title, year = updated.year, artworkUrl = existingArtwork, tags = tags)
+                    runCatching { SmbSidecar.write(share, relPath, merged) }
+                }
+            }
+            itemCache.save(_localItems.value + _networkItems.value)
         }
     }
 }

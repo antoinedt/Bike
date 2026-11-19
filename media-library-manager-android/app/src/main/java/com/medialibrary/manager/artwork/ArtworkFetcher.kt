@@ -142,12 +142,15 @@ class ArtworkFetcher(
         }
         val relPath = share?.let { item.path.removePrefix("smb://${it.id}/") }
 
-        if (share != null && relPath != null) {
-            val cached = SmbSidecar.read(share, relPath)
-            if (cached != null) return cached
-        }
+        // A sidecar with a title is a fully-resolved result from a previous fetch — use it as-is.
+        // One with only tags (e.g. the user tagged this item before ever running a fetch on it)
+        // isn't: fall through to a real fetch below, carrying the existing tags forward so they
+        // aren't lost under the fresh write.
+        val cached = if (share != null && relPath != null) SmbSidecar.read(share, relPath) else null
+        if (cached?.title != null) return cached
 
-        val metadata = fetchMetadata(item) ?: return null
+        val fetched = fetchMetadata(item) ?: return null
+        val metadata = if (!cached?.tags.isNullOrEmpty()) fetched.copy(tags = cached!!.tags) else fetched
         if (share != null && relPath != null) {
             runCatching { SmbSidecar.write(share, relPath, metadata) }
         }

@@ -27,7 +27,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.medialibrary.manager.ui.MediaLibraryViewModel
+import com.medialibrary.manager.ui.components.FilterBar
 import com.medialibrary.manager.ui.components.MediaBrowser
+import java.time.LocalDate
+import java.time.ZoneId
+
+private fun parseDateMillis(text: String): Long? =
+    runCatching { LocalDate.parse(text).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli() }.getOrNull()
 
 @Composable
 fun NetworkScreen(viewModel: MediaLibraryViewModel) {
@@ -37,6 +43,9 @@ fun NetworkScreen(viewModel: MediaLibraryViewModel) {
     val fetchingArtwork by viewModel.isFetchingArtwork.collectAsState()
     val downloadingItemId by viewModel.downloadingItemId.collectAsState()
     var filter by remember { mutableStateOf("") }
+    var selectedTags by remember { mutableStateOf(listOf<String>()) }
+    var dateFrom by remember { mutableStateOf("") }
+    var dateTo by remember { mutableStateOf("") }
 
     Column(Modifier.fillMaxSize().padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -76,10 +85,24 @@ fun NetworkScreen(viewModel: MediaLibraryViewModel) {
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Spacer(Modifier.height(8.dp))
+        FilterBar(
+            items = items,
+            selectedTags = selectedTags,
+            onToggleTag = { tag -> selectedTags = if (tag in selectedTags) selectedTags - tag else selectedTags + tag },
+            dateFrom = dateFrom,
+            dateTo = dateTo,
+            onDateFromChange = { dateFrom = it },
+            onDateToChange = { dateTo = it }
+        )
+        Spacer(Modifier.height(8.dp))
         MediaBrowser(
             items = items,
             filter = filter,
+            tagFilter = selectedTags,
+            dateFrom = parseDateMillis(dateFrom),
+            dateTo = parseDateMillis(dateTo)?.plus(86_399_999L),
             onOpen = { viewModel.playNetworkItem(it) },
+            onItemUpdated = { title, year, tags, item -> viewModel.updateItemMetadata(title, year, tags, item) },
             onDownload = { viewModel.downloadNetworkItem(it) },
             downloadingItemId = downloadingItemId,
             modifier = Modifier.weight(1f)
