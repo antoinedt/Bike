@@ -33,6 +33,14 @@ export interface PreloadApi {
    * each un-cached item needs a real (hidden) duration probe, not just an HTTP lookup.
    */
   scanMetadata(): Promise<MediaItem[]>;
+  /**
+   * Manually overwrites title/year/tags for one item — unlike scanMetadata, these values take
+   * precedence unconditionally, so this is also how you correct a wrong auto-fetched title. Only
+   * the fields present in `edits` change; omit a field to leave it as-is. Persists the same way
+   * as an auto fetch: this device's database, and the item's sidecar (uploaded to the share, for
+   * a network item).
+   */
+  updateItemMetadata(itemId: string, edits: { title?: string; year?: string; tags?: string[] }): Promise<MediaItem[]>;
   scanNetwork(): Promise<MediaItem[]>;
   /** Starts a live byte-range relay for a network item and returns a URL an in-app <video>/<audio> element can play directly. */
   openNetworkStream(item: MediaItem): Promise<{ url: string; token: string }>;

@@ -5,12 +5,16 @@ import MediaDetailsPanel from "./MediaDetailsPanel.js";
 
 export default function MediaGrid({
   items,
+  allTags,
   onOpen,
-  onDownload
+  onDownload,
+  onItemUpdated
 }: {
   items: MediaItem[];
+  allTags: string[];
   onOpen: (item: MediaItem) => void;
   onDownload?: (item: MediaItem) => void;
+  onItemUpdated: (item: MediaItem) => void;
 }) {
   const [selected, setSelected] = useState<MediaItem | null>(null);
 
@@ -39,6 +43,7 @@ export default function MediaGrid({
       {selected && (
         <MediaDetailsPanel
           item={selected}
+          allTags={allTags}
           onClose={() => setSelected(null)}
           onOpen={() => {
             onOpen(selected);
@@ -52,6 +57,10 @@ export default function MediaGrid({
                 }
               : undefined
           }
+          onItemUpdated={(updated) => {
+            setSelected(updated);
+            onItemUpdated(updated);
+          }}
         />
       )}
     </>

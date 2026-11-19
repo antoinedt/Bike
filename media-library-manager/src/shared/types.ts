@@ -20,6 +20,8 @@ export interface MediaItem {
   title?: string;
   year?: string;
   durationSeconds?: number;
+  /** User-assigned, free-form; never auto-fetched. Empty/absent means untagged. */
+  tags?: string[];
 }
 
 /** The subset of MediaItem's on-demand fields that the metadata scanner produces and persists as a sidecar. */
@@ -28,6 +30,7 @@ export interface MediaMetadata {
   year?: string;
   durationSeconds?: number;
   artworkUrl?: string;
+  tags?: string[];
 }
 
 export interface LocalFolder {

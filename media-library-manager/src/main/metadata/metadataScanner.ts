@@ -34,12 +34,17 @@ export async function scanMetadataForLibrary(
       const item = candidates[cursor++];
       try {
         const cached = await readSidecar(item, networkShares).catch(() => null);
-        if (cached) {
+        // A sidecar with a title is a fully-resolved result from a previous fetch — use it as-is.
+        // One with only tags (e.g. the user tagged this item before ever running a fetch on it)
+        // isn't: fall through to a real fetch below, carrying the existing tags forward so they
+        // aren't lost under the fresh write.
+        if (cached?.title) {
           found.set(item.id, cached);
           continue;
         }
         const metadata = await buildMetadata(item, networkShares);
         if (!metadata) continue;
+        if (cached?.tags?.length) metadata.tags = cached.tags;
         found.set(item.id, metadata);
         await writeSidecar(item, metadata, networkShares).catch(() => {
           // Best-effort: a read-only share or a transient SMB error shouldn't lose the metadata
@@ -112,7 +117,7 @@ async function probeDuration(item: MediaItem, networkShares: NetworkShare[]): Pr
   }
 }
 
-async function readSidecar(item: MediaItem, networkShares: NetworkShare[]): Promise<MediaMetadata | null> {
+export async function readSidecar(item: MediaItem, networkShares: NetworkShare[]): Promise<MediaMetadata | null> {
   const source = item.source;
   if (source.type === "local") {
     try {
@@ -128,7 +133,7 @@ async function readSidecar(item: MediaItem, networkShares: NetworkShare[]): Prom
   return readNetworkSidecar(share, relPath);
 }
 
-async function writeSidecar(item: MediaItem, metadata: MediaMetadata, networkShares: NetworkShare[]): Promise<void> {
+export async function writeSidecar(item: MediaItem, metadata: MediaMetadata, networkShares: NetworkShare[]): Promise<void> {
   const source = item.source;
   if (source.type === "local") {
     await fs.writeFile(`${item.path}.metadata.json`, JSON.stringify(metadata, null, 2), "utf8");

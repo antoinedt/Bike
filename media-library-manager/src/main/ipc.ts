@@ -19,8 +19,8 @@ import { downloadRawFile } from "./network/smbRawClient.js";
 import { ensureStreamServer, registerStream, unregisterStream } from "./network/streamServer.js";
 import { searchSites } from "./search/siteSearch.js";
 import { handOffDownload } from "./torrent/handoff.js";
-import { applyMetadata, getAllItems, replaceItemsForSource } from "./db.js";
-import { scanMetadataForLibrary } from "./metadata/metadataScanner.js";
+import { applyManualEdit, applyMetadata, getAllItems, replaceItemsForSource } from "./db.js";
+import { readSidecar, scanMetadataForLibrary, writeSidecar } from "./metadata/metadataScanner.js";
 
 export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.settingsGet, () => getSettings());
@@ -59,6 +59,30 @@ export function registerIpcHandlers(): void {
     const found = await scanMetadataForLibrary(items, networkShares);
     return applyMetadata(found);
   });
+
+  ipcMain.handle(
+    IPC.itemUpdateMetadata,
+    async (_e, itemId: string, edits: { title?: string; year?: string; tags?: string[] }) => {
+      const items = await getAllItems();
+      const item = items.find((i) => i.id === itemId);
+      if (!item) throw new Error("Item not found — try rescanning.");
+
+      const { networkShares } = getSettings();
+      const existingSidecar = (await readSidecar(item, networkShares).catch(() => null)) ?? {};
+      const mergedSidecar = {
+        ...existingSidecar,
+        title: edits.title !== undefined ? edits.title || undefined : existingSidecar.title,
+        year: edits.year !== undefined ? edits.year || undefined : existingSidecar.year,
+        tags: edits.tags !== undefined ? edits.tags : existingSidecar.tags
+      };
+      await writeSidecar(item, mergedSidecar, networkShares).catch(() => {
+        // Best-effort: a read-only share or a transient SMB error shouldn't block the edit from
+        // applying to this device's own database below.
+      });
+
+      return applyManualEdit(itemId, edits);
+    }
+  );
 
   ipcMain.handle(IPC.libraryOpenItem, async (_e, item: MediaItem) => {
     if (item.source.type !== "local") {

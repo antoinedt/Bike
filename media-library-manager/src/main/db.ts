@@ -35,7 +35,8 @@ export async function replaceItemsForSource(
       artworkUrl: item.artworkUrl ?? previous.artworkUrl,
       title: item.title ?? previous.title,
       year: item.year ?? previous.year,
-      durationSeconds: item.durationSeconds ?? previous.durationSeconds
+      durationSeconds: item.durationSeconds ?? previous.durationSeconds,
+      tags: item.tags ?? previous.tags
     };
   });
   db.data.items = db.data.items.filter((item) => !matches(item)).concat(merged);
@@ -58,7 +59,32 @@ export async function applyMetadata(metadataByItemId: Map<string, MediaMetadata>
       title: metadata.title ?? item.title,
       year: metadata.year ?? item.year,
       durationSeconds: metadata.durationSeconds ?? item.durationSeconds,
-      artworkUrl: item.artworkUrl ?? metadata.artworkUrl
+      artworkUrl: item.artworkUrl ?? metadata.artworkUrl,
+      tags: item.tags ?? metadata.tags
+    };
+  });
+  await db.write();
+  return db.data.items;
+}
+
+/**
+ * Overwrites title/year/tags on one item by id with user-provided values (unlike applyMetadata,
+ * these take precedence unconditionally — the whole point is letting the user correct a wrong
+ * auto-fetched title, not just fill in blanks). artworkUrl/durationSeconds are left untouched;
+ * editing those isn't exposed yet.
+ */
+export async function applyManualEdit(
+  itemId: string,
+  edits: { title?: string; year?: string; tags?: string[] }
+): Promise<MediaItem[]> {
+  const db = await getDb();
+  db.data.items = db.data.items.map((item) => {
+    if (item.id !== itemId) return item;
+    return {
+      ...item,
+      title: edits.title !== undefined ? edits.title || undefined : item.title,
+      year: edits.year !== undefined ? edits.year || undefined : item.year,
+      tags: edits.tags !== undefined ? edits.tags : item.tags
     };
   });
   await db.write();

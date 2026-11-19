@@ -5,34 +5,64 @@ import MediaGrid from "./MediaGrid.js";
 
 /**
  * Groups a flat item list into a navigable folder tree (derived from each item's path, relative
- * to its local folder / network share root — no separate hierarchy storage needed) when `filter`
- * is empty. A non-empty filter switches to a flat, recursive name search across every folder
- * instead, since "search the whole library" and "browse one folder" are different intents.
+ * to its local folder / network share root — no separate hierarchy storage needed) when no
+ * filter is active. Any active filter (name text, tags, or a date range) switches to a flat
+ * search across every folder instead, since "search/filter the whole library" and "browse one
+ * folder" are different intents. All active filter kinds combine with AND; selecting several
+ * tags matches an item with ANY of them.
  */
 export default function MediaBrowser({
   items,
   settings,
   filter,
+  tagFilter = [],
+  dateFrom,
+  dateTo,
   onOpen,
-  onDownload
+  onDownload,
+  onItemUpdated
 }: {
   items: MediaItem[];
   settings: AppSettings;
   filter: string;
+  tagFilter?: string[];
+  dateFrom?: number | null;
+  dateTo?: number | null;
   onOpen: (item: MediaItem) => void;
   onDownload?: (item: MediaItem) => void;
+  onItemUpdated: (item: MediaItem) => void;
 }) {
   const [path, setPath] = useState<string[]>([]);
+
+  const allTags = useMemo(() => {
+    const set = new Set<string>();
+    for (const item of items) {
+      for (const tag of item.tags ?? []) set.add(tag);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [items]);
 
   const withSegments = useMemo(
     () => items.map((item) => ({ item, segments: folderSegmentsForItem(item, settings) })),
     [items, settings]
   );
 
-  if (filter.trim()) {
-    const q = filter.toLowerCase();
-    const matched = withSegments.filter(({ item }) => item.name.toLowerCase().includes(q)).map((x) => x.item);
-    return <MediaGrid items={matched} onOpen={onOpen} onDownload={onDownload} />;
+  const nameQuery = filter.trim().toLowerCase();
+  const hasActiveFilter = nameQuery.length > 0 || tagFilter.length > 0 || dateFrom != null || dateTo != null;
+
+  function matches(item: MediaItem): boolean {
+    if (nameQuery && !item.name.toLowerCase().includes(nameQuery)) return false;
+    if (tagFilter.length > 0 && !(item.tags ?? []).some((t) => tagFilter.includes(t))) return false;
+    if (dateFrom != null && item.modifiedAt < dateFrom) return false;
+    if (dateTo != null && item.modifiedAt > dateTo) return false;
+    return true;
+  }
+
+  if (hasActiveFilter) {
+    const matched = withSegments.filter(({ item }) => matches(item)).map((x) => x.item);
+    return (
+      <MediaGrid items={matched} allTags={allTags} onOpen={onOpen} onDownload={onDownload} onItemUpdated={onItemUpdated} />
+    );
   }
 
   const depth = path.length;
@@ -76,7 +106,13 @@ export default function MediaBrowser({
         </div>
       )}
       {(filesHere.length > 0 || sortedFolders.length === 0) && (
-        <MediaGrid items={filesHere} onOpen={onOpen} onDownload={onDownload} />
+        <MediaGrid
+          items={filesHere}
+          allTags={allTags}
+          onOpen={onOpen}
+          onDownload={onDownload}
+          onItemUpdated={onItemUpdated}
+        />
       )}
     </div>
   );

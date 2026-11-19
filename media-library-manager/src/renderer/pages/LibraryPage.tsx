@@ -1,10 +1,14 @@
 import { useEffect, useState } from "react";
 import type { AppSettings, MediaItem } from "../../shared/types.js";
+import FilterBar from "../components/FilterBar.js";
 import MediaBrowser from "../components/MediaBrowser.js";
 
 export default function LibraryPage({ settings }: { settings: AppSettings }) {
   const [items, setItems] = useState<MediaItem[]>([]);
   const [filter, setFilter] = useState("");
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [scanning, setScanning] = useState(false);
   const [fetchingInfo, setFetchingInfo] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,6 +51,14 @@ export default function LibraryPage({ settings }: { settings: AppSettings }) {
     }
   }
 
+  function toggleTag(tag: string) {
+    setSelectedTags((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
+  }
+
+  function handleItemUpdated(updated: MediaItem) {
+    setItems((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
+  }
+
   return (
     <div className="page">
       <div className="page-header">
@@ -79,7 +91,25 @@ export default function LibraryPage({ settings }: { settings: AppSettings }) {
         </p>
       )}
       {error && <p className="error">{error}</p>}
-      <MediaBrowser items={items} settings={settings} filter={filter} onOpen={(item) => void openItem(item)} />
+      <FilterBar
+        items={items}
+        selectedTags={selectedTags}
+        onToggleTag={toggleTag}
+        dateFrom={dateFrom}
+        dateTo={dateTo}
+        onDateFromChange={setDateFrom}
+        onDateToChange={setDateTo}
+      />
+      <MediaBrowser
+        items={items}
+        settings={settings}
+        filter={filter}
+        tagFilter={selectedTags}
+        dateFrom={dateFrom ? new Date(`${dateFrom}T00:00:00`).getTime() : null}
+        dateTo={dateTo ? new Date(`${dateTo}T23:59:59.999`).getTime() : null}
+        onOpen={(item) => void openItem(item)}
+        onItemUpdated={handleItemUpdated}
+      />
     </div>
   );
 }

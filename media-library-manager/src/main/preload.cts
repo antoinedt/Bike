@@ -20,6 +20,7 @@ const api = {
   getLibraryItems: () => ipcRenderer.invoke("library:getItems"),
   openItem: (item: unknown) => ipcRenderer.invoke("library:openItem", item),
   scanMetadata: () => ipcRenderer.invoke("metadata:scan"),
+  updateItemMetadata: (itemId: string, edits: unknown) => ipcRenderer.invoke("item:updateMetadata", itemId, edits),
   scanNetwork: () => ipcRenderer.invoke("network:scan"),
   openNetworkStream: (item: unknown) => ipcRenderer.invoke("network:streamOpen", item),
   closeNetworkStream: (token: string) => ipcRenderer.invoke("network:streamClose", token),
