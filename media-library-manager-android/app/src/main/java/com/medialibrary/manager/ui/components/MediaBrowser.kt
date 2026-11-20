@@ -1,15 +1,15 @@
 package com.medialibrary.manager.ui.components
 
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
@@ -55,7 +55,7 @@ private fun segmentsForItem(item: MediaItem, settings: AppSettings): List<String
  * ANY of them. "Fetch artwork & info" is scoped to whatever folder is currently being browsed
  * (optionally including its subfolders), not the whole library — see [onFetchInfo].
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun MediaBrowser(
     items: List<MediaItem>,
@@ -91,21 +91,27 @@ fun MediaBrowser(
 
     @Composable
     fun FetchInfoRow(scope: List<MediaItem>, showSubfolderToggle: Boolean) {
-        // Horizontally scrollable, not just a plain Row: on a narrow phone, two checkboxes +
-        // labels + this button don't all fit at once, and a plain Row would squeeze the button
-        // down to almost no width instead of letting it keep its natural size — which wraps its
-        // text across many lines and balloons the whole row into a tall, unreadable sliver.
-        // Scrolling instead keeps every control its normal size and just lets the user swipe.
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.horizontalScroll(rememberScrollState())
+        // FlowRow, not a plain Row: on a narrow phone (e.g. a folded Galaxy Z Flip's cover/inner
+        // width), two checkboxes + labels + this button don't all fit on one line. A plain Row
+        // would squeeze the button down to almost no width instead of letting it keep its natural
+        // size, wrapping its text across many lines into a tall unreadable sliver; a scrollable
+        // Row keeps the size right but hides the button off-screen with no visible hint to swipe.
+        // Wrapping onto a second line instead guarantees every control is actually visible,
+        // full-size, with no gesture required.
+        FlowRow(
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             if (showSubfolderToggle) {
-                Checkbox(checked = includeSubfolders, onCheckedChange = { includeSubfolders = it })
-                Text("Include subfolders")
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = includeSubfolders, onCheckedChange = { includeSubfolders = it })
+                    Text("Include subfolders")
+                }
             }
-            Checkbox(checked = forceRefetch, onCheckedChange = { forceRefetch = it })
-            Text("Force")
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = forceRefetch, onCheckedChange = { forceRefetch = it })
+                Text("Force")
+            }
             Button(
                 onClick = { onFetchInfo(scope.map { it.id }.toSet(), forceRefetch) },
                 enabled = !fetchingInfo && scope.isNotEmpty()

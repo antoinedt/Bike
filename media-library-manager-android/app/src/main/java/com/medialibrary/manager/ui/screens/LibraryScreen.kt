@@ -2,9 +2,11 @@ package com.medialibrary.manager.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -23,7 +25,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -44,6 +45,7 @@ private fun parseDateMillis(text: String): Long? =
  * opens it with the OS's default app; tapping a network item streams it live in-app; only network
  * items offer a Download action.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun LibraryScreen(viewModel: MediaLibraryViewModel, onPickImage: (onPicked: (String) -> Unit) -> Unit) {
     val context = LocalContext.current
@@ -59,14 +61,19 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, onPickImage: (onPicked: (Str
     var dateTo by remember { mutableStateOf("") }
 
     Column(Modifier.fillMaxSize().padding(16.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(
-                value = filter,
-                onValueChange = { filter = it },
-                label = { Text("Filter") },
-                singleLine = true,
-                modifier = Modifier.weight(1f)
-            )
+        // Filter gets the full width on its own line, and the two Scan buttons wrap onto a
+        // second line (FlowRow) if they don't both fit next to it — on a narrow screen (e.g. a
+        // folded Galaxy Z Flip), cramming the filter field and both buttons into one plain Row
+        // squeezed the filter field down to an unusable, unreadable sliver instead.
+        OutlinedTextField(
+            value = filter,
+            onValueChange = { filter = it },
+            label = { Text("Filter") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(Modifier.height(8.dp))
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = { viewModel.scanLocal() }, enabled = !scanningLocal) {
                 if (scanningLocal) {
                     CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
