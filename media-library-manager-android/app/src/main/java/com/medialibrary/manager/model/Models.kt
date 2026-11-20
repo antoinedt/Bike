@@ -143,3 +143,20 @@ data class AppSettings(
     val networkShares: List<NetworkShare> = emptyList(),
     val siteProfiles: List<SiteProfile> = emptyList()
 )
+
+/** One lookup step's outcome for a single item during "Fetch artwork & info" — what the progress dialog's log is built from. */
+data class ScanLogEntry(
+    val step: String, // "iTunes" | "Google search" | "Video frame"
+    val result: String, // "found" | "not-found" | "error"
+    val detail: String? = null
+)
+
+/** A live progress event for one item during a "Fetch artwork & info" run — not persisted, UI-only. */
+data class ScanProgressEvent(
+    val itemId: String,
+    val itemName: String,
+    val status: String, // "started" | "done" | "cached" | "error"
+    val log: List<ScanLogEntry> = emptyList(),
+    /** Set when status is "error" — an unexpected failure outside the normal found/not-found steps. */
+    val error: String? = null
+)

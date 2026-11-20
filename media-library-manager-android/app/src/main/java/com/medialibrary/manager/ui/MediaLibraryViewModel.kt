@@ -14,6 +14,7 @@ import com.medialibrary.manager.model.MediaKind
 import com.medialibrary.manager.model.MediaMetadata
 import com.medialibrary.manager.model.MediaSourceType
 import com.medialibrary.manager.model.NetworkShare
+import com.medialibrary.manager.model.ScanProgressEvent
 import com.medialibrary.manager.model.SearchResultItem
 import com.medialibrary.manager.model.SiteProfile
 import com.medialibrary.manager.network.SmbContextFactory
@@ -25,6 +26,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class PlaybackRequest(
@@ -82,6 +84,18 @@ class MediaLibraryViewModel : ViewModel() {
     private val _isFetchingArtwork = MutableStateFlow(false)
     val isFetchingArtwork: StateFlow<Boolean> = _isFetchingArtwork.asStateFlow()
 
+    /** Live, per-item progress for the fetch-progress dialog — see fetchInfo(). Not persisted. */
+    private val _scanEvents = MutableStateFlow<List<ScanProgressEvent>>(emptyList())
+    val scanEvents: StateFlow<List<ScanProgressEvent>> = _scanEvents.asStateFlow()
+
+    /** Whether the fetch-progress dialog should be shown — stays true after the scan finishes, until dismissScanDialog(). */
+    private val _showScanDialog = MutableStateFlow(false)
+    val showScanDialog: StateFlow<Boolean> = _showScanDialog.asStateFlow()
+
+    /** Checked by fetchForLibrary before starting each new item; cancelFetchInfo() sets it. Reset at the start of each fetchInfo() call. */
+    @Volatile
+    private var scanCancelled = false
+
     private val _playback = MutableStateFlow<PlaybackRequest?>(null)
     val playback: StateFlow<PlaybackRequest?> = _playback.asStateFlow()
 
@@ -136,14 +150,32 @@ class MediaLibraryViewModel : ViewModel() {
      * result (artwork specifically; title/year already always take the fresh value when found).
      * Persists results to the on-device cache (so they survive rescans and app restarts) and, for
      * network items, as a sidecar uploaded to the share itself (so any other device sees it too).
+     *
+     * Shows a progress dialog (scanEvents/showScanDialog) with a live, per-item log — including
+     * the per-step reason an item came up with nothing (iTunes: no match, Google search: no match
+     * either, no frame to fall back to) rather than a silent pass/fail — that the user can cancel
+     * mid-run (cancelFetchInfo()) or dismiss once done (dismissScanDialog()). Cancelling stops any
+     * further items from starting but keeps whatever was already found for earlier ones.
      */
     fun fetchInfo(itemIds: Set<String>? = null, force: Boolean = false) {
         viewModelScope.launch {
             _isFetchingArtwork.value = true
+            scanCancelled = false
+            _scanEvents.value = emptyList()
+            _showScanDialog.value = true
             runCatching {
                 val all = _localItems.value + _networkItems.value
                 val scope = if (itemIds == null) all else all.filter { it.id in itemIds }
-                val found = artworkFetcher.fetchForLibrary(scope, _settings.value.networkShares, force)
+                val found = artworkFetcher.fetchForLibrary(
+                    scope, _settings.value.networkShares, force,
+                    isCancelled = { scanCancelled },
+                    onProgress = { event ->
+                        _scanEvents.update { prev ->
+                            val index = prev.indexOfFirst { it.itemId == event.itemId }
+                            if (index >= 0) prev.toMutableList().also { it[index] = event } else prev + event
+                        }
+                    }
+                )
                 fun apply(item: MediaItem) = found[item.id]?.let {
                     item.copy(
                         artworkUrl = if (force) (it.artworkUrl ?: item.artworkUrl) else (item.artworkUrl ?: it.artworkUrl),
@@ -159,6 +191,16 @@ class MediaLibraryViewModel : ViewModel() {
             }.onFailure { _errorMessage.value = it.message }
             _isFetchingArtwork.value = false
         }
+    }
+
+    /** Stops fetchInfo() from starting any further items; whatever was already found is kept. */
+    fun cancelFetchInfo() {
+        scanCancelled = true
+    }
+
+    /** Hides the fetch-progress dialog. Only meant to be called once the run has finished (or been cancelled). */
+    fun dismissScanDialog() {
+        _showScanDialog.value = false
     }
 
     /**

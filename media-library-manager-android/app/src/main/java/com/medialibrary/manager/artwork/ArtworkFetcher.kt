@@ -7,6 +7,8 @@ import com.medialibrary.manager.model.MediaKind
 import com.medialibrary.manager.model.MediaMetadata
 import com.medialibrary.manager.model.MediaSourceType
 import com.medialibrary.manager.model.NetworkShare
+import com.medialibrary.manager.model.ScanLogEntry
+import com.medialibrary.manager.model.ScanProgressEvent
 import com.medialibrary.manager.network.SmbSidecar
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -18,6 +20,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.io.IOException
 import java.net.URLEncoder
 
 private const val CONCURRENCY = 4
@@ -94,16 +97,18 @@ class ArtworkFetcher(
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
+    // Real failures (network error, bad HTTP status, unparseable body) are thrown rather than
+    // swallowed here, so the caller can tell "looked and found nothing" (a null return — a
+    // legitimate, logged "not-found") apart from "the lookup itself broke" (a logged "error" with
+    // the real reason) — this is the "why" behind the fetch-progress dialog's per-item log.
     private suspend fun lookupItunes(term: String, entity: String): ITunesResult? = withContext(Dispatchers.IO) {
         val url = "https://itunes.apple.com/search?term=${URLEncoder.encode(term, "UTF-8")}&entity=$entity&limit=1"
         val request = Request.Builder().url(url).build()
-        runCatching {
-            httpClient.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return@use null
-                val body = response.body?.string() ?: return@use null
-                json.decodeFromString<ITunesResponse>(body).results.firstOrNull()
-            }
-        }.getOrNull()
+        httpClient.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
+            val body = response.body?.string() ?: throw IOException("Empty response body")
+            json.decodeFromString<ITunesResponse>(body).results.firstOrNull()
+        }
     }
 
     /**
@@ -122,24 +127,29 @@ class ArtworkFetcher(
             .header("User-Agent", GOOGLE_USER_AGENT)
             .header("Accept-Language", "en-US,en;q=0.9")
             .build()
-        runCatching {
-            httpClient.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return@use GoogleSearchMetadata()
-                val html = response.body?.string() ?: return@use GoogleSearchMetadata()
-                val artworkUrl = GOOGLE_IMAGE_MARKER.find(html)?.groupValues?.get(1)?.replace("\\/", "/")
-                val year = GOOGLE_YEAR_MARKER.find(html)?.value?.trim('(', ')')
-                GoogleSearchMetadata(artworkUrl, year)
-            }
-        }.getOrDefault(GoogleSearchMetadata())
+        httpClient.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
+            val html = response.body?.string() ?: throw IOException("Empty response body")
+            val artworkUrl = GOOGLE_IMAGE_MARKER.find(html)?.groupValues?.get(1)?.replace("\\/", "/")
+            val year = GOOGLE_YEAR_MARKER.find(html)?.value?.trim('(', ')')
+            GoogleSearchMetadata(artworkUrl, year)
+        }
     }
 
-    private suspend fun fetchMetadata(item: MediaItem): MediaMetadata {
+    private suspend fun fetchMetadata(item: MediaItem, log: MutableList<ScanLogEntry>): MediaMetadata {
         val (guessedTitle, guessedYear) = guessTitle(item.name)
         val term = if (guessedYear != null) "$guessedTitle $guessedYear" else guessedTitle
-        val result = when (item.kind) {
-            MediaKind.VIDEO -> lookupItunes(term, "movie")
-            MediaKind.AUDIO -> lookupItunes(guessedTitle, "song")
-            else -> null
+
+        var result: ITunesResult? = null
+        try {
+            result = when (item.kind) {
+                MediaKind.VIDEO -> lookupItunes(term, "movie")
+                MediaKind.AUDIO -> lookupItunes(guessedTitle, "song")
+                else -> null
+            }
+            log += ScanLogEntry("iTunes", if (result != null) "found" else "not-found")
+        } catch (e: Exception) {
+            log += ScanLogEntry("iTunes", "error", e.message)
         }
 
         var artworkUrl = result?.artworkUrl100?.let(::upsizeArtwork)
@@ -151,15 +161,33 @@ class ArtworkFetcher(
         // plain Google search for whatever we're missing before giving up on it.
         if (artworkUrl == null || year == null) {
             val query = if (year != null) "$title $year" else title ?: guessedTitle
-            val google = searchGoogle(query)
-            if (artworkUrl == null) artworkUrl = google.artworkUrl
-            if (year == null) year = google.year
+            try {
+                val google = searchGoogle(query)
+                log += ScanLogEntry("Google search", if (google.artworkUrl != null || google.year != null) "found" else "not-found")
+                if (artworkUrl == null) artworkUrl = google.artworkUrl
+                if (year == null) year = google.year
+            } catch (e: Exception) {
+                log += ScanLogEntry("Google search", "error", e.message)
+            }
         }
 
         // Still nothing? For a local video, a real frame pulled from the file itself works for
         // literally anything with a video track, no external lookup required — the last resort.
-        if (artworkUrl == null && item.kind == MediaKind.VIDEO && item.sourceType == MediaSourceType.LOCAL) {
-            artworkUrl = VideoThumbnailExtractor.extract(appContext, Uri.parse(item.path))
+        // (Network video items don't get this fallback yet — VideoThumbnailExtractor needs a
+        // Context+Uri or raw file descriptor, neither of which an SMB share offers without a
+        // custom MediaDataSource — so that's logged explicitly rather than left unexplained.)
+        if (artworkUrl == null && item.kind == MediaKind.VIDEO) {
+            if (item.sourceType == MediaSourceType.LOCAL) {
+                try {
+                    val thumb = VideoThumbnailExtractor.extract(appContext, Uri.parse(item.path))
+                    log += ScanLogEntry("Video frame", if (thumb != null) "found" else "not-found")
+                    artworkUrl = thumb
+                } catch (e: Exception) {
+                    log += ScanLogEntry("Video frame", "error", e.message)
+                }
+            } else {
+                log += ScanLogEntry("Video frame", "not-found", "not supported for network items yet")
+            }
         }
 
         return MediaMetadata(title = title, year = year, artworkUrl = artworkUrl, infoFetched = true)
@@ -173,12 +201,20 @@ class ArtworkFetcher(
      * infoFetched) so it's there next time and a failed item isn't silently retried forever. Pass
      * `force: true` to re-fetch every item in `items` regardless of infoFetched or any cached
      * sidecar, overriding whatever was found before — the user's manual override for a stuck "no
-     * match" result. Returns id -> metadata for everything attempted.
+     * match" result. `isCancelled`, if given, is checked before starting each new item — once it
+     * returns true (the user's Cancel button), no further items are started, but whatever was
+     * already found for earlier ones is kept, not thrown away (bounded by CONCURRENCY, so at most
+     * that many items already in flight finish naturally). `onProgress`, if given, is called with
+     * a live event per item (started, then done/cached/error) — this is what drives the progress
+     * dialog's log, including the per-step reason an item came up with nothing. Returns id ->
+     * metadata for everything attempted.
      */
     suspend fun fetchForLibrary(
         items: List<MediaItem>,
         networkShares: List<NetworkShare>,
-        force: Boolean = false
+        force: Boolean = false,
+        isCancelled: () -> Boolean = { false },
+        onProgress: ((ScanProgressEvent) -> Unit)? = null
     ): Map<String, MediaMetadata> =
         coroutineScope {
             val candidates = items.filter {
@@ -186,12 +222,29 @@ class ArtworkFetcher(
             }
             val semaphore = Semaphore(CONCURRENCY)
             candidates
-                .map { item -> async { semaphore.withPermit { runCatching { item.id to resolve(item, networkShares, force) }.getOrNull() } } }
+                .map { item ->
+                    async {
+                        semaphore.withPermit {
+                            if (isCancelled()) return@withPermit null
+                            onProgress?.invoke(ScanProgressEvent(item.id, item.name, "started"))
+                            runCatching { item.id to resolve(item, networkShares, force, onProgress) }
+                                .onFailure {
+                                    onProgress?.invoke(ScanProgressEvent(item.id, item.name, "error", error = it.message))
+                                }
+                                .getOrNull()
+                        }
+                    }
+                }
                 .mapNotNull { it.await() }
                 .toMap()
         }
 
-    private suspend fun resolve(item: MediaItem, networkShares: List<NetworkShare>, force: Boolean): MediaMetadata {
+    private suspend fun resolve(
+        item: MediaItem,
+        networkShares: List<NetworkShare>,
+        force: Boolean,
+        onProgress: ((ScanProgressEvent) -> Unit)?
+    ): MediaMetadata {
         val share = if (item.sourceType == MediaSourceType.NETWORK) {
             item.shareId?.let { shareId -> networkShares.find { it.id == shareId } }
         } else {
@@ -205,13 +258,18 @@ class ArtworkFetcher(
         // ever running a fetch on it) isn't resolved: fall through to a real fetch below, carrying
         // the existing tags forward so they aren't lost.
         val cached = if (share != null && relPath != null) SmbSidecar.read(share, relPath) else null
-        if (!force && cached?.infoFetched == true) return cached
+        if (!force && cached?.infoFetched == true) {
+            onProgress?.invoke(ScanProgressEvent(item.id, item.name, "cached"))
+            return cached
+        }
 
-        val fetched = fetchMetadata(item)
+        val log = mutableListOf<ScanLogEntry>()
+        val fetched = fetchMetadata(item, log)
         val metadata = if (!cached?.tags.isNullOrEmpty()) fetched.copy(tags = cached!!.tags) else fetched
         if (share != null && relPath != null) {
             runCatching { SmbSidecar.write(share, relPath, metadata) }
         }
+        onProgress?.invoke(ScanProgressEvent(item.id, item.name, "done", log = log))
         return metadata
     }
 }

@@ -33,6 +33,7 @@ import com.medialibrary.manager.model.MediaSourceType
 import com.medialibrary.manager.ui.MediaLibraryViewModel
 import com.medialibrary.manager.ui.components.FilterBar
 import com.medialibrary.manager.ui.components.MediaBrowser
+import com.medialibrary.manager.ui.components.ScanProgressDialog
 import java.time.LocalDate
 import java.time.ZoneId
 
@@ -54,11 +55,22 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, onPickImage: (onPicked: (Str
     val scanningLocal by viewModel.isScanningLocal.collectAsState()
     val scanningNetwork by viewModel.isScanningNetwork.collectAsState()
     val fetchingArtwork by viewModel.isFetchingArtwork.collectAsState()
+    val scanEvents by viewModel.scanEvents.collectAsState()
+    val showScanDialog by viewModel.showScanDialog.collectAsState()
     val downloadingItemId by viewModel.downloadingItemId.collectAsState()
     var filter by remember { mutableStateOf("") }
     var selectedTags by remember { mutableStateOf(listOf<String>()) }
     var dateFrom by remember { mutableStateOf("") }
     var dateTo by remember { mutableStateOf("") }
+
+    if (showScanDialog) {
+        ScanProgressDialog(
+            running = fetchingArtwork,
+            events = scanEvents,
+            onCancel = { viewModel.cancelFetchInfo() },
+            onClose = { viewModel.dismissScanDialog() }
+        )
+    }
 
     Column(Modifier.fillMaxSize().padding(16.dp)) {
         // Filter gets the full width on its own line, and the two Scan buttons wrap onto a
