@@ -72,6 +72,7 @@ fun MediaBrowser(
     onPickImage: ((onPicked: (String) -> Unit) -> Unit)? = null,
     onDownload: ((MediaItem) -> Unit)? = null,
     downloadingItemId: String? = null,
+    downloadProgress: Float? = null,
     modifier: Modifier = Modifier
 ) {
     var path by remember { mutableStateOf(listOf<String>()) }
@@ -134,6 +135,7 @@ fun MediaBrowser(
                 onPickImage = onPickImage,
                 onDownload = onDownload,
                 downloadingItemId = downloadingItemId,
+                downloadProgress = downloadProgress,
                 modifier = Modifier.weight(1f)
             )
         }
@@ -192,6 +194,7 @@ fun MediaBrowser(
                 onPickImage = onPickImage,
                 onDownload = onDownload,
                 downloadingItemId = downloadingItemId,
+                downloadProgress = downloadProgress,
                 modifier = Modifier.weight(1f)
             )
         }

@@ -31,15 +31,29 @@ private val MIME_BY_EXTENSION = mapOf(
  */
 class NetworkDownloader(private val context: Context) {
 
-    suspend fun download(name: String, extension: String, smbUrl: String, cifsContext: CIFSContext) =
-        withContext(Dispatchers.IO) {
-            val smbFile = SmbFile(smbUrl, cifsContext)
-            smbFile.inputStream.use { input ->
-                openDestination(name, mimeTypeFor(extension)).use { output ->
-                    input.copyTo(output, bufferSize = 256 * 1024)
+    suspend fun download(
+        name: String,
+        extension: String,
+        smbUrl: String,
+        cifsContext: CIFSContext,
+        onProgress: ((bytesWritten: Long, totalBytes: Long) -> Unit)? = null
+    ) = withContext(Dispatchers.IO) {
+        val smbFile = SmbFile(smbUrl, cifsContext)
+        val totalBytes = runCatching { smbFile.length() }.getOrDefault(-1L)
+        smbFile.inputStream.use { input ->
+            openDestination(name, mimeTypeFor(extension)).use { output ->
+                val buffer = ByteArray(256 * 1024)
+                var bytesWritten = 0L
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read == -1) break
+                    output.write(buffer, 0, read)
+                    bytesWritten += read
+                    onProgress?.invoke(bytesWritten, totalBytes)
                 }
             }
         }
+    }
 
     private fun openDestination(name: String, mimeType: String): OutputStream {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {

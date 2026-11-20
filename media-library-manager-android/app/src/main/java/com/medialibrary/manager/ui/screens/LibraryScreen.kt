@@ -58,6 +58,7 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, onPickImage: (onPicked: (Str
     val scanEvents by viewModel.scanEvents.collectAsState()
     val showScanDialog by viewModel.showScanDialog.collectAsState()
     val downloadingItemId by viewModel.downloadingItemId.collectAsState()
+    val downloadProgress by viewModel.downloadProgress.collectAsState()
     var filter by remember { mutableStateOf("") }
     var selectedTags by remember { mutableStateOf(listOf<String>()) }
     var dateFrom by remember { mutableStateOf("") }
@@ -155,6 +156,7 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, onPickImage: (onPicked: (Str
             onPickImage = onPickImage,
             onDownload = { viewModel.downloadNetworkItem(it) },
             downloadingItemId = downloadingItemId,
+            downloadProgress = downloadProgress,
             modifier = Modifier.weight(1f)
         )
     }

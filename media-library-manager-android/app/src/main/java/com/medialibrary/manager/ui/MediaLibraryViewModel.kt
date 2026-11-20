@@ -78,6 +78,10 @@ class MediaLibraryViewModel : ViewModel() {
     private val _downloadingItemId = MutableStateFlow<String?>(null)
     val downloadingItemId: StateFlow<String?> = _downloadingItemId.asStateFlow()
 
+    /** 0f..1f while downloadingItemId is set and the share reported a real size; null otherwise (including an unknown/indeterminate size). */
+    private val _downloadProgress = MutableStateFlow<Float?>(null)
+    val downloadProgress: StateFlow<Float?> = _downloadProgress.asStateFlow()
+
     private val _shareTestResult = MutableStateFlow<String?>(null)
     val shareTestResult: StateFlow<String?> = _shareTestResult.asStateFlow()
 
@@ -337,16 +341,20 @@ class MediaLibraryViewModel : ViewModel() {
                 return@launch
             }
             _downloadingItemId.value = item.id
+            _downloadProgress.value = null
             runCatching {
                 val relPath = item.path.removePrefix("smb://${share.id}/")
                 val url = SmbContextFactory.urlFor(share, relPath)
-                networkDownloader.download(item.name, item.extension, url, SmbContextFactory.contextFor(share))
+                networkDownloader.download(item.name, item.extension, url, SmbContextFactory.contextFor(share)) { bytesWritten, totalBytes ->
+                    _downloadProgress.value = if (totalBytes > 0) bytesWritten.toFloat() / totalBytes else null
+                }
             }.onSuccess {
                 _errorMessage.value = "Downloaded \"${item.name}\" to Downloads/MediaLibraryManager."
             }.onFailure {
                 _errorMessage.value = "Download failed: ${it.message}"
             }
             _downloadingItemId.value = null
+            _downloadProgress.value = null
         }
     }
 

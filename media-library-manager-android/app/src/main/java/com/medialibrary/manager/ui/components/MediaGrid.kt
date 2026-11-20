@@ -1,5 +1,6 @@
 package com.medialibrary.manager.ui.components
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,6 +31,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -65,6 +67,8 @@ fun MediaGrid(
     onPickImage: ((onPicked: (String) -> Unit) -> Unit)? = null,
     onDownload: ((MediaItem) -> Unit)? = null,
     downloadingItemId: String? = null,
+    /** 0f..1f for the item currently downloading; null while its size is unknown (shows an indeterminate spinner instead of a percentage). */
+    downloadProgress: Float? = null,
     modifier: Modifier = Modifier
 ) {
     var editingItem by remember { mutableStateOf<MediaItem?>(null) }
@@ -124,10 +128,25 @@ fun MediaGrid(
                     }
                     if (onDownload != null && item.sourceType == MediaSourceType.NETWORK) {
                         if (item.id == downloadingItemId) {
-                            CircularProgressIndicator(
-                                Modifier.align(Alignment.TopEnd).padding(4.dp).size(20.dp),
-                                strokeWidth = 2.dp
-                            )
+                            Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = 0.6f)), contentAlignment = Alignment.Center) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    if (downloadProgress != null) {
+                                        CircularProgressIndicator(
+                                            progress = { downloadProgress },
+                                            modifier = Modifier.size(32.dp),
+                                            color = Color.White,
+                                            strokeWidth = 3.dp
+                                        )
+                                        Text(
+                                            "${(downloadProgress * 100).toInt()}%",
+                                            color = Color.White,
+                                            style = MaterialTheme.typography.labelMedium
+                                        )
+                                    } else {
+                                        CircularProgressIndicator(modifier = Modifier.size(32.dp), color = Color.White, strokeWidth = 3.dp)
+                                    }
+                                }
+                            }
                         } else {
                             IconButton(
                                 onClick = { onDownload(item) },
