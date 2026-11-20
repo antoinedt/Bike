@@ -126,25 +126,29 @@ class MediaLibraryViewModel : ViewModel() {
     /**
      * Fetches title/year/artwork for every not-yet-checked item (win or lose — see
      * MediaItem.infoFetched) within `itemIds`, local and network combined — via iTunes, falling
-     * back to a frame pulled from the video itself (local items only) when iTunes has nothing,
-     * which is most of a home library's camera footage/home videos. Pass null to scan the whole
-     * library; the folder-scoped "Fetch artwork & info" button in MediaBrowser passes just the
-     * ids of whatever folder (optionally + its subfolders) the user is currently browsing.
+     * back to a Google search and then (local video only) a frame pulled from the file itself
+     * when iTunes has nothing, which is most of a home library's camera footage/home videos and
+     * anything outside iTunes' commercial catalog. Pass null to scan the whole library; the
+     * folder-scoped "Fetch artwork & info" button in MediaBrowser passes just the ids of whatever
+     * folder (optionally + its subfolders) the user is currently browsing. Pass `force: true` to
+     * re-fetch every item in scope regardless of whether it was already checked, overriding
+     * whatever artwork/year was found before — the user's manual override for a stuck "no match"
+     * result (artwork specifically; title/year already always take the fresh value when found).
      * Persists results to the on-device cache (so they survive rescans and app restarts) and, for
      * network items, as a sidecar uploaded to the share itself (so any other device sees it too).
      */
-    fun fetchInfo(itemIds: Set<String>? = null) {
+    fun fetchInfo(itemIds: Set<String>? = null, force: Boolean = false) {
         viewModelScope.launch {
             _isFetchingArtwork.value = true
             runCatching {
                 val all = _localItems.value + _networkItems.value
                 val scope = if (itemIds == null) all else all.filter { it.id in itemIds }
-                val found = artworkFetcher.fetchForLibrary(scope, _settings.value.networkShares)
+                val found = artworkFetcher.fetchForLibrary(scope, _settings.value.networkShares, force)
                 fun apply(item: MediaItem) = found[item.id]?.let {
                     item.copy(
-                        artworkUrl = item.artworkUrl ?: it.artworkUrl,
-                        title = item.title ?: it.title,
-                        year = item.year ?: it.year,
+                        artworkUrl = if (force) (it.artworkUrl ?: item.artworkUrl) else (item.artworkUrl ?: it.artworkUrl),
+                        title = if (force) (it.title ?: item.title) else (item.title ?: it.title),
+                        year = if (force) (it.year ?: item.year) else (item.year ?: it.year),
                         tags = item.tags.ifEmpty { it.tags },
                         infoFetched = true
                     )
@@ -154,6 +158,29 @@ class MediaLibraryViewModel : ViewModel() {
                 itemCache.save(_localItems.value + _networkItems.value)
             }.onFailure { _errorMessage.value = it.message }
             _isFetchingArtwork.value = false
+        }
+    }
+
+    /**
+     * Wipes title/year/tags/artworkUrl for one item and resets it to "not yet checked" — lets the
+     * user start over on an item that got the wrong auto-fetched info, without forcing a whole
+     * rescan. Persisted the same way as every other metadata change: on-device cache (both local
+     * and network items) and, for a network item, cleared on its sidecar too.
+     */
+    fun clearItemMetadata(item: MediaItem) {
+        viewModelScope.launch {
+            val cleared = item.copy(title = null, year = null, tags = emptyList(), artworkUrl = null, infoFetched = false)
+            if (item.sourceType == MediaSourceType.LOCAL) {
+                _localItems.value = _localItems.value.map { if (it.id == item.id) cleared else it }
+            } else {
+                _networkItems.value = _networkItems.value.map { if (it.id == item.id) cleared else it }
+                val share = item.shareId?.let { settingsRepo.shareById(it) }
+                if (share != null) {
+                    val relPath = item.path.removePrefix("smb://${share.id}/")
+                    runCatching { SmbSidecar.write(share, relPath, MediaMetadata()) }
+                }
+            }
+            itemCache.save(_localItems.value + _networkItems.value)
         }
     }
 

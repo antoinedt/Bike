@@ -61,6 +61,7 @@ fun MediaGrid(
     allTags: List<String>,
     onOpen: (MediaItem) -> Unit,
     onItemUpdated: (title: String, year: String, tags: List<String>, artworkUrl: String?, item: MediaItem) -> Unit,
+    onClearInfo: (MediaItem) -> Unit,
     onPickImage: ((onPicked: (String) -> Unit) -> Unit)? = null,
     onDownload: ((MediaItem) -> Unit)? = null,
     downloadingItemId: String? = null,
@@ -153,6 +154,10 @@ fun MediaGrid(
             onDismiss = { editingItem = null },
             onSave = { title, year, tags, artworkUrl ->
                 onItemUpdated(title, year, tags, artworkUrl, item)
+                editingItem = null
+            },
+            onClear = {
+                onClearInfo(item)
                 editingItem = null
             }
         )

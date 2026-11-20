@@ -2,6 +2,7 @@ package com.medialibrary.manager.ui.components
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.lazy.LazyRow
@@ -42,7 +43,8 @@ fun MediaDetailsDialog(
     allTags: List<String>,
     onPickImage: ((onPicked: (String) -> Unit) -> Unit)? = null,
     onDismiss: () -> Unit,
-    onSave: (title: String, year: String, tags: List<String>, artworkUrl: String?) -> Unit
+    onSave: (title: String, year: String, tags: List<String>, artworkUrl: String?) -> Unit,
+    onClear: () -> Unit
 ) {
     var title by remember(item.id) { mutableStateOf(item.title ?: "") }
     var year by remember(item.id) { mutableStateOf(item.year ?: "") }
@@ -123,7 +125,10 @@ fun MediaDetailsDialog(
             TextButton(onClick = { onSave(title, year, tags, artworkUrl) }) { Text("Save") }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            Row {
+                TextButton(onClick = onClear) { Text("Clear info") }
+                TextButton(onClick = onDismiss) { Text("Cancel") }
+            }
         }
     )
 }

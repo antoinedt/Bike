@@ -67,6 +67,16 @@ private data class ITunesResponse(val results: List<ITunesResult> = emptyList())
 
 private fun upsizeArtwork(url: String): String = url.replace(Regex("\\d+x\\d+bb(\\.\\w+)$"), "600x600bb$1")
 
+// A real browser UA, not this app's own — Google blocks/CAPTCHAs a plainly automated UA far more
+// aggressively than one that looks like an ordinary browser doing the same search a person would
+// do by hand.
+private const val GOOGLE_USER_AGENT =
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+private val GOOGLE_IMAGE_MARKER = Regex("\"ou\":\"(https?:\\\\?/\\\\?/[^\"]+?)\"")
+private val GOOGLE_YEAR_MARKER = Regex("\\((19|20)\\d{2}\\)")
+
+data class GoogleSearchMetadata(val artworkUrl: String? = null, val year: String? = null)
+
 /**
  * Looks up title/year/artwork via the iTunes Search API (keyless, no scraping), falling back to
  * a frame pulled from the video itself — via VideoThumbnailExtractor, local items only — when
@@ -96,6 +106,33 @@ class ArtworkFetcher(
         }.getOrNull()
     }
 
+    /**
+     * Falls back to a plain Google search for the guessed title (iTunes only knows its own
+     * commercial catalog, which plenty of a legally-obtained library — less common movies, most
+     * songs, anything iTunes just doesn't carry — will never match): takes the first image
+     * result as artwork, and a parenthesized "(19xx)"/"(20xx)" on the page as the release year,
+     * if either is present. Scrapes Google's search-results HTML for an "ou" ("original url")
+     * field Google embeds server-side for each image result — a long-standing, widely-used but
+     * unofficial trick (no API key, no official support) that will simply stop matching, not
+     * throw, if Google changes its markup.
+     */
+    private suspend fun searchGoogle(query: String): GoogleSearchMetadata = withContext(Dispatchers.IO) {
+        val url = "https://www.google.com/search?q=${URLEncoder.encode(query, "UTF-8")}&hl=en"
+        val request = Request.Builder().url(url)
+            .header("User-Agent", GOOGLE_USER_AGENT)
+            .header("Accept-Language", "en-US,en;q=0.9")
+            .build()
+        runCatching {
+            httpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@use GoogleSearchMetadata()
+                val html = response.body?.string() ?: return@use GoogleSearchMetadata()
+                val artworkUrl = GOOGLE_IMAGE_MARKER.find(html)?.groupValues?.get(1)?.replace("\\/", "/")
+                val year = GOOGLE_YEAR_MARKER.find(html)?.value?.trim('(', ')')
+                GoogleSearchMetadata(artworkUrl, year)
+            }
+        }.getOrDefault(GoogleSearchMetadata())
+    }
+
     private suspend fun fetchMetadata(item: MediaItem): MediaMetadata {
         val (guessedTitle, guessedYear) = guessTitle(item.name)
         val term = if (guessedYear != null) "$guessedTitle $guessedYear" else guessedTitle
@@ -106,12 +143,25 @@ class ArtworkFetcher(
         }
 
         var artworkUrl = result?.artworkUrl100?.let(::upsizeArtwork)
+        var title = (result?.trackName ?: result?.collectionName ?: guessedTitle).ifBlank { null }
+        var year = result?.releaseDate?.take(4) ?: guessedYear
+
+        // iTunes only knows its own commercial catalog — plenty of a legally-obtained library
+        // (less common movies, most songs, home videos) will never match there. Fall back to a
+        // plain Google search for whatever we're missing before giving up on it.
+        if (artworkUrl == null || year == null) {
+            val query = if (year != null) "$title $year" else title ?: guessedTitle
+            val google = searchGoogle(query)
+            if (artworkUrl == null) artworkUrl = google.artworkUrl
+            if (year == null) year = google.year
+        }
+
+        // Still nothing? For a local video, a real frame pulled from the file itself works for
+        // literally anything with a video track, no external lookup required — the last resort.
         if (artworkUrl == null && item.kind == MediaKind.VIDEO && item.sourceType == MediaSourceType.LOCAL) {
             artworkUrl = VideoThumbnailExtractor.extract(appContext, Uri.parse(item.path))
         }
 
-        val title = (result?.trackName ?: result?.collectionName ?: guessedTitle).ifBlank { null }
-        val year = result?.releaseDate?.take(4) ?: guessedYear
         return MediaMetadata(title = title, year = year, artworkUrl = artworkUrl, infoFetched = true)
     }
 
@@ -120,22 +170,28 @@ class ArtworkFetcher(
      * MediaItem.infoFetched) in `items` — the caller decides the scope, e.g. just the folder the
      * user is currently browsing. Network items check for an existing sidecar on the share before
      * fetching; every attempt, success or total failure, is written back as one (marked
-     * infoFetched) so it's there next time and a failed item isn't silently retried forever.
-     * Returns id -> metadata for everything attempted.
+     * infoFetched) so it's there next time and a failed item isn't silently retried forever. Pass
+     * `force: true` to re-fetch every item in `items` regardless of infoFetched or any cached
+     * sidecar, overriding whatever was found before — the user's manual override for a stuck "no
+     * match" result. Returns id -> metadata for everything attempted.
      */
-    suspend fun fetchForLibrary(items: List<MediaItem>, networkShares: List<NetworkShare>): Map<String, MediaMetadata> =
+    suspend fun fetchForLibrary(
+        items: List<MediaItem>,
+        networkShares: List<NetworkShare>,
+        force: Boolean = false
+    ): Map<String, MediaMetadata> =
         coroutineScope {
             val candidates = items.filter {
-                !it.infoFetched && (it.kind == MediaKind.VIDEO || it.kind == MediaKind.AUDIO)
+                (force || !it.infoFetched) && (it.kind == MediaKind.VIDEO || it.kind == MediaKind.AUDIO)
             }
             val semaphore = Semaphore(CONCURRENCY)
             candidates
-                .map { item -> async { semaphore.withPermit { runCatching { item.id to resolve(item, networkShares) }.getOrNull() } } }
+                .map { item -> async { semaphore.withPermit { runCatching { item.id to resolve(item, networkShares, force) }.getOrNull() } } }
                 .mapNotNull { it.await() }
                 .toMap()
         }
 
-    private suspend fun resolve(item: MediaItem, networkShares: List<NetworkShare>): MediaMetadata {
+    private suspend fun resolve(item: MediaItem, networkShares: List<NetworkShare>, force: Boolean): MediaMetadata {
         val share = if (item.sourceType == MediaSourceType.NETWORK) {
             item.shareId?.let { shareId -> networkShares.find { it.id == shareId } }
         } else {
@@ -144,11 +200,12 @@ class ArtworkFetcher(
         val relPath = share?.let { item.path.removePrefix("smb://${it.id}/") }
 
         // A sidecar already marked infoFetched is a fully-resolved result from a previous attempt
-        // (on this device or another) — use it as-is, success or not. One with only tags (e.g. the
-        // user tagged this item before ever running a fetch on it) isn't resolved: fall through to
-        // a real fetch below, carrying the existing tags forward so they aren't lost.
+        // (on this device or another) — use it as-is, success or not, unless the caller asked to
+        // force a fresh fetch anyway. One with only tags (e.g. the user tagged this item before
+        // ever running a fetch on it) isn't resolved: fall through to a real fetch below, carrying
+        // the existing tags forward so they aren't lost.
         val cached = if (share != null && relPath != null) SmbSidecar.read(share, relPath) else null
-        if (cached?.infoFetched == true) return cached
+        if (!force && cached?.infoFetched == true) return cached
 
         val fetched = fetchMetadata(item)
         val metadata = if (!cached?.tags.isNullOrEmpty()) fetched.copy(tags = cached!!.tags) else fetched

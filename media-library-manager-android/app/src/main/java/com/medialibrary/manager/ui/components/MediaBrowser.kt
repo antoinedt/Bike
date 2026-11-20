@@ -64,7 +64,8 @@ fun MediaBrowser(
     dateTo: Long? = null,
     onOpen: (MediaItem) -> Unit,
     onItemUpdated: (title: String, year: String, tags: List<String>, artworkUrl: String?, item: MediaItem) -> Unit,
-    onFetchInfo: (itemIds: Set<String>) -> Unit,
+    onClearInfo: (MediaItem) -> Unit,
+    onFetchInfo: (itemIds: Set<String>, force: Boolean) -> Unit,
     fetchingInfo: Boolean,
     onPickImage: ((onPicked: (String) -> Unit) -> Unit)? = null,
     onDownload: ((MediaItem) -> Unit)? = null,
@@ -73,6 +74,7 @@ fun MediaBrowser(
 ) {
     var path by remember { mutableStateOf(listOf<String>()) }
     var includeSubfolders by remember { mutableStateOf(false) }
+    var forceRefetch by remember { mutableStateOf(false) }
 
     val allTags = remember(items) { items.flatMap { it.tags }.distinct().sorted() }
 
@@ -92,7 +94,12 @@ fun MediaBrowser(
                 Checkbox(checked = includeSubfolders, onCheckedChange = { includeSubfolders = it })
                 Text("Include subfolders")
             }
-            Button(onClick = { onFetchInfo(scope.map { it.id }.toSet()) }, enabled = !fetchingInfo && scope.isNotEmpty()) {
+            Checkbox(checked = forceRefetch, onCheckedChange = { forceRefetch = it })
+            Text("Force")
+            Button(
+                onClick = { onFetchInfo(scope.map { it.id }.toSet(), forceRefetch) },
+                enabled = !fetchingInfo && scope.isNotEmpty()
+            ) {
                 Text(if (fetchingInfo) "Fetching artwork & info…" else "Fetch artwork & info")
             }
         }
@@ -107,6 +114,7 @@ fun MediaBrowser(
                 allTags = allTags,
                 onOpen = onOpen,
                 onItemUpdated = onItemUpdated,
+                onClearInfo = onClearInfo,
                 onPickImage = onPickImage,
                 onDownload = onDownload,
                 downloadingItemId = downloadingItemId,
@@ -164,6 +172,7 @@ fun MediaBrowser(
                 allTags = allTags,
                 onOpen = onOpen,
                 onItemUpdated = onItemUpdated,
+                onClearInfo = onClearInfo,
                 onPickImage = onPickImage,
                 onDownload = onDownload,
                 downloadingItemId = downloadingItemId,

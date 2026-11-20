@@ -130,7 +130,8 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, onPickImage: (onPicked: (Str
             onItemUpdated = { title, year, tags, artworkUrl, item ->
                 viewModel.updateItemMetadata(title, year, tags, artworkUrl, item)
             },
-            onFetchInfo = { itemIds -> viewModel.fetchInfo(itemIds) },
+            onClearInfo = { item -> viewModel.clearItemMetadata(item) },
+            onFetchInfo = { itemIds, force -> viewModel.fetchInfo(itemIds, force) },
             fetchingInfo = fetchingArtwork,
             onPickImage = onPickImage,
             onDownload = { viewModel.downloadNetworkItem(it) },
