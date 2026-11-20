@@ -165,7 +165,7 @@ export function registerIpcHandlers(): void {
     unregisterStream(token);
   });
 
-  ipcMain.handle(IPC.networkDownload, async (_e, item: MediaItem) => {
+  ipcMain.handle(IPC.networkDownload, async (e, item: MediaItem) => {
     const source = item.source;
     if (source.type !== "network") throw new Error("Not a network item.");
     const { networkShares } = getSettings();
@@ -176,7 +176,9 @@ export function registerIpcHandlers(): void {
     if (result.canceled || !result.filePath) return null;
 
     const relPath = relPathFromMediaPath(share, item.path);
-    await downloadRawFile(share, relPath, result.filePath);
+    await downloadRawFile(share, relPath, result.filePath, (bytesWritten, totalBytes) => {
+      e.sender.send(IPC.networkDownloadProgress, { bytesWritten, totalBytes });
+    });
     return result.filePath;
   });
 

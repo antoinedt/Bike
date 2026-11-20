@@ -25,6 +25,7 @@ export const IPC = {
   networkStreamOpen: "network:streamOpen",
   networkStreamClose: "network:streamClose",
   networkDownload: "network:download",
+  networkDownloadProgress: "network:downloadProgress",
   searchRun: "search:run",
   torrentDownload: "torrent:download"
 } as const;

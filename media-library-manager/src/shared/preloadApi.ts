@@ -1,5 +1,6 @@
 import type {
   AppSettings,
+  DownloadProgressEvent,
   LocalFolder,
   MediaItem,
   NetworkShare,
@@ -77,6 +78,12 @@ export interface PreloadApi {
   closeNetworkStream(token: string): Promise<void>;
   /** Prompts for a save location and saves a full local copy of a network item. Null if the user cancels. */
   downloadNetworkItem(item: MediaItem): Promise<string | null>;
+  /**
+   * Subscribes to live byte-progress events for the in-flight downloadNetworkItem call. Returns
+   * an unsubscribe function; call it once the download settles so events from a later download
+   * don't leak into a stale listener.
+   */
+  onNetworkDownloadProgress(callback: (event: DownloadProgressEvent) => void): () => void;
   runSearch(query: string, profileIds?: string[]): Promise<SearchResultItem[]>;
   downloadTorrent(url: string): Promise<void>;
 }

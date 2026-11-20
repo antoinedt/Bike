@@ -21,6 +21,7 @@ export default function LibraryPage({ settings }: { settings: AppSettings }) {
   const [error, setError] = useState<string | null>(null);
   const [stream, setStream] = useState<ActiveStream | null>(null);
   const [downloading, setDownloading] = useState<string | null>(null);
+  const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
 
   useEffect(() => {
     void window.api.getLibraryItems().then(setItems);
@@ -75,12 +76,18 @@ export default function LibraryPage({ settings }: { settings: AppSettings }) {
   async function download(item: MediaItem) {
     setError(null);
     setDownloading(item.id);
+    setDownloadProgress(null);
+    const unsubscribe = window.api.onNetworkDownloadProgress(({ bytesWritten, totalBytes }) => {
+      setDownloadProgress(totalBytes > 0 ? bytesWritten / totalBytes : null);
+    });
     try {
       await window.api.downloadNetworkItem(item);
     } catch (err) {
       setError((err as Error).message);
     } finally {
+      unsubscribe();
       setDownloading(null);
+      setDownloadProgress(null);
     }
   }
 
@@ -127,7 +134,11 @@ export default function LibraryPage({ settings }: { settings: AppSettings }) {
         </p>
       )}
       {error && <p className="error">{error}</p>}
-      {downloading && <p className="hint-inline">Downloading…</p>}
+      {downloading && (
+        <p className="hint-inline">
+          Downloading… {downloadProgress != null ? `${Math.round(downloadProgress * 100)}%` : ""}
+        </p>
+      )}
       <FilterBar
         items={items}
         selectedTags={selectedTags}

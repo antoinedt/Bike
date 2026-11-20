@@ -116,6 +116,12 @@ export interface ScanLogEntry {
   detail?: string;
 }
 
+/** A live progress event pushed from main to renderer while a network item downloads. */
+export interface DownloadProgressEvent {
+  bytesWritten: number;
+  totalBytes: number;
+}
+
 /** A live progress event pushed from main to renderer while "Fetch artwork & info" runs, one per item per phase. */
 export interface ScanProgressEvent {
   itemId: string;

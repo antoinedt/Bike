@@ -33,6 +33,11 @@ const api = {
   openNetworkStream: (item: unknown) => ipcRenderer.invoke("network:streamOpen", item),
   closeNetworkStream: (token: string) => ipcRenderer.invoke("network:streamClose", token),
   downloadNetworkItem: (item: unknown) => ipcRenderer.invoke("network:download", item),
+  onNetworkDownloadProgress: (callback: (event: unknown) => void) => {
+    const listener = (_e: unknown, event: unknown) => callback(event);
+    ipcRenderer.on("network:downloadProgress", listener);
+    return () => ipcRenderer.removeListener("network:downloadProgress", listener);
+  },
   runSearch: (query: string, profileIds?: string[]) => ipcRenderer.invoke("search:run", query, profileIds),
   downloadTorrent: (url: string) => ipcRenderer.invoke("torrent:download", url)
 };
