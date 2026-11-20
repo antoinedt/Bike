@@ -59,4 +59,6 @@ class SettingsRepository(private val context: Context) {
     suspend fun removeSiteProfile(id: String) = update { it.copy(siteProfiles = it.siteProfiles.filterNot { p -> p.id == id }) }
 
     suspend fun shareById(id: String): NetworkShare? = current().networkShares.find { it.id == id }
+
+    suspend fun updateTmdbApiKey(tmdbApiKey: String) = update { it.copy(tmdbApiKey = tmdbApiKey) }
 }

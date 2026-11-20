@@ -31,7 +31,7 @@ private fun stepText(entry: ScanLogEntry) = when (entry.result) {
 
 /**
  * Live progress for a "Fetch artwork & info" run: one block per item, updated in place as events
- * arrive (started -> done/cached/error), with the full per-step log (iTunes/Google search/Video
+ * arrive (started -> done/cached/error), with the full per-step log (iTunes/TMDb/Album art/Video
  * frame, each found/not-found/error) shown for a "done" item — this is the answer to "why didn't
  * this one get artwork": every lookup that was tried and what it returned, not just a final
  * yes/no. Stays open after the scan finishes so that log is still there to read; Cancel is only

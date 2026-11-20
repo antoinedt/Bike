@@ -144,9 +144,10 @@ class MediaLibraryViewModel : ViewModel() {
     /**
      * Fetches title/year/artwork for every not-yet-checked item (win or lose — see
      * MediaItem.infoFetched) within `itemIds`, local and network combined — via iTunes, falling
-     * back to a Google search and then (local video only) a frame pulled from the file itself
-     * when iTunes has nothing, which is most of a home library's camera footage/home videos and
-     * anything outside iTunes' commercial catalog. Pass null to scan the whole library; the
+     * back to TMDb (video, needs an API key from Settings) or MusicBrainz (audio, no key needed)
+     * and then (local video only) a frame pulled from the file itself when iTunes has nothing,
+     * which is most of a home library's camera footage/home videos and anything outside iTunes'
+     * commercial catalog. Pass null to scan the whole library; the
      * folder-scoped "Fetch artwork & info" button in MediaBrowser passes just the ids of whatever
      * folder (optionally + its subfolders) the user is currently browsing. Pass `force: true` to
      * re-fetch every item in scope regardless of whether it was already checked, overriding
@@ -156,8 +157,8 @@ class MediaLibraryViewModel : ViewModel() {
      * network items, as a sidecar uploaded to the share itself (so any other device sees it too).
      *
      * Shows a progress dialog (scanEvents/showScanDialog) with a live, per-item log — including
-     * the per-step reason an item came up with nothing (iTunes: no match, Google search: no match
-     * either, no frame to fall back to) rather than a silent pass/fail — that the user can cancel
+     * the per-step reason an item came up with nothing (iTunes: no match, TMDb/MusicBrainz: no
+     * match either, no frame to fall back to) rather than a silent pass/fail — that the user can cancel
      * mid-run (cancelFetchInfo()) or dismiss once done (dismissScanDialog()). Cancelling stops any
      * further items from starting but keeps whatever was already found for earlier ones.
      */
@@ -172,6 +173,7 @@ class MediaLibraryViewModel : ViewModel() {
                 val scope = if (itemIds == null) all else all.filter { it.id in itemIds }
                 val found = artworkFetcher.fetchForLibrary(
                     scope, _settings.value.networkShares, force,
+                    tmdbApiKey = _settings.value.tmdbApiKey,
                     isCancelled = { scanCancelled },
                     onProgress = { event ->
                         _scanEvents.update { prev ->
@@ -250,6 +252,8 @@ class MediaLibraryViewModel : ViewModel() {
             _isScanningNetwork.value = false
         }
     }
+
+    fun updateTmdbApiKey(tmdbApiKey: String) = viewModelScope.launch { settingsRepo.updateTmdbApiKey(tmdbApiKey) }
 
     fun addShare(share: NetworkShare) = viewModelScope.launch { settingsRepo.addShare(share) }
 

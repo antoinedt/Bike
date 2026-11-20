@@ -141,12 +141,14 @@ data class SearchResultItem(
 data class AppSettings(
     val localFolders: List<LocalFolder> = emptyList(),
     val networkShares: List<NetworkShare> = emptyList(),
-    val siteProfiles: List<SiteProfile> = emptyList()
+    val siteProfiles: List<SiteProfile> = emptyList(),
+    /** Free key from themoviedb.org/settings/api — used for the TMDb artwork/year fallback (movies & TV) when iTunes has nothing. Empty means that fallback is skipped. */
+    val tmdbApiKey: String = ""
 )
 
 /** One lookup step's outcome for a single item during "Fetch artwork & info" — what the progress dialog's log is built from. */
 data class ScanLogEntry(
-    val step: String, // "iTunes" | "Google search" | "Video frame"
+    val step: String, // "iTunes" | "TMDb" | "Album art" | "Video frame"
     val result: String, // "found" | "not-found" | "error"
     val detail: String? = null
 )

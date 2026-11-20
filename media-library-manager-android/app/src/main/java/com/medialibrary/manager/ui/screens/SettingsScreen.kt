@@ -43,6 +43,8 @@ fun SettingsScreen(viewModel: MediaLibraryViewModel, onPickFolder: () -> Unit, o
         item { HorizontalDivider() }
         item { SharesSection(settings.networkShares, shareTestResult, viewModel) }
         item { HorizontalDivider() }
+        item { TmdbSection(settings.tmdbApiKey, viewModel) }
+        item { HorizontalDivider() }
         item { ProfilesSection(settings.siteProfiles, viewModel) }
     }
 }
@@ -194,6 +196,37 @@ private fun SharesSection(shares: List<NetworkShare>, testResult: String?, viewM
             if (editingId != null) {
                 TextButton(onClick = { editingId = null; clearForm() }) { Text("Cancel") }
             }
+        }
+    }
+}
+
+@Composable
+private fun TmdbSection(tmdbApiKey: String, viewModel: MediaLibraryViewModel) {
+    var key by remember(tmdbApiKey) { mutableStateOf(tmdbApiKey) }
+    var saved by remember { mutableStateOf(false) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Movie & TV artwork (TMDb)", style = MaterialTheme.typography.titleMedium)
+        Text(
+            "When a video item isn't found on iTunes, the app falls back to TMDb (The Movie " +
+                "Database) for its poster and release year — a free, official API. Get a free API " +
+                "key at themoviedb.org/settings/api and paste it below. Leave this empty to skip " +
+                "that fallback. (Music/audio artwork uses MusicBrainz instead, which needs no key.)",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        OutlinedTextField(
+            key,
+            { key = it; saved = false },
+            label = { Text("TMDb API key") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Button(onClick = { viewModel.updateTmdbApiKey(key); saved = true }, enabled = key != tmdbApiKey) {
+                Text("Save")
+            }
+            if (saved) Text("Saved.", style = MaterialTheme.typography.bodySmall)
         }
     }
 }
