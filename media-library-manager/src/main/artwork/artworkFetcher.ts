@@ -163,10 +163,21 @@ export async function fetchAlbumArtFromMusicBrainz(query: string, signal?: Abort
 /**
  * Looks up title/release-year/artwork for one item in a single iTunes Search API call — used by
  * the metadata scanner (Settings -> Scan metadata), which also covers duration and sidecar
- * persistence; this is just the iTunes half of that.
+ * persistence; this is just the iTunes half of that. `titleOverride`/`yearOverride`, if given
+ * (the item's existing title/year — a manual edit or a previous fetch's result), are searched
+ * with instead of a fresh filename guess: a corrected title is a better search term than the raw
+ * filename, and re-guessing from the filename on every re-fetch is exactly how a manual
+ * correction gets silently search-away-from, not just display-overwritten.
  */
-export async function fetchMetadataFromItunes(item: MediaItem, signal?: AbortSignal): Promise<ItunesMetadata | null> {
-  const { title, year } = guessTitle(item.name);
+export async function fetchMetadataFromItunes(
+  item: MediaItem,
+  signal?: AbortSignal,
+  titleOverride?: string,
+  yearOverride?: string
+): Promise<ItunesMetadata | null> {
+  const guessed = guessTitle(item.name);
+  const title = titleOverride || guessed.title;
+  const year = yearOverride || guessed.year;
   if (!title) return null;
   const term = year ? `${title} ${year}` : title;
 

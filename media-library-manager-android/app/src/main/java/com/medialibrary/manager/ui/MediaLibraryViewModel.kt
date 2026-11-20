@@ -151,9 +151,10 @@ class MediaLibraryViewModel : ViewModel() {
      * folder-scoped "Fetch artwork & info" button in MediaBrowser passes just the ids of whatever
      * folder (optionally + its subfolders) the user is currently browsing. Pass `force: true` to
      * re-fetch every item in scope regardless of whether it was already checked, overriding
-     * whatever artwork/year was found before — the user's manual override for a stuck "no match"
-     * result (artwork specifically; title/year already always take the fresh value when found).
-     * Persists results to the on-device cache (so they survive rescans and app restarts) and, for
+     * whatever artwork was found before — the user's manual override for a stuck "no match"
+     * result. A title/year the item already has (a previous fetch or a manual edit) is used as
+     * the search term and always kept — a re-fetch, forced or not, never overwrites it; only
+     * artwork can change, and only under force. Persists results to the on-device cache (so they survive rescans and app restarts) and, for
      * network items, as a sidecar uploaded to the share itself (so any other device sees it too).
      *
      * Shows a progress dialog (scanEvents/showScanDialog) with a live, per-item log — including
@@ -182,11 +183,14 @@ class MediaLibraryViewModel : ViewModel() {
                         }
                     }
                 )
+                // title/year are never overwritten here — ArtworkFetcher already searches with
+                // (and returns unchanged) whatever title/year the item had going in, so `it.title`/
+                // `it.year` only ever differ from `item.title`/`item.year` by filling in a blank.
                 fun apply(item: MediaItem) = found[item.id]?.let {
                     item.copy(
                         artworkUrl = if (force) (it.artworkUrl ?: item.artworkUrl) else (item.artworkUrl ?: it.artworkUrl),
-                        title = if (force) (it.title ?: item.title) else (item.title ?: it.title),
-                        year = if (force) (it.year ?: item.year) else (item.year ?: it.year),
+                        title = item.title ?: it.title,
+                        year = item.year ?: it.year,
                         tags = item.tags.ifEmpty { it.tags },
                         infoFetched = true
                     )

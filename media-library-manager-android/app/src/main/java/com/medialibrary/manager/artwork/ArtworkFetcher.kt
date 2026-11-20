@@ -199,13 +199,22 @@ class ArtworkFetcher(
 
     private suspend fun fetchMetadata(item: MediaItem, tmdbApiKey: String, log: MutableList<ScanLogEntry>): MediaMetadata {
         val (guessedTitle, guessedYear) = guessTitle(item.name)
-        val term = if (guessedYear != null) "$guessedTitle $guessedYear" else guessedTitle
+        // A title/year the item already has — from a previous fetch or a manual edit — is a
+        // better search term than re-guessing from the filename every time, and (the actual
+        // point of this) must survive a re-fetch unchanged: re-deriving from the filename on
+        // every "Force" run is how a manual correction used to get silently overwritten back to
+        // a worse guess.
+        val existingTitle = item.title?.trim()?.ifBlank { null }
+        val existingYear = item.year?.trim()?.ifBlank { null }
+        val searchTitle = existingTitle ?: guessedTitle
+        val searchYear = existingYear ?: guessedYear
+        val term = if (searchYear != null) "$searchTitle $searchYear" else searchTitle
 
         var result: ITunesResult? = null
         try {
             result = when (item.kind) {
                 MediaKind.VIDEO -> lookupItunes(term, "movie")
-                MediaKind.AUDIO -> lookupItunes(guessedTitle, "song")
+                MediaKind.AUDIO -> lookupItunes(searchTitle, "song")
                 else -> null
             }
             log += ScanLogEntry("iTunes", if (result != null) "found" else "not-found")
@@ -214,8 +223,8 @@ class ArtworkFetcher(
         }
 
         var artworkUrl = result?.artworkUrl100?.let(::upsizeArtwork)
-        var title = (result?.trackName ?: result?.collectionName ?: guessedTitle).ifBlank { null }
-        var year = result?.releaseDate?.take(4) ?: guessedYear
+        var title = existingTitle ?: (result?.trackName ?: result?.collectionName ?: guessedTitle).ifBlank { null }
+        var year = existingYear ?: (result?.releaseDate?.take(4) ?: guessedYear)
 
         // iTunes only knows its own commercial catalog — plenty of a legally-obtained library
         // (less common movies, most TV, most songs, home videos) will never match there. Fall

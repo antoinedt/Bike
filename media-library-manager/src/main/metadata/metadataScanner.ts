@@ -91,10 +91,16 @@ async function buildMetadata(
   log: (entry: ScanLogEntry) => void
 ): Promise<MediaMetadata> {
   const guessed = guessTitle(item.name);
+  // A title/year the item already has — from a previous fetch or a manual edit — is a better
+  // search term than re-guessing from the filename every time, and (the actual point of this)
+  // must survive a re-fetch unchanged: re-deriving from the filename on every "Force" run is how
+  // a manual correction used to get silently overwritten back to a worse guess.
+  const existingTitle = item.title?.trim() || undefined;
+  const existingYear = item.year?.trim() || undefined;
 
   let itunes: Awaited<ReturnType<typeof fetchMetadataFromItunes>> = null;
   try {
-    itunes = await fetchMetadataFromItunes(item, signal);
+    itunes = await fetchMetadataFromItunes(item, signal, existingTitle, existingYear);
     log({ step: "iTunes", result: itunes ? "found" : "not-found" });
   } catch (err) {
     log({ step: "iTunes", result: "error", detail: (err as Error).message });
@@ -109,8 +115,8 @@ async function buildMetadata(
   }
 
   const metadata: MediaMetadata = {
-    title: itunes?.title || guessed.title,
-    year: itunes?.year || guessed.year,
+    title: existingTitle || itunes?.title || guessed.title,
+    year: existingYear || itunes?.year || guessed.year,
     durationSeconds: durationSeconds ?? undefined,
     artworkUrl: itunes?.artworkUrl,
     infoFetched: true
