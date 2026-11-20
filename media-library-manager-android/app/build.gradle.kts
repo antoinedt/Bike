@@ -13,7 +13,11 @@ android {
         applicationId = "com.medialibrary.manager"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
+        // Every CI build used to ship versionCode 1 — with an identical version, some installers
+        // treat "install" as a no-op (or balk) instead of actually replacing the running code, so
+        // a build could look installed without it taking effect. CI passes -PversionCode=<run
+        // number>, strictly increasing per build; local/dev builds fall back to 1.
+        versionCode = (project.findProperty("versionCode") as String?)?.toIntOrNull() ?: 1
         versionName = "0.1.0"
     }
 
