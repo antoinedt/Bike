@@ -1,5 +1,6 @@
 package com.medialibrary.manager.ui.components
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -8,6 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
@@ -89,7 +91,15 @@ fun MediaBrowser(
 
     @Composable
     fun FetchInfoRow(scope: List<MediaItem>, showSubfolderToggle: Boolean) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        // Horizontally scrollable, not just a plain Row: on a narrow phone, two checkboxes +
+        // labels + this button don't all fit at once, and a plain Row would squeeze the button
+        // down to almost no width instead of letting it keep its natural size — which wraps its
+        // text across many lines and balloons the whole row into a tall, unreadable sliver.
+        // Scrolling instead keeps every control its normal size and just lets the user swipe.
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.horizontalScroll(rememberScrollState())
+        ) {
             if (showSubfolderToggle) {
                 Checkbox(checked = includeSubfolders, onCheckedChange = { includeSubfolders = it })
                 Text("Include subfolders")
@@ -100,7 +110,7 @@ fun MediaBrowser(
                 onClick = { onFetchInfo(scope.map { it.id }.toSet(), forceRefetch) },
                 enabled = !fetchingInfo && scope.isNotEmpty()
             ) {
-                Text(if (fetchingInfo) "Fetching artwork & info…" else "Fetch artwork & info")
+                Text(if (fetchingInfo) "Fetching artwork & info…" else "Fetch artwork & info", maxLines = 1)
             }
         }
     }
