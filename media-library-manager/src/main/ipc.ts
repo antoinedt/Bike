@@ -20,7 +20,7 @@ import { downloadRawFile } from "./network/smbRawClient.js";
 import { ensureStreamServer, registerStream, unregisterStream } from "./network/streamServer.js";
 import { searchSites } from "./search/siteSearch.js";
 import { handOffDownload } from "./torrent/handoff.js";
-import { applyManualEdit, applyMetadata, getAllItems, replaceItemsForSource } from "./db.js";
+import { applyManualEdit, applyMetadata, clearMetadata, getAllItems, replaceItemsForSource } from "./db.js";
 import { readSidecar, scanMetadataForLibrary, writeSidecar } from "./metadata/metadataScanner.js";
 
 export function registerIpcHandlers(): void {
@@ -54,12 +54,12 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.libraryGetItems, () => getAllItems());
 
-  ipcMain.handle(IPC.metadataScan, async (_e, itemIds?: string[]) => {
+  ipcMain.handle(IPC.metadataScan, async (_e, itemIds?: string[], force?: boolean) => {
     const allItems = await getAllItems();
     const items = itemIds ? allItems.filter((i) => itemIds.includes(i.id)) : allItems;
     const { networkShares } = getSettings();
-    const found = await scanMetadataForLibrary(items, networkShares);
-    return applyMetadata(found);
+    const found = await scanMetadataForLibrary(items, networkShares, force);
+    return applyMetadata(found, force);
   });
 
   ipcMain.handle(
@@ -87,6 +87,20 @@ export function registerIpcHandlers(): void {
       return applyManualEdit(itemId, edits);
     }
   );
+
+  ipcMain.handle(IPC.itemClearMetadata, async (_e, itemId: string) => {
+    const items = await getAllItems();
+    const item = items.find((i) => i.id === itemId);
+    if (!item) throw new Error("Item not found — try rescanning.");
+
+    const { networkShares } = getSettings();
+    await writeSidecar(item, {}, networkShares).catch(() => {
+      // Best-effort, same as every other sidecar write — a read-only share or a transient SMB
+      // error shouldn't block the item's own database entry from being cleared below.
+    });
+
+    return clearMetadata(itemId);
+  });
 
   ipcMain.handle(IPC.pickImageFile, async () => {
     const result = await dialog.showOpenDialog({

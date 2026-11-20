@@ -37,6 +37,7 @@ export default function MediaBrowser({
 }) {
   const [path, setPath] = useState<string[]>([]);
   const [includeSubfolders, setIncludeSubfolders] = useState(false);
+  const [forceRefetch, setForceRefetch] = useState(false);
   const [fetchingInfo, setFetchingInfo] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
 
@@ -68,7 +69,7 @@ export default function MediaBrowser({
     setFetchingInfo(true);
     setFetchError(null);
     try {
-      const updated = await window.api.scanMetadata(scope.map((i) => i.id));
+      const updated = await window.api.scanMetadata(scope.map((i) => i.id), forceRefetch);
       onItemsChanged(updated);
     } catch (err) {
       setFetchError((err as Error).message);
@@ -89,6 +90,10 @@ export default function MediaBrowser({
           Include subfolders
         </label>
       )}
+      <label className="checkbox-label" title="Re-fetch everything in scope, overriding whatever was found before.">
+        <input type="checkbox" checked={forceRefetch} onChange={(e) => setForceRefetch(e.target.checked)} />
+        Force
+      </label>
       <button className="btn" onClick={() => void fetchInfo(scope)} disabled={fetchingInfo || scope.length === 0}>
         {fetchingInfo ? "Fetching artwork & info…" : "Fetch artwork & info"}
       </button>

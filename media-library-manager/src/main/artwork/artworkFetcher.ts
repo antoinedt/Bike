@@ -58,6 +58,44 @@ export interface ItunesMetadata {
   artworkUrl?: string;
 }
 
+// A real browser UA, not this app's own — Google blocks/CAPTCHAs a plainly automated UA far more
+// aggressively than one that looks like an ordinary browser doing the same search a person would
+// do by hand.
+const GOOGLE_USER_AGENT =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36";
+
+export interface GoogleSearchMetadata {
+  artworkUrl?: string;
+  year?: string;
+}
+
+/**
+ * Falls back to a plain Google search for the guessed title (iTunes only knows its own
+ * commercial catalog, which plenty of a legally-obtained library — less common movies, most
+ * songs, anything iTunes just doesn't carry — will never match): takes the first image result as
+ * artwork, and a parenthesized "(19xx)"/"(20xx)" on the page as the release year, if either is
+ * present. This scrapes Google's search-results HTML for an "ou" ("original url") field Google
+ * embeds server-side for each image result — a long-standing, widely-used but unofficial trick
+ * (no API key, no official support) that will simply stop matching, not throw, if Google changes
+ * its markup; every caller treats a fully-empty result the same as "nothing found".
+ */
+export async function fetchArtworkFromGoogle(query: string): Promise<GoogleSearchMetadata> {
+  const url = `https://www.google.com/search?q=${encodeURIComponent(query)}&hl=en`;
+  const res = await fetch(url, {
+    headers: { "User-Agent": GOOGLE_USER_AGENT, "Accept-Language": "en-US,en;q=0.9" }
+  });
+  if (!res.ok) return {};
+  const html = await res.text();
+
+  const imageMatch = /"ou":"(https?:\\?\/\\?\/[^"]+?)"/.exec(html);
+  const artworkUrl = imageMatch ? imageMatch[1].replace(/\\\//g, "/") : undefined;
+
+  const yearMatch = /\((19|20)\d{2}\)/.exec(html);
+  const year = yearMatch ? yearMatch[0].slice(1, -1) : undefined;
+
+  return { artworkUrl, year };
+}
+
 /**
  * Looks up title/release-year/artwork for one item in a single iTunes Search API call — used by
  * the metadata scanner (Settings -> Scan metadata), which also covers duration and sidecar

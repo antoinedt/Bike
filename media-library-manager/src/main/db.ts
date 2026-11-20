@@ -49,8 +49,15 @@ export async function getAllItems(): Promise<MediaItem[]> {
   return db.data.items;
 }
 
-/** Patches title/year/durationSeconds/infoFetched (and artworkUrl, if not already set) onto items by id. */
-export async function applyMetadata(metadataByItemId: Map<string, MediaMetadata>): Promise<MediaItem[]> {
+/**
+ * Patches title/year/durationSeconds/infoFetched onto items by id. Normally artworkUrl/tags only
+ * fill in a blank (an existing value, manual or auto-fetched, is left alone) — but with
+ * `force: true` (a forced re-fetch, explicitly asked to override whatever was found before) the
+ * freshly-fetched artworkUrl wins instead, since the whole point of forcing is to replace a
+ * stuck or wrong previous result. Tags are never auto-overwritten, force or not — they're
+ * user-assigned, never fetched, so there's nothing of the fetcher's to prefer.
+ */
+export async function applyMetadata(metadataByItemId: Map<string, MediaMetadata>, force = false): Promise<MediaItem[]> {
   const db = await getDb();
   db.data.items = db.data.items.map((item) => {
     const metadata = metadataByItemId.get(item.id);
@@ -60,10 +67,25 @@ export async function applyMetadata(metadataByItemId: Map<string, MediaMetadata>
       title: metadata.title ?? item.title,
       year: metadata.year ?? item.year,
       durationSeconds: metadata.durationSeconds ?? item.durationSeconds,
-      artworkUrl: item.artworkUrl ?? metadata.artworkUrl,
+      artworkUrl: force ? metadata.artworkUrl ?? item.artworkUrl : item.artworkUrl ?? metadata.artworkUrl,
       tags: item.tags ?? metadata.tags,
       infoFetched: metadata.infoFetched ?? item.infoFetched
     };
+  });
+  await db.write();
+  return db.data.items;
+}
+
+/**
+ * Wipes title/year/tags/artworkUrl and resets infoFetched to false for one item — "Clear info" in
+ * the details panel, for starting over on an item that got tagged/fetched wrong, or just to make
+ * it a fresh candidate for the next "Fetch artwork & info" run instead of a forced one.
+ */
+export async function clearMetadata(itemId: string): Promise<MediaItem[]> {
+  const db = await getDb();
+  db.data.items = db.data.items.map((item) => {
+    if (item.id !== itemId) return item;
+    return { ...item, title: undefined, year: undefined, tags: undefined, artworkUrl: undefined, infoFetched: false };
   });
   await db.write();
   return db.data.items;

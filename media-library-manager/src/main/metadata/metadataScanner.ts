@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import { pathToFileURL } from "node:url";
 import type { MediaItem, MediaMetadata, NetworkShare } from "../../shared/types.js";
-import { fetchMetadataFromItunes, guessTitle } from "../artwork/artworkFetcher.js";
+import { fetchArtworkFromGoogle, fetchMetadataFromItunes, guessTitle } from "../artwork/artworkFetcher.js";
 import { readNetworkSidecar, relPathFromMediaPath, writeNetworkSidecar } from "../network/smbClient.js";
 import { ensureStreamServer, registerStream, unregisterStream } from "../network/streamServer.js";
 import { probeDurationSeconds } from "./durationProbe.js";
@@ -20,15 +20,19 @@ const CONCURRENCY = 2;
  * as a sidecar (local fs, or uploaded to the network share) marked infoFetched so it's there next
  * time, on any device, and so a failed attempt doesn't get silently retried forever or look
  * identical to "never checked": the UI uses infoFetched to show "no info found — add it yourself"
- * rather than nothing at all. Bounded concurrency, lower than typical — each un-cached item opens
- * a real (hidden) browser window to read its duration, which is heavier than a plain HTTP request.
+ * rather than nothing at all. Pass `force: true` to re-fetch every item in scope regardless of
+ * infoFetched or any cached sidecar, overriding whatever was found before — the user's manual
+ * override for a stuck "no match" result. Bounded concurrency, lower than typical — each
+ * un-cached item opens a real (hidden) browser window to read its duration, which is heavier than
+ * a plain HTTP request.
  */
 export async function scanMetadataForLibrary(
   items: MediaItem[],
-  networkShares: NetworkShare[]
+  networkShares: NetworkShare[],
+  force = false
 ): Promise<Map<string, MediaMetadata>> {
   const candidates = items.filter(
-    (item) => (item.kind === "video" || item.kind === "audio") && !item.infoFetched
+    (item) => (item.kind === "video" || item.kind === "audio") && (force || !item.infoFetched)
   );
   const found = new Map<string, MediaMetadata>();
 
@@ -39,10 +43,11 @@ export async function scanMetadataForLibrary(
       try {
         const cached = await readSidecar(item, networkShares).catch(() => null);
         // A sidecar already marked infoFetched is a fully-resolved result from a previous attempt
-        // (on this device or another) — use it as-is, success or not. One with only tags (e.g. the
-        // user tagged this item before ever running a fetch on it) isn't resolved: fall through to
-        // a real fetch below, carrying the existing tags forward so they aren't lost.
-        if (cached?.infoFetched) {
+        // (on this device or another) — use it as-is, success or not, unless the caller asked to
+        // force a fresh fetch anyway. One with only tags (e.g. the user tagged this item before
+        // ever running a fetch on it) isn't resolved: fall through to a real fetch below, carrying
+        // the existing tags forward so they aren't lost.
+        if (!force && cached?.infoFetched) {
           found.set(item.id, cached);
           continue;
         }
@@ -76,9 +81,20 @@ async function buildMetadata(item: MediaItem, networkShares: NetworkShare[]): Pr
     infoFetched: true
   };
 
-  // iTunes only knows commercial movies/music — most of a home media library (camera footage,
-  // home videos) will never match there. Fall back to a real frame pulled from the video itself,
-  // which works for literally anything with a video track, no external lookup required.
+  // iTunes only knows its own commercial catalog — plenty of a legally-obtained library (less
+  // common movies, most songs, home videos) will never match there. Fall back to a plain Google
+  // search for whatever we're missing before giving up on it.
+  if (!metadata.artworkUrl || !metadata.year) {
+    const query = metadata.year ? `${metadata.title} ${metadata.year}` : metadata.title;
+    const google = await fetchArtworkFromGoogle(query ?? guessed.title).catch(
+      () => ({}) as { artworkUrl?: string; year?: string }
+    );
+    if (!metadata.artworkUrl) metadata.artworkUrl = google.artworkUrl;
+    if (!metadata.year) metadata.year = google.year;
+  }
+
+  // Still nothing? For video, a real frame pulled from the file itself works for literally
+  // anything with a video track, no external lookup required — the last resort.
   if (!metadata.artworkUrl && item.kind === "video") {
     metadata.artworkUrl = (await extractThumbnail(item, networkShares).catch(() => null)) ?? undefined;
   }

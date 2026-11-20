@@ -25,6 +25,7 @@ export default function MediaDetailsPanel({
   const [artworkUrl, setArtworkUrl] = useState(item.artworkUrl);
   const [saving, setSaving] = useState(false);
   const [pickingImage, setPickingImage] = useState(false);
+  const [clearing, setClearing] = useState(false);
 
   function startEdit() {
     setTitle(item.title ?? "");
@@ -68,6 +69,23 @@ export default function MediaDetailsPanel({
       setEditing(false);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function clearInfo() {
+    setClearing(true);
+    try {
+      const updated = await window.api.clearItemMetadata(item.id);
+      const fresh = updated.find((i) => i.id === item.id);
+      if (fresh) {
+        onItemUpdated(fresh);
+        setTitle("");
+        setYear("");
+        setTags([]);
+        setArtworkUrl(undefined);
+      }
+    } finally {
+      setClearing(false);
     }
   }
 
@@ -165,11 +183,19 @@ export default function MediaDetailsPanel({
         <div className="form-actions">
           {editing ? (
             <>
-              <button className="btn btn-primary" onClick={() => void save()} disabled={saving}>
+              <button className="btn btn-primary" onClick={() => void save()} disabled={saving || clearing}>
                 {saving ? "Saving…" : "Save"}
               </button>
-              <button className="btn btn-small" onClick={() => setEditing(false)} disabled={saving}>
+              <button className="btn btn-small" onClick={() => setEditing(false)} disabled={saving || clearing}>
                 Cancel
+              </button>
+              <button
+                className="btn btn-small"
+                onClick={() => void clearInfo()}
+                disabled={saving || clearing}
+                title="Wipes title/year/tags/artwork and marks this item as not yet checked."
+              >
+                {clearing ? "Clearing…" : "Clear info"}
               </button>
             </>
           ) : (

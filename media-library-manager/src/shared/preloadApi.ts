@@ -31,11 +31,13 @@ export interface PreloadApi {
    * device or any other that browses the same share. Checks for an existing sidecar before
    * fetching anything, so a re-run only costs time for items that are genuinely new. Pass
    * `itemIds` to scope the fetch to a specific set (e.g. the folder currently being browsed,
-   * optionally expanded to include subfolders); omit it to scan the whole library. Can take a
-   * while the first time on a large scope — each un-cached item needs a real (hidden) duration
-   * probe, not just an HTTP lookup.
+   * optionally expanded to include subfolders); omit it to scan the whole library. Pass
+   * `force: true` to re-fetch every item in scope regardless of whether it was already checked,
+   * overriding whatever artwork/year was found before — for retrying a stuck "no match" result.
+   * Can take a while the first time on a large scope — each un-cached item needs a real (hidden)
+   * duration probe, not just an HTTP lookup.
    */
-  scanMetadata(itemIds?: string[]): Promise<MediaItem[]>;
+  scanMetadata(itemIds?: string[], force?: boolean): Promise<MediaItem[]>;
   /**
    * Manually overwrites title/year/tags/artworkUrl for one item — unlike scanMetadata, these
    * values take precedence unconditionally, so this is also how you correct a wrong auto-fetched
@@ -48,6 +50,13 @@ export interface PreloadApi {
     itemId: string,
     edits: { title?: string; year?: string; tags?: string[]; artworkUrl?: string }
   ): Promise<MediaItem[]>;
+  /**
+   * Wipes title/year/tags/artworkUrl for one item and resets it to "not yet checked" — lets the
+   * user start over on an item that got the wrong auto-fetched info, without having to force a
+   * whole rescan. Persists the same way as every other metadata change: this device's database,
+   * and the item's sidecar (cleared on the share too, for a network item).
+   */
+  clearItemMetadata(itemId: string): Promise<MediaItem[]>;
   /** Opens a native file-picker for an image and returns it as a data: URL, or null if cancelled. */
   pickImageFile(): Promise<string | null>;
   scanNetwork(): Promise<MediaItem[]>;
