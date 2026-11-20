@@ -4,7 +4,7 @@ const STEP_ICON: Record<string, string> = { found: "✓", "not-found": "—", er
 
 /**
  * Live progress for a "Fetch artwork & info" run: one row per item, updated in place as events
- * arrive (started -> done/cached/error), with the full per-step log (iTunes/Google search/Video
+ * arrive (started -> done/cached/error), with the full per-step log (iTunes/TMDb/Album art/Video
  * frame/Duration, each found/not-found/error) shown for a "done" item — this is the answer to
  * "why didn't this one get artwork": every lookup that was tried and what it returned, not just
  * a final yes/no. Stays open after the scan finishes so that log is still there to read; Cancel

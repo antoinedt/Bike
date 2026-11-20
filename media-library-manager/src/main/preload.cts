@@ -5,6 +5,7 @@ import { contextBridge, ipcRenderer } from "electron";
 
 const api = {
   getSettings: () => ipcRenderer.invoke("settings:get"),
+  updateTmdbApiKey: (tmdbApiKey: string) => ipcRenderer.invoke("settings:updateTmdbApiKey", tmdbApiKey),
   pickFolder: () => ipcRenderer.invoke("folder:pick"),
   addFolder: (path: string, label: string) => ipcRenderer.invoke("folder:add", path, label),
   updateFolder: (folder: unknown) => ipcRenderer.invoke("folder:update", folder),

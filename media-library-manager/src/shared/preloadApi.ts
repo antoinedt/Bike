@@ -11,6 +11,8 @@ import type {
 
 export interface PreloadApi {
   getSettings(): Promise<AppSettings>;
+  /** Saves the free API key from themoviedb.org/settings/api, used by the TMDb artwork/year fallback for video items. An empty string disables that fallback (it's simply skipped). */
+  updateTmdbApiKey(tmdbApiKey: string): Promise<void>;
   pickFolder(): Promise<string | null>;
   addFolder(path: string, label: string): Promise<LocalFolder>;
   updateFolder(folder: LocalFolder): Promise<void>;
@@ -42,9 +44,10 @@ export interface PreloadApi {
   scanMetadata(itemIds?: string[], force?: boolean): Promise<MediaItem[]>;
   /**
    * Subscribes to live progress events during a scanMetadata run — one "started" event per item
-   * as it begins, followed by "done" (with a step-by-step log: iTunes/Google search/Video frame/
-   * Duration, each found/not-found/error — this is the "why" for an item that came up with
-   * nothing), "cached" (a previous result was reused, no new lookup needed), or "error" (an
+   * as it begins, followed by "done" (with a step-by-step log: iTunes/TMDb (video, needs an API
+   * key)/Album art (audio, via MusicBrainz)/Video frame/Duration, each found/not-found/error —
+   * this is the "why" for an item that came up with nothing), "cached" (a previous result was
+   * reused, no new lookup needed), or "error" (an
    * unexpected failure outside the normal steps). Returns an unsubscribe function; call it when
    * the progress dialog closes so events from a later scan don't leak into a stale listener.
    */

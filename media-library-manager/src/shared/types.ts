@@ -107,11 +107,13 @@ export interface AppSettings {
   localFolders: LocalFolder[];
   networkShares: NetworkShare[];
   siteProfiles: SiteProfile[];
+  /** Free key from themoviedb.org/settings/api — used for the TMDb artwork/year fallback (movies & TV) when iTunes has nothing. Empty means that fallback is skipped. */
+  tmdbApiKey: string;
 }
 
 /** One lookup step's outcome for a single item during "Fetch artwork & info" — what the progress dialog's log is built from. */
 export interface ScanLogEntry {
-  step: "iTunes" | "Google search" | "Video frame" | "Duration";
+  step: "iTunes" | "TMDb" | "Album art" | "Video frame" | "Duration";
   result: "found" | "not-found" | "error";
   detail?: string;
 }

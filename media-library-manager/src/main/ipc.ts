@@ -12,7 +12,8 @@ import {
   removeSiteProfile,
   updateLocalFolder,
   updateNetworkShare,
-  updateSiteProfile
+  updateSiteProfile,
+  updateTmdbApiKey
 } from "./settings.js";
 import { scanLocalFolders } from "./library/scanner.js";
 import { relPathFromMediaPath, scanNetworkShare, testShareConnection } from "./network/smbClient.js";
@@ -25,6 +26,7 @@ import { readSidecar, scanMetadataForLibrary, writeSidecar } from "./metadata/me
 
 export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.settingsGet, () => getSettings());
+  ipcMain.handle(IPC.settingsUpdateTmdbApiKey, (_e, tmdbApiKey: string) => updateTmdbApiKey(tmdbApiKey));
 
   ipcMain.handle(IPC.folderPick, async () => {
     const result = await dialog.showOpenDialog({ properties: ["openDirectory"] });
@@ -62,13 +64,14 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.metadataScan, async (e, itemIds?: string[], force?: boolean) => {
     const allItems = await getAllItems();
     const items = itemIds ? allItems.filter((i) => itemIds.includes(i.id)) : allItems;
-    const { networkShares } = getSettings();
+    const { networkShares, tmdbApiKey } = getSettings();
     const controller = new AbortController();
     currentScanAbort = controller;
     try {
       const found = await scanMetadataForLibrary(items, networkShares, force, {
         signal: controller.signal,
-        onProgress: (event) => e.sender.send(IPC.metadataScanProgress, event)
+        onProgress: (event) => e.sender.send(IPC.metadataScanProgress, event),
+        tmdbApiKey
       });
       return await applyMetadata(found, force);
     } finally {

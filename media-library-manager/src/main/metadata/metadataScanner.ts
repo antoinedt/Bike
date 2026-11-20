@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import { pathToFileURL } from "node:url";
 import type { MediaItem, MediaMetadata, NetworkShare, ScanLogEntry, ScanProgressEvent } from "../../shared/types.js";
-import { fetchArtworkFromGoogle, fetchMetadataFromItunes, guessTitle } from "../artwork/artworkFetcher.js";
+import { fetchAlbumArtFromMusicBrainz, fetchArtworkFromTmdb, fetchMetadataFromItunes, guessTitle } from "../artwork/artworkFetcher.js";
 import { readNetworkSidecar, relPathFromMediaPath, writeNetworkSidecar } from "../network/smbClient.js";
 import { ensureStreamServer, registerStream, unregisterStream } from "../network/streamServer.js";
 import { probeDurationSeconds } from "./durationProbe.js";
@@ -28,19 +28,20 @@ const CONCURRENCY = 2;
  *
  * `onProgress`, if given, is called with a live event per item (started, then done/cached/error)
  * as the scan runs — this is what drives the progress dialog's log, including the per-step
- * reason an item came up with nothing (no match on iTunes, no match on Google either, not a
- * video so no frame to fall back to, or an outright error like a network failure). `signal`, if
- * given, stops the scan from picking up any further items once aborted (the user's Cancel
+ * reason an item came up with nothing (no match on iTunes, no match on TMDb/MusicBrainz either,
+ * not a video so no frame to fall back to, or an outright error like a network failure). `signal`,
+ * if given, stops the scan from picking up any further items once aborted (the user's Cancel
  * button) and is passed into the underlying HTTP requests so an in-flight one aborts quickly too
- * — whatever was already found for earlier items is kept, not thrown away.
+ * — whatever was already found for earlier items is kept, not thrown away. `tmdbApiKey`, if set,
+ * enables the TMDb fallback for video (movies/TV); without one that step is simply skipped.
  */
 export async function scanMetadataForLibrary(
   items: MediaItem[],
   networkShares: NetworkShare[],
   force = false,
-  options?: { signal?: AbortSignal; onProgress?: (event: ScanProgressEvent) => void }
+  options?: { signal?: AbortSignal; onProgress?: (event: ScanProgressEvent) => void; tmdbApiKey?: string }
 ): Promise<Map<string, MediaMetadata>> {
-  const { signal, onProgress } = options ?? {};
+  const { signal, onProgress, tmdbApiKey = "" } = options ?? {};
   const candidates = items.filter(
     (item) => (item.kind === "video" || item.kind === "audio") && (force || !item.infoFetched)
   );
@@ -64,7 +65,7 @@ export async function scanMetadataForLibrary(
           continue;
         }
         const log: ScanLogEntry[] = [];
-        const metadata = await buildMetadata(item, networkShares, signal, (entry) => log.push(entry));
+        const metadata = await buildMetadata(item, networkShares, signal, tmdbApiKey, (entry) => log.push(entry));
         if (cached?.tags?.length) metadata.tags = cached.tags;
         found.set(item.id, metadata);
         await writeSidecar(item, metadata, networkShares).catch(() => {
@@ -86,6 +87,7 @@ async function buildMetadata(
   item: MediaItem,
   networkShares: NetworkShare[],
   signal: AbortSignal | undefined,
+  tmdbApiKey: string,
   log: (entry: ScanLogEntry) => void
 ): Promise<MediaMetadata> {
   const guessed = guessTitle(item.name);
@@ -115,17 +117,33 @@ async function buildMetadata(
   };
 
   // iTunes only knows its own commercial catalog — plenty of a legally-obtained library (less
-  // common movies, most songs, home videos) will never match there. Fall back to a plain Google
-  // search for whatever we're missing before giving up on it.
+  // common movies, most TV, most songs, home videos) will never match there. Fall back to a
+  // real, official API for whatever we're missing before giving up on it: TMDb for video (needs
+  // a free API key from Settings; simply skipped without one), MusicBrainz + the Cover Art
+  // Archive for audio (no key needed).
   if (!metadata.artworkUrl || !metadata.year) {
-    const query = metadata.year ? `${metadata.title} ${metadata.year}` : metadata.title;
-    try {
-      const google = await fetchArtworkFromGoogle(query ?? guessed.title, signal);
-      log({ step: "Google search", result: google.artworkUrl || google.year ? "found" : "not-found" });
-      if (!metadata.artworkUrl) metadata.artworkUrl = google.artworkUrl;
-      if (!metadata.year) metadata.year = google.year;
-    } catch (err) {
-      log({ step: "Google search", result: "error", detail: (err as Error).message });
+    const query = metadata.title ?? guessed.title;
+    if (item.kind === "video") {
+      if (tmdbApiKey) {
+        try {
+          const tmdb = await fetchArtworkFromTmdb(tmdbApiKey, query, metadata.year, signal);
+          log({ step: "TMDb", result: tmdb.artworkUrl || tmdb.year ? "found" : "not-found" });
+          if (!metadata.artworkUrl) metadata.artworkUrl = tmdb.artworkUrl;
+          if (!metadata.year) metadata.year = tmdb.year;
+        } catch (err) {
+          log({ step: "TMDb", result: "error", detail: (err as Error).message });
+        }
+      } else {
+        log({ step: "TMDb", result: "not-found", detail: "no API key configured in Settings" });
+      }
+    } else {
+      try {
+        const albumArt = await fetchAlbumArtFromMusicBrainz(query, signal);
+        log({ step: "Album art", result: albumArt.artworkUrl ? "found" : "not-found" });
+        if (!metadata.artworkUrl) metadata.artworkUrl = albumArt.artworkUrl;
+      } catch (err) {
+        log({ step: "Album art", result: "error", detail: (err as Error).message });
+      }
     }
   }
 

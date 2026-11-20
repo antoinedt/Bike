@@ -58,43 +58,106 @@ export interface ItunesMetadata {
   artworkUrl?: string;
 }
 
-// A real browser UA, not this app's own — Google blocks/CAPTCHAs a plainly automated UA far more
-// aggressively than one that looks like an ordinary browser doing the same search a person would
-// do by hand.
-const GOOGLE_USER_AGENT =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36";
-
-export interface GoogleSearchMetadata {
+export interface TmdbMetadata {
   artworkUrl?: string;
   year?: string;
 }
 
+interface TmdbMovieResult {
+  poster_path?: string | null;
+  release_date?: string;
+}
+
+interface TmdbTvResult {
+  poster_path?: string | null;
+  first_air_date?: string;
+}
+
+interface TmdbSearchResponse<T> {
+  results: T[];
+}
+
+const TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/w500";
+
+async function searchTmdb<T>(
+  kind: "movie" | "tv",
+  apiKey: string,
+  query: string,
+  year: string | undefined,
+  signal?: AbortSignal
+): Promise<T | null> {
+  const yearParam = year
+    ? kind === "movie"
+      ? `&year=${encodeURIComponent(year)}`
+      : `&first_air_date_year=${encodeURIComponent(year)}`
+    : "";
+  const url = `https://api.themoviedb.org/3/search/${kind}?api_key=${encodeURIComponent(apiKey)}&query=${encodeURIComponent(query)}${yearParam}`;
+  const res = await fetch(url, { signal });
+  if (!res.ok) throw new Error(`TMDb ${kind} search failed: HTTP ${res.status}`);
+  const data = (await res.json()) as TmdbSearchResponse<T>;
+  return data.results[0] ?? null;
+}
+
 /**
- * Falls back to a plain Google search for the guessed title (iTunes only knows its own
- * commercial catalog, which plenty of a legally-obtained library — less common movies, most
- * songs, anything iTunes just doesn't carry — will never match): takes the first image result as
- * artwork, and a parenthesized "(19xx)"/"(20xx)" on the page as the release year, if either is
- * present. This scrapes Google's search-results HTML for an "ou" ("original url") field Google
- * embeds server-side for each image result — a long-standing, widely-used but unofficial trick
- * (no API key, no official support) that will simply stop matching, not throw, if Google changes
- * its markup; every caller treats a fully-empty result the same as "nothing found".
+ * Falls back to TMDb (The Movie Database) — a free, official, keyless-to-browse-but-key-to-query
+ * API for movie/TV posters and release years, for whatever iTunes' commercial catalog has nothing
+ * for (less common movies, most TV, home videos iTunes will never know). Requires a free API key
+ * from themoviedb.org/settings/api, set in Settings; returns an empty result (not an error) when
+ * no key is configured, so this fallback is simply skipped rather than failing every item.
+ * Searches movies first, then TV (a scene-style filename doesn't say which it is).
  */
-export async function fetchArtworkFromGoogle(query: string, signal?: AbortSignal): Promise<GoogleSearchMetadata> {
-  const url = `https://www.google.com/search?q=${encodeURIComponent(query)}&hl=en`;
-  const res = await fetch(url, {
-    headers: { "User-Agent": GOOGLE_USER_AGENT, "Accept-Language": "en-US,en;q=0.9" },
-    signal
-  });
-  if (!res.ok) return {};
-  const html = await res.text();
+export async function fetchArtworkFromTmdb(
+  apiKey: string,
+  query: string,
+  year: string | undefined,
+  signal?: AbortSignal
+): Promise<TmdbMetadata> {
+  if (!apiKey) return {};
+  const movie = await searchTmdb<TmdbMovieResult>("movie", apiKey, query, year, signal);
+  if (movie) {
+    return { artworkUrl: movie.poster_path ? `${TMDB_IMAGE_BASE}${movie.poster_path}` : undefined, year: movie.release_date?.slice(0, 4) };
+  }
+  const tv = await searchTmdb<TmdbTvResult>("tv", apiKey, query, year, signal);
+  if (tv) {
+    return { artworkUrl: tv.poster_path ? `${TMDB_IMAGE_BASE}${tv.poster_path}` : undefined, year: tv.first_air_date?.slice(0, 4) };
+  }
+  return {};
+}
 
-  const imageMatch = /"ou":"(https?:\\?\/\\?\/[^"]+?)"/.exec(html);
-  const artworkUrl = imageMatch ? imageMatch[1].replace(/\\\//g, "/") : undefined;
+export interface AlbumArtMetadata {
+  artworkUrl?: string;
+}
 
-  const yearMatch = /\((19|20)\d{2}\)/.exec(html);
-  const year = yearMatch ? yearMatch[0].slice(1, -1) : undefined;
+interface MusicBrainzRelease {
+  id: string;
+}
 
-  return { artworkUrl, year };
+interface MusicBrainzSearchResponse {
+  releases: MusicBrainzRelease[];
+}
+
+// MusicBrainz's usage etiquette asks for an app name + contact/homepage in the User-Agent, not a
+// browser-impersonating one — unlike TMDb or iTunes, it has no API key to identify the caller by.
+const MUSICBRAINZ_USER_AGENT = "MediaLibraryManager/0.1 (+https://github.com/antoinedt/Bike)";
+
+/**
+ * Falls back to MusicBrainz (release search) + the Cover Art Archive (front-cover image) for
+ * audio items iTunes has nothing for — both free, official, keyless APIs, no API key or scraping
+ * involved. Confirms the Cover Art Archive actually has an image for the matched release before
+ * handing back its URL, since plenty of MusicBrainz releases have no cover art uploaded.
+ */
+export async function fetchAlbumArtFromMusicBrainz(query: string, signal?: AbortSignal): Promise<AlbumArtMetadata> {
+  const searchUrl = `https://musicbrainz.org/ws/2/release/?query=${encodeURIComponent(query)}&fmt=json&limit=1`;
+  const res = await fetch(searchUrl, { headers: { "User-Agent": MUSICBRAINZ_USER_AGENT }, signal });
+  if (!res.ok) throw new Error(`MusicBrainz search failed: HTTP ${res.status}`);
+  const data = (await res.json()) as MusicBrainzSearchResponse;
+  const release = data.releases[0];
+  if (!release) return {};
+
+  const artUrl = `https://coverartarchive.org/release/${release.id}/front`;
+  const artRes = await fetch(artUrl, { method: "HEAD", headers: { "User-Agent": MUSICBRAINZ_USER_AGENT }, signal });
+  if (!artRes.ok) return {};
+  return { artworkUrl: artUrl };
 }
 
 /**

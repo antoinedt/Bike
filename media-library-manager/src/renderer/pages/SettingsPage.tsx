@@ -28,6 +28,7 @@ export default function SettingsPage({
       </div>
       <FoldersSection settings={settings} refreshSettings={refreshSettings} />
       <SharesSection settings={settings} refreshSettings={refreshSettings} />
+      <TmdbSection settings={settings} refreshSettings={refreshSettings} />
       <ProfilesSection settings={settings} refreshSettings={refreshSettings} />
     </div>
   );
@@ -117,6 +118,58 @@ function FoldersSection({
       <button className="btn" onClick={() => void addFolder()}>
         Add folder…
       </button>
+    </section>
+  );
+}
+
+function TmdbSection({
+  settings,
+  refreshSettings
+}: {
+  settings: AppSettings;
+  refreshSettings: () => Promise<void>;
+}) {
+  const [key, setKey] = useState(settings.tmdbApiKey);
+  const [saved, setSaved] = useState(false);
+
+  async function save() {
+    await window.api.updateTmdbApiKey(key);
+    setSaved(true);
+    await refreshSettings();
+  }
+
+  return (
+    <section className="settings-section">
+      <h2>Movie &amp; TV artwork (TMDb)</h2>
+      <p className="hint">
+        When a video item isn't found on iTunes, the app falls back to{" "}
+        <a href="https://www.themoviedb.org/" target="_blank" rel="noreferrer">
+          TMDb (The Movie Database)
+        </a>{" "}
+        for its poster and release year — a free, official API. Get a free API key at{" "}
+        <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noreferrer">
+          themoviedb.org/settings/api
+        </a>{" "}
+        and paste it below. Leave this empty to skip that fallback. (Music/audio artwork uses
+        MusicBrainz instead, which needs no key.)
+      </p>
+      <div className="form-grid">
+        <input
+          className="text-input wide"
+          placeholder="TMDb API key"
+          value={key}
+          onChange={(e) => {
+            setKey(e.target.value);
+            setSaved(false);
+          }}
+        />
+      </div>
+      <div className="form-actions">
+        <button className="btn" onClick={() => void save()} disabled={key === settings.tmdbApiKey}>
+          Save
+        </button>
+        {saved && <span className="hint-inline">Saved.</span>}
+      </div>
     </section>
   );
 }

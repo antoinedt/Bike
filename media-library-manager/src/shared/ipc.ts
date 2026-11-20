@@ -1,6 +1,7 @@
 /** Channel names shared between main, preload, and renderer to avoid typos on either side. */
 export const IPC = {
   settingsGet: "settings:get",
+  settingsUpdateTmdbApiKey: "settings:updateTmdbApiKey",
   folderPick: "folder:pick",
   folderAdd: "folder:add",
   folderUpdate: "folder:update",
