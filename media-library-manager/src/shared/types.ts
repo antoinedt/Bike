@@ -109,6 +109,23 @@ export interface AppSettings {
   siteProfiles: SiteProfile[];
 }
 
+/** One lookup step's outcome for a single item during "Fetch artwork & info" — what the progress dialog's log is built from. */
+export interface ScanLogEntry {
+  step: "iTunes" | "Google search" | "Video frame" | "Duration";
+  result: "found" | "not-found" | "error";
+  detail?: string;
+}
+
+/** A live progress event pushed from main to renderer while "Fetch artwork & info" runs, one per item per phase. */
+export interface ScanProgressEvent {
+  itemId: string;
+  itemName: string;
+  status: "started" | "done" | "cached" | "error";
+  log?: ScanLogEntry[];
+  /** Set when status is "error" — an unexpected failure outside the normal found/not-found steps (e.g. couldn't write the sidecar). */
+  error?: string;
+}
+
 export const MEDIA_EXTENSIONS: Record<Exclude<MediaKind, "other">, string[]> = {
   video: ["mp4", "mkv", "avi", "mov", "webm", "m4v", "wmv", "flv", "mpg", "mpeg"],
   audio: ["mp3", "flac", "wav", "m4a", "ogg", "aac", "wma", "opus"],

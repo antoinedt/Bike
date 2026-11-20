@@ -54,12 +54,30 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.libraryGetItems, () => getAllItems());
 
-  ipcMain.handle(IPC.metadataScan, async (_e, itemIds?: string[], force?: boolean) => {
+  // Tracks the single in-flight scan's AbortController so a Cancel click (a separate, fire-and-
+  // forget channel — see IPC.metadataScanCancel) can reach it. The UI only lets one scan run at a
+  // time (the Fetch button disables itself while running), so one slot is enough.
+  let currentScanAbort: AbortController | null = null;
+
+  ipcMain.handle(IPC.metadataScan, async (e, itemIds?: string[], force?: boolean) => {
     const allItems = await getAllItems();
     const items = itemIds ? allItems.filter((i) => itemIds.includes(i.id)) : allItems;
     const { networkShares } = getSettings();
-    const found = await scanMetadataForLibrary(items, networkShares, force);
-    return applyMetadata(found, force);
+    const controller = new AbortController();
+    currentScanAbort = controller;
+    try {
+      const found = await scanMetadataForLibrary(items, networkShares, force, {
+        signal: controller.signal,
+        onProgress: (event) => e.sender.send(IPC.metadataScanProgress, event)
+      });
+      return await applyMetadata(found, force);
+    } finally {
+      if (currentScanAbort === controller) currentScanAbort = null;
+    }
+  });
+
+  ipcMain.on(IPC.metadataScanCancel, () => {
+    currentScanAbort?.abort();
   });
 
   ipcMain.handle(

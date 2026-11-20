@@ -44,9 +44,9 @@ function upsizeArtwork(url: string): string {
   return url.replace(/\d+x\d+bb(\.\w+)$/, "600x600bb$1");
 }
 
-async function searchItunes(term: string, entity: string): Promise<ITunesResult | null> {
+async function searchItunes(term: string, entity: string, signal?: AbortSignal): Promise<ITunesResult | null> {
   const url = `https://itunes.apple.com/search?term=${encodeURIComponent(term)}&entity=${entity}&limit=1`;
-  const res = await fetch(url, { headers: { "User-Agent": USER_AGENT } });
+  const res = await fetch(url, { headers: { "User-Agent": USER_AGENT }, signal });
   if (!res.ok) return null;
   const data = (await res.json()) as ITunesResponse;
   return data.results[0] ?? null;
@@ -79,10 +79,11 @@ export interface GoogleSearchMetadata {
  * (no API key, no official support) that will simply stop matching, not throw, if Google changes
  * its markup; every caller treats a fully-empty result the same as "nothing found".
  */
-export async function fetchArtworkFromGoogle(query: string): Promise<GoogleSearchMetadata> {
+export async function fetchArtworkFromGoogle(query: string, signal?: AbortSignal): Promise<GoogleSearchMetadata> {
   const url = `https://www.google.com/search?q=${encodeURIComponent(query)}&hl=en`;
   const res = await fetch(url, {
-    headers: { "User-Agent": GOOGLE_USER_AGENT, "Accept-Language": "en-US,en;q=0.9" }
+    headers: { "User-Agent": GOOGLE_USER_AGENT, "Accept-Language": "en-US,en;q=0.9" },
+    signal
   });
   if (!res.ok) return {};
   const html = await res.text();
@@ -101,16 +102,16 @@ export async function fetchArtworkFromGoogle(query: string): Promise<GoogleSearc
  * the metadata scanner (Settings -> Scan metadata), which also covers duration and sidecar
  * persistence; this is just the iTunes half of that.
  */
-export async function fetchMetadataFromItunes(item: MediaItem): Promise<ItunesMetadata | null> {
+export async function fetchMetadataFromItunes(item: MediaItem, signal?: AbortSignal): Promise<ItunesMetadata | null> {
   const { title, year } = guessTitle(item.name);
   if (!title) return null;
   const term = year ? `${title} ${year}` : title;
 
   let result: ITunesResult | null = null;
   if (item.kind === "video") {
-    result = await searchItunes(term, "movie");
+    result = await searchItunes(term, "movie", signal);
   } else if (item.kind === "audio") {
-    result = await searchItunes(title, "song");
+    result = await searchItunes(title, "song", signal);
   }
   if (!result) return null;
 

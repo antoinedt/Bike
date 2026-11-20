@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import { pathToFileURL } from "node:url";
-import type { MediaItem, MediaMetadata, NetworkShare } from "../../shared/types.js";
+import type { MediaItem, MediaMetadata, NetworkShare, ScanLogEntry, ScanProgressEvent } from "../../shared/types.js";
 import { fetchArtworkFromGoogle, fetchMetadataFromItunes, guessTitle } from "../artwork/artworkFetcher.js";
 import { readNetworkSidecar, relPathFromMediaPath, writeNetworkSidecar } from "../network/smbClient.js";
 import { ensureStreamServer, registerStream, unregisterStream } from "../network/streamServer.js";
@@ -25,12 +25,22 @@ const CONCURRENCY = 2;
  * override for a stuck "no match" result. Bounded concurrency, lower than typical — each
  * un-cached item opens a real (hidden) browser window to read its duration, which is heavier than
  * a plain HTTP request.
+ *
+ * `onProgress`, if given, is called with a live event per item (started, then done/cached/error)
+ * as the scan runs — this is what drives the progress dialog's log, including the per-step
+ * reason an item came up with nothing (no match on iTunes, no match on Google either, not a
+ * video so no frame to fall back to, or an outright error like a network failure). `signal`, if
+ * given, stops the scan from picking up any further items once aborted (the user's Cancel
+ * button) and is passed into the underlying HTTP requests so an in-flight one aborts quickly too
+ * — whatever was already found for earlier items is kept, not thrown away.
  */
 export async function scanMetadataForLibrary(
   items: MediaItem[],
   networkShares: NetworkShare[],
-  force = false
+  force = false,
+  options?: { signal?: AbortSignal; onProgress?: (event: ScanProgressEvent) => void }
 ): Promise<Map<string, MediaMetadata>> {
+  const { signal, onProgress } = options ?? {};
   const candidates = items.filter(
     (item) => (item.kind === "video" || item.kind === "audio") && (force || !item.infoFetched)
   );
@@ -38,8 +48,9 @@ export async function scanMetadataForLibrary(
 
   let cursor = 0;
   async function worker(): Promise<void> {
-    while (cursor < candidates.length) {
+    while (cursor < candidates.length && !signal?.aborted) {
       const item = candidates[cursor++];
+      onProgress?.({ itemId: item.id, itemName: item.name, status: "started" });
       try {
         const cached = await readSidecar(item, networkShares).catch(() => null);
         // A sidecar already marked infoFetched is a fully-resolved result from a previous attempt
@@ -49,17 +60,20 @@ export async function scanMetadataForLibrary(
         // the existing tags forward so they aren't lost.
         if (!force && cached?.infoFetched) {
           found.set(item.id, cached);
+          onProgress?.({ itemId: item.id, itemName: item.name, status: "cached" });
           continue;
         }
-        const metadata = await buildMetadata(item, networkShares);
+        const log: ScanLogEntry[] = [];
+        const metadata = await buildMetadata(item, networkShares, signal, (entry) => log.push(entry));
         if (cached?.tags?.length) metadata.tags = cached.tags;
         found.set(item.id, metadata);
         await writeSidecar(item, metadata, networkShares).catch(() => {
           // Best-effort: a read-only share or a transient SMB error shouldn't lose the metadata
           // we already found — it's still applied to the app's own database below.
         });
-      } catch {
-        // Best-effort per item; move on to the rest of the library.
+        onProgress?.({ itemId: item.id, itemName: item.name, status: "done", log });
+      } catch (err) {
+        onProgress?.({ itemId: item.id, itemName: item.name, status: "error", error: (err as Error).message });
       }
     }
   }
@@ -68,10 +82,29 @@ export async function scanMetadataForLibrary(
   return found;
 }
 
-async function buildMetadata(item: MediaItem, networkShares: NetworkShare[]): Promise<MediaMetadata> {
+async function buildMetadata(
+  item: MediaItem,
+  networkShares: NetworkShare[],
+  signal: AbortSignal | undefined,
+  log: (entry: ScanLogEntry) => void
+): Promise<MediaMetadata> {
   const guessed = guessTitle(item.name);
-  const itunes = await fetchMetadataFromItunes(item).catch(() => null);
-  const durationSeconds = await probeDuration(item, networkShares).catch(() => null);
+
+  let itunes: Awaited<ReturnType<typeof fetchMetadataFromItunes>> = null;
+  try {
+    itunes = await fetchMetadataFromItunes(item, signal);
+    log({ step: "iTunes", result: itunes ? "found" : "not-found" });
+  } catch (err) {
+    log({ step: "iTunes", result: "error", detail: (err as Error).message });
+  }
+
+  let durationSeconds: number | null = null;
+  try {
+    durationSeconds = await probeDuration(item, networkShares);
+    log({ step: "Duration", result: durationSeconds != null ? "found" : "not-found" });
+  } catch (err) {
+    log({ step: "Duration", result: "error", detail: (err as Error).message });
+  }
 
   const metadata: MediaMetadata = {
     title: itunes?.title || guessed.title,
@@ -86,17 +119,26 @@ async function buildMetadata(item: MediaItem, networkShares: NetworkShare[]): Pr
   // search for whatever we're missing before giving up on it.
   if (!metadata.artworkUrl || !metadata.year) {
     const query = metadata.year ? `${metadata.title} ${metadata.year}` : metadata.title;
-    const google = await fetchArtworkFromGoogle(query ?? guessed.title).catch(
-      () => ({}) as { artworkUrl?: string; year?: string }
-    );
-    if (!metadata.artworkUrl) metadata.artworkUrl = google.artworkUrl;
-    if (!metadata.year) metadata.year = google.year;
+    try {
+      const google = await fetchArtworkFromGoogle(query ?? guessed.title, signal);
+      log({ step: "Google search", result: google.artworkUrl || google.year ? "found" : "not-found" });
+      if (!metadata.artworkUrl) metadata.artworkUrl = google.artworkUrl;
+      if (!metadata.year) metadata.year = google.year;
+    } catch (err) {
+      log({ step: "Google search", result: "error", detail: (err as Error).message });
+    }
   }
 
   // Still nothing? For video, a real frame pulled from the file itself works for literally
   // anything with a video track, no external lookup required — the last resort.
   if (!metadata.artworkUrl && item.kind === "video") {
-    metadata.artworkUrl = (await extractThumbnail(item, networkShares).catch(() => null)) ?? undefined;
+    try {
+      const thumb = await extractThumbnail(item, networkShares);
+      log({ step: "Video frame", result: thumb ? "found" : "not-found" });
+      metadata.artworkUrl = thumb ?? undefined;
+    } catch (err) {
+      log({ step: "Video frame", result: "error", detail: (err as Error).message });
+    }
   }
 
   return metadata;

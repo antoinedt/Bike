@@ -3,6 +3,7 @@ import type {
   LocalFolder,
   MediaItem,
   NetworkShare,
+  ScanProgressEvent,
   SearchResultItem,
   SiteProfile
 } from "./types.js";
@@ -38,6 +39,17 @@ export interface PreloadApi {
    * duration probe, not just an HTTP lookup.
    */
   scanMetadata(itemIds?: string[], force?: boolean): Promise<MediaItem[]>;
+  /**
+   * Subscribes to live progress events during a scanMetadata run — one "started" event per item
+   * as it begins, followed by "done" (with a step-by-step log: iTunes/Google search/Video frame/
+   * Duration, each found/not-found/error — this is the "why" for an item that came up with
+   * nothing), "cached" (a previous result was reused, no new lookup needed), or "error" (an
+   * unexpected failure outside the normal steps). Returns an unsubscribe function; call it when
+   * the progress dialog closes so events from a later scan don't leak into a stale listener.
+   */
+  onMetadataScanProgress(callback: (event: ScanProgressEvent) => void): () => void;
+  /** Stops the in-flight scanMetadata run from picking up any further items — whatever was already found for earlier items is kept. */
+  cancelMetadataScan(): void;
   /**
    * Manually overwrites title/year/tags/artworkUrl for one item — unlike scanMetadata, these
    * values take precedence unconditionally, so this is also how you correct a wrong auto-fetched

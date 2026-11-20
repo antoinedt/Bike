@@ -20,6 +20,12 @@ const api = {
   getLibraryItems: () => ipcRenderer.invoke("library:getItems"),
   openItem: (item: unknown) => ipcRenderer.invoke("library:openItem", item),
   scanMetadata: (itemIds?: string[], force?: boolean) => ipcRenderer.invoke("metadata:scan", itemIds, force),
+  onMetadataScanProgress: (callback: (event: unknown) => void) => {
+    const listener = (_e: unknown, event: unknown) => callback(event);
+    ipcRenderer.on("metadata:scanProgress", listener);
+    return () => ipcRenderer.removeListener("metadata:scanProgress", listener);
+  },
+  cancelMetadataScan: () => ipcRenderer.send("metadata:scanCancel"),
   updateItemMetadata: (itemId: string, edits: unknown) => ipcRenderer.invoke("item:updateMetadata", itemId, edits),
   clearItemMetadata: (itemId: string) => ipcRenderer.invoke("item:clearMetadata", itemId),
   pickImageFile: () => ipcRenderer.invoke("item:pickImageFile"),

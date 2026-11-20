@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
-import type { AppSettings, MediaItem } from "../../shared/types.js";
+import type { AppSettings, MediaItem, ScanProgressEvent } from "../../shared/types.js";
 import { folderSegmentsForItem } from "../lib/folderTree.js";
+import FetchProgressDialog from "./FetchProgressDialog.js";
 import MediaGrid from "./MediaGrid.js";
 
 /**
@@ -40,6 +41,9 @@ export default function MediaBrowser({
   const [forceRefetch, setForceRefetch] = useState(false);
   const [fetchingInfo, setFetchingInfo] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [showProgress, setShowProgress] = useState(false);
+  const [progressOrder, setProgressOrder] = useState<string[]>([]);
+  const [progressById, setProgressById] = useState<Record<string, ScanProgressEvent>>({});
 
   const allTags = useMemo(() => {
     const set = new Set<string>();
@@ -68,12 +72,20 @@ export default function MediaBrowser({
   async function fetchInfo(scope: MediaItem[]) {
     setFetchingInfo(true);
     setFetchError(null);
+    setProgressOrder([]);
+    setProgressById({});
+    setShowProgress(true);
+    const unsubscribe = window.api.onMetadataScanProgress((event) => {
+      setProgressOrder((prev) => (prev.includes(event.itemId) ? prev : [...prev, event.itemId]));
+      setProgressById((prev) => ({ ...prev, [event.itemId]: event }));
+    });
     try {
       const updated = await window.api.scanMetadata(scope.map((i) => i.id), forceRefetch);
       onItemsChanged(updated);
     } catch (err) {
       setFetchError((err as Error).message);
     } finally {
+      unsubscribe();
       setFetchingInfo(false);
     }
   }
@@ -100,10 +112,21 @@ export default function MediaBrowser({
     </div>
   );
 
+  const progressDialog = showProgress && (
+    <FetchProgressDialog
+      running={fetchingInfo}
+      order={progressOrder}
+      eventsById={progressById}
+      onCancel={() => window.api.cancelMetadataScan()}
+      onClose={() => setShowProgress(false)}
+    />
+  );
+
   if (hasActiveFilter) {
     const matched = withSegments.filter(({ item }) => matches(item)).map((x) => x.item);
     return (
       <div>
+        {progressDialog}
         {fetchError && <p className="error">{fetchError}</p>}
         {fetchButton(matched, false)}
         <MediaGrid items={matched} allTags={allTags} onOpen={onOpen} onDownload={onDownload} onItemUpdated={onItemUpdated} />
@@ -130,6 +153,7 @@ export default function MediaBrowser({
 
   return (
     <div>
+      {progressDialog}
       {(depth > 0 || sortedFolders.length > 0) && (
         <div className="breadcrumbs">
           <button className="btn btn-small" onClick={() => setPath([])} disabled={depth === 0}>

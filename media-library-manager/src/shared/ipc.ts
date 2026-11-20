@@ -16,6 +16,8 @@ export const IPC = {
   libraryGetItems: "library:getItems",
   libraryOpenItem: "library:openItem",
   metadataScan: "metadata:scan",
+  metadataScanProgress: "metadata:scanProgress",
+  metadataScanCancel: "metadata:scanCancel",
   itemUpdateMetadata: "item:updateMetadata",
   itemClearMetadata: "item:clearMetadata",
   pickImageFile: "item:pickImageFile",
