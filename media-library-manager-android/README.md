@@ -99,6 +99,24 @@ artwork. Artwork association is in-memory only (not persisted to DataStore), so 
 re-fetching after each fresh scan or app restart — consistent with `localItems`/`networkItems`
 themselves not being persisted either.
 
+## Android TV / Google TV
+
+Same APK runs on phones/tablets and TV — no separate build. `AndroidManifest.xml` declares
+`android.hardware.touchscreen` and `android.software.leanback` as `required="false"` (so a non-touch
+device isn't filtered out) and adds `CATEGORY_LEANBACK_LAUNCHER` alongside the normal `LAUNCHER`
+category on `MainActivity`, so it shows up in the TV home screen's app row (using
+`@drawable/tv_banner`, a 320x180 banner, as its tile there). All interactive elements are standard
+Compose `clickable`/`Button`/`Checkbox` composables, which are focusable and D-pad-navigable by
+default — there's no touch-only gesture (swipe, long-press, drag) anywhere in the app that a remote
+couldn't reach. `PlayerOverlay`'s `PlayerView` is explicitly set focusable and requests focus on
+open so D-pad/media-key input reaches ExoPlayer's own controls.
+
+Not verified on a real TV or emulator (no Android SDK/emulator in the sandbox that added this) —
+install a CI-built APK on an actual Google TV / Android TV device and check: it appears on the home
+screen row, and D-pad navigation/text entry (search box, Settings fields, the TMDb API key) works
+acceptably. A Bluetooth mouse+keyboard paired to the TV makes every screen fully usable even before
+any further D-pad-specific polish.
+
 ## Known limitations (first version)
 
 - Local folders are opt-in scoping: with none added, Library still scans the whole device via

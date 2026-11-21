@@ -73,10 +73,16 @@ fun PlayerOverlay(
                     factory = { ctx ->
                         PlayerView(ctx).apply {
                             this.player = player
+                            // Explicit, not just the default: a TV remote's D-pad only reaches
+                            // this view's own key handling (play/pause, show controls) if it can
+                            // actually take focus — on a touch device this is a no-op.
+                            isFocusable = true
+                            isFocusableInTouchMode = true
                             layoutParams = ViewGroup.LayoutParams(
                                 ViewGroup.LayoutParams.MATCH_PARENT,
                                 ViewGroup.LayoutParams.MATCH_PARENT
                             )
+                            post { requestFocus() }
                         }
                     }
                 )

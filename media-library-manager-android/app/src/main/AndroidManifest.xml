@@ -5,6 +5,13 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!-- Same APK runs on phones/tablets and Android TV / Google TV: neither a touchscreen nor
+         the TV-app ("leanback") system is required, just supported when present. Without the
+         touchscreen line, a non-touch device is implicitly assumed to need one and the app is
+         filtered out as incompatible. -->
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+
     <!-- Granular media permissions (Android 13+). -->
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
@@ -22,6 +29,7 @@
     <application
         android:name=".MediaLibraryApplication"
         android:allowBackup="true"
+        android:banner="@drawable/tv_banner"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -37,6 +45,9 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+                <!-- Lets the same activity show up on the Google TV / Android TV home screen's
+                     app row; harmless on a phone, which only ever looks for LAUNCHER. -->
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
 
