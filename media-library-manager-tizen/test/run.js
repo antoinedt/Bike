@@ -170,10 +170,16 @@ const focusedId = (page) => page.evaluate(() => document.activeElement && (docum
     await pressRemote(page, 38);
     await pressRemote(page, 38);
     check((await focusedId(page)) === "tab-video", "Up from first row reaches the tabs");
+    await pressRemote(page, 40);
+    check((await focusedId(page)) === cards[0].id, "Down from Video tab lands on the FIRST tile (not the nearest one)");
+    await page.focus("#tab-audio");
+    await pressRemote(page, 40);
+    check((await focusedId(page)) === cards[0].id, "Down from Audio tab lands on the first tile too");
+    await page.focus("#" + cards[cols - 1].id);
+    await pressRemote(page, 38);
+    check((await focusedId(page)) === "tab-video", "Up from the far-right tile lands on the SELECTED tab (Video), not the nearest (Audio)");
     await pressRemote(page, 39);
     check((await focusedId(page)) === "tab-audio", "Right on tabs reaches Audio tab");
-    await pressRemote(page, 40);
-    check((await focusedId(page)) && (await focusedId(page)).startsWith("item-"), "Down from tabs returns to grid");
 
     // Play a video
     await page.focus("#item-v3");

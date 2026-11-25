@@ -35,6 +35,7 @@
   var libraryView = document.getElementById("library-view");
   var playerView = document.getElementById("player-view");
   var grid = document.getElementById("grid");
+  var header = libraryView.querySelector(".app-header");
   var statusEl = document.getElementById("status");
   var videoPlayer = document.getElementById("video-player");
   var audioPlayer = document.getElementById("audio-player");
@@ -422,6 +423,14 @@
         bestScore = score;
         best = el;
       }
+    }
+    // Moving between the tab row and the grid: "nearest" would mean nearest to the center of the
+    // control you're leaving, so Down from a tab landed on the second tile. Down from the tabs
+    // always lands on the first tile, and Up from the grid lands on the tab that's selected.
+    if (best && direction === "down" && header.contains(current) && grid.contains(best)) {
+      best = grid.firstChild;
+    } else if (best && direction === "up" && grid.contains(current) && header.contains(best)) {
+      best = header.querySelector(".tab.active") || best;
     }
     if (best) {
       best.focus();
