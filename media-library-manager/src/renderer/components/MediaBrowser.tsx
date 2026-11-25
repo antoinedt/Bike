@@ -7,7 +7,7 @@ import MediaGrid from "./MediaGrid.js";
 /**
  * Groups a flat item list into a navigable folder tree (derived from each item's path, relative
  * to its local folder / network share root — no separate hierarchy storage needed) when no
- * filter is active. Any active filter (name text, tags, or a date range) switches to a flat
+ * filter is active. Any active filter (name text or tags) switches to a flat
  * search across every folder instead, since "search/filter the whole library" and "browse one
  * folder" are different intents. All active filter kinds combine with AND; selecting several
  * tags matches an item with ANY of them.
@@ -17,8 +17,6 @@ export default function MediaBrowser({
   settings,
   filter,
   tagFilter = [],
-  dateFrom,
-  dateTo,
   onOpen,
   onDownload,
   onItemUpdated,
@@ -28,8 +26,6 @@ export default function MediaBrowser({
   settings: AppSettings;
   filter: string;
   tagFilter?: string[];
-  dateFrom?: number | null;
-  dateTo?: number | null;
   onOpen: (item: MediaItem) => void;
   onDownload?: (item: MediaItem) => void;
   onItemUpdated: (item: MediaItem) => void;
@@ -59,13 +55,11 @@ export default function MediaBrowser({
   );
 
   const nameQuery = filter.trim().toLowerCase();
-  const hasActiveFilter = nameQuery.length > 0 || tagFilter.length > 0 || dateFrom != null || dateTo != null;
+  const hasActiveFilter = nameQuery.length > 0 || tagFilter.length > 0;
 
   function matches(item: MediaItem): boolean {
     if (nameQuery && !item.name.toLowerCase().includes(nameQuery)) return false;
     if (tagFilter.length > 0 && !(item.tags ?? []).some((t) => tagFilter.includes(t))) return false;
-    if (dateFrom != null && item.modifiedAt < dateFrom) return false;
-    if (dateTo != null && item.modifiedAt > dateTo) return false;
     return true;
   }
 

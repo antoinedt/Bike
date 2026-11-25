@@ -14,8 +14,6 @@ export default function LibraryPage({ settings }: { settings: AppSettings }) {
   const [items, setItems] = useState<MediaItem[]>([]);
   const [filter, setFilter] = useState("");
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
   const [scanningFolders, setScanningFolders] = useState(false);
   const [scanningShares, setScanningShares] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -118,15 +116,6 @@ export default function LibraryPage({ settings }: { settings: AppSettings }) {
           </button>
         </div>
       </div>
-      <p className="hint">
-        Local folders and network shares live in one library here — browse into "Local" or any
-        connected share's folder below. "Fetch artwork &amp; info" (further down) only covers the
-        folder you're currently browsing, with an option to include its subfolders, and saves a
-        <code> .metadata.json</code> file next to each media file — uploaded to the share for
-        network items — so it only needs to happen once per file, from any device. Network
-        playback streams live from the share (byte-range reads, seekable); nothing is downloaded
-        to disk first unless you choose Download.
-      </p>
       {settings.localFolders.length === 0 && settings.networkShares.length === 0 && (
         <p className="hint">
           Nothing configured yet. Add a local folder or an SMB share in <strong>Settings</strong> to
@@ -143,18 +132,12 @@ export default function LibraryPage({ settings }: { settings: AppSettings }) {
         items={items}
         selectedTags={selectedTags}
         onToggleTag={toggleTag}
-        dateFrom={dateFrom}
-        dateTo={dateTo}
-        onDateFromChange={setDateFrom}
-        onDateToChange={setDateTo}
       />
       <MediaBrowser
         items={items}
         settings={settings}
         filter={filter}
         tagFilter={selectedTags}
-        dateFrom={dateFrom ? new Date(`${dateFrom}T00:00:00`).getTime() : null}
-        dateTo={dateTo ? new Date(`${dateTo}T23:59:59.999`).getTime() : null}
         onOpen={(item) => void open(item)}
         onDownload={(item) => void download(item)}
         onItemUpdated={handleItemUpdated}
