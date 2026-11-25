@@ -173,3 +173,27 @@ export function classifyExtension(ext: string): MediaKind {
   }
   return "other";
 }
+
+/**
+ * A folder "Copy to…" can put files in: inside a configured local folder, inside a configured
+ * network share (relative to its sub-path), or any folder on this computer picked with the OS
+ * dialog.
+ */
+export type CopyTarget =
+  | { kind: "folder"; folderId: string; relPath: string }
+  | { kind: "share"; shareId: string; relPath: string }
+  | { kind: "path"; path: string };
+
+export interface CopyJob {
+  id: string;
+  itemId: string;
+  itemName: string;
+  target: CopyTarget;
+  targetLabel: string;
+  state: "queued" | "running" | "done" | "failed";
+  copiedBytes: number;
+  totalBytes: number;
+  /** The name it was saved under, when that differs (the original was taken). */
+  savedAs?: string;
+  error?: string;
+}

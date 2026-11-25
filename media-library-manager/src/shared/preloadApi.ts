@@ -1,5 +1,7 @@
 import type {
   AppSettings,
+  CopyJob,
+  CopyTarget,
   DownloadProgressEvent,
   LocalFolder,
   MediaItem,
@@ -110,6 +112,18 @@ export interface PreloadApi {
   onTorrentUpdate(callback: (torrents: TorrentStatus[]) => void): () => void;
   /** Fired when a finished download was added to the Library. Returns an unsubscribe function. */
   onLibraryChanged(callback: () => void): () => void;
+  /** "Copy to…": queues a copy of a library item (local or network) into a folder on this computer or a share. */
+  copyItem(item: MediaItem, target: CopyTarget): Promise<CopyJob>;
+  getCopies(): Promise<CopyJob[]>;
+  cancelCopy(id: string): Promise<void>;
+  clearFinishedCopies(): Promise<CopyJob[]>;
+  /** Folder names directly inside a copy target, for the folder picker. */
+  listCopyFolders(target: CopyTarget): Promise<string[]>;
+  createCopyFolder(target: CopyTarget, name: string): Promise<void>;
+  /** OS folder picker; null if cancelled. */
+  pickCopyFolder(): Promise<string | null>;
+  /** Live list of copies. Returns an unsubscribe function. */
+  onCopyUpdate(callback: (jobs: CopyJob[]) => void): () => void;
 }
 
 declare global {

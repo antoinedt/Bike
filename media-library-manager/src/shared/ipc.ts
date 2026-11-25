@@ -40,5 +40,13 @@ export const IPC = {
   torrentRemove: "torrent:remove",
   torrentOpenFolder: "torrent:openFolder",
   torrentUpdate: "torrent:update",
-  libraryChanged: "library:changed"
+  libraryChanged: "library:changed",
+  copyStart: "copy:start",
+  copyList: "copy:list",
+  copyCancel: "copy:cancel",
+  copyClearFinished: "copy:clearFinished",
+  copyListFolders: "copy:listFolders",
+  copyCreateFolder: "copy:createFolder",
+  copyPickFolder: "copy:pickFolder",
+  copyUpdate: "copy:update"
 } as const;

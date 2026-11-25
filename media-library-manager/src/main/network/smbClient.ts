@@ -1,19 +1,17 @@
 import SMB2 from "smb2";
 import { classifyExtension } from "../../shared/types.js";
 import type { MediaItem, MediaMetadata, NetworkShare } from "../../shared/types.js";
+import { portOf, uncPath } from "./smbRawClient.js";
 
 const MAX_DEPTH = 10;
-
-function uncPath(share: NetworkShare): string {
-  return `\\\\${share.host}\\${share.share}`;
-}
 
 function createClient(share: NetworkShare): SMB2 {
   return new SMB2({
     share: uncPath(share),
     domain: share.domain || "WORKGROUP",
     username: share.username,
-    password: share.password
+    password: share.password,
+    port: portOf(share)
   });
 }
 

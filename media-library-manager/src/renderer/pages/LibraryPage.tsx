@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { AppSettings, MediaItem } from "../../shared/types.js";
 import FilterBar from "../components/FilterBar.js";
+import CopyDialog from "../components/CopyDialog.js";
 import MediaBrowser from "../components/MediaBrowser.js";
 import StreamPlayer from "../components/StreamPlayer.js";
 
@@ -11,6 +12,8 @@ interface ActiveStream {
 }
 
 export default function LibraryPage({ settings }: { settings: AppSettings }) {
+  const [copying, setCopying] = useState<MediaItem | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [items, setItems] = useState<MediaItem[]>([]);
   const [filter, setFilter] = useState("");
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
@@ -125,6 +128,7 @@ export default function LibraryPage({ settings }: { settings: AppSettings }) {
         </p>
       )}
       {error && <p className="error">{error}</p>}
+      {notice && <p className="notice">{notice}</p>}
       {downloading && (
         <p className="hint-inline">
           Downloading… {downloadProgress != null ? `${Math.round(downloadProgress * 100)}%` : ""}
@@ -142,9 +146,21 @@ export default function LibraryPage({ settings }: { settings: AppSettings }) {
         tagFilter={selectedTags}
         onOpen={(item) => void open(item)}
         onDownload={(item) => void download(item)}
+        onCopy={setCopying}
         onItemUpdated={handleItemUpdated}
         onItemsChanged={setItems}
       />
+      {copying && (
+        <CopyDialog
+          item={copying}
+          settings={settings}
+          onClose={() => setCopying(null)}
+          onStarted={(label) => {
+            setCopying(null);
+            setNotice(`Copying "${copying.name}" to ${label} — progress is on the Downloads page.`);
+          }}
+        />
+      )}
       {stream && <StreamPlayer item={stream.item} url={stream.url} onClose={() => setStream(null)} />}
     </div>
   );

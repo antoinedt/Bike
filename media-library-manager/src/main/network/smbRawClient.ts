@@ -28,11 +28,22 @@ export interface RawFileHandle {
   size: number;
 }
 
-function uncPath(share: NetworkShare): string {
-  return `\\\\${share.host}\\${share.share}`;
+/** The host without an optional ":port" (e.g. "nas.local:1445"). */
+function hostOnly(share: NetworkShare): string {
+  return share.host.replace(/:\d+$/, "");
 }
 
-function toSmbPath(relPath: string): string {
+/** The port from a "host:port" host, if one was given (445 otherwise). */
+export function portOf(share: NetworkShare): number | undefined {
+  const match = /:(\d+)$/.exec(share.host);
+  return match ? Number(match[1]) : undefined;
+}
+
+export function uncPath(share: NetworkShare): string {
+  return `\\\\${hostOnly(share)}\\${share.share}`;
+}
+
+export function toSmbPath(relPath: string): string {
   return relPath.replace(/\//g, "\\");
 }
 
@@ -49,7 +60,7 @@ function fileSizeFromEndOfFile(buf: Buffer): number {
   return size;
 }
 
-function requestRaw<T>(client: SMB2, command: string, params: Record<string, unknown>): Promise<T> {
+export function requestRaw<T>(client: SMB2, command: string, params: Record<string, unknown>): Promise<T> {
   return new Promise((resolve, reject) => {
     const wrapped = SMB2Connection.requireConnect(function (this: unknown, cb: (err: Error | null, result: T) => void) {
       SMB2Forge.request(command, params, this, cb);
@@ -65,6 +76,7 @@ export async function openRawFile(share: NetworkShare, relPath: string): Promise
     domain: share.domain || "WORKGROUP",
     username: share.username,
     password: share.password,
+    port: portOf(share),
     // A streaming session can sit idle between reads (paused video); we manage its lifetime
     // explicitly via closeRawFile rather than letting the library's idle timer sever it.
     autoCloseTimeout: 0

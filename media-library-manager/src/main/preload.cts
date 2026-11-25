@@ -59,6 +59,18 @@ const api = {
     const listener = () => callback();
     ipcRenderer.on("library:changed", listener);
     return () => ipcRenderer.removeListener("library:changed", listener);
+  },
+  copyItem: (item: unknown, target: unknown) => ipcRenderer.invoke("copy:start", item, target),
+  getCopies: () => ipcRenderer.invoke("copy:list"),
+  cancelCopy: (id: string) => ipcRenderer.invoke("copy:cancel", id),
+  clearFinishedCopies: () => ipcRenderer.invoke("copy:clearFinished"),
+  listCopyFolders: (target: unknown) => ipcRenderer.invoke("copy:listFolders", target),
+  createCopyFolder: (target: unknown, name: string) => ipcRenderer.invoke("copy:createFolder", target, name),
+  pickCopyFolder: () => ipcRenderer.invoke("copy:pickFolder"),
+  onCopyUpdate: (callback: (jobs: unknown) => void) => {
+    const listener = (_e: unknown, jobs: unknown) => callback(jobs);
+    ipcRenderer.on("copy:update", listener);
+    return () => ipcRenderer.removeListener("copy:update", listener);
   }
 };
 

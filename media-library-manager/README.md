@@ -13,6 +13,10 @@ sources:
   left off after the app restarts. If the download folder (Settings → Torrent downloads) is inside
   one of your Library folders, finished downloads appear in the Library automatically. **Open in
   torrent app** still hands a result to your OS's default torrent app instead.
+- **Copy to…** (in an item's details): copies a local or network item into a folder inside any of
+  your Library folders or network shares (with **New folder**), or any folder on this computer.
+  Copies run one at a time in the background, never overwrite (an existing name gets " (2)"),
+  show progress on the Downloads page, and the Library rescans wherever the copy landed.
 
 Built with Electron + React + TypeScript.
 
@@ -67,7 +71,8 @@ npm run dev       # Vite dev server + Electron, with hot reload for the renderer
 npm run typecheck # tsc --noEmit for both the main and renderer projects
 npm run build      # compiles main + bundles renderer into dist/ and dist-electron/
 npm run dist        # build + package an installer with electron-builder
-npm test            # torrent download tests against a local seeder (no internet needed)
+npm test            # torrent download + "Copy to…" tests (no internet needed; the network-share
+                    # copy tests also run if MLM_SMB_TEST points at a test SMB server, see test/)
 ```
 
 ## Configuring sources
@@ -104,6 +109,12 @@ remote URL on the item (not downloaded/cached locally), so it needs the network 
 fetched, same as any `<img src>`.
 
 ## Known limitations (first version)
+
+- Network shares use the `smb2` npm package, which signs in with **NTLMv1** only. Many current
+  servers refuse that by default (Samba 4.5+ `ntlm auth = ntlmv2-only`, Synology DSM 7, Windows 11
+  24H2), in which case browsing, streaming and copying to/from that share fail with a logon error.
+  The Android app (jcifs-ng) uses NTLMv2 and isn't affected.
+- A share's host can include a port (`nas.local:1445`) for servers not on 445.
 
 - `webtorrent` is pinned to 2.8.5: 3.x needs Node 22, and Electron 33 ships Node 20. Its
   dependency tree in `package-lock.json` was resolved as of late 2025 on purpose — newer

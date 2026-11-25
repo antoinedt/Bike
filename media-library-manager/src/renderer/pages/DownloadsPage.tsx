@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { TorrentStatus } from "../../shared/types.js";
+import type { CopyJob, TorrentStatus } from "../../shared/types.js";
 import { formatDuration, formatSize } from "../lib/format.js";
 
 const STATE_LABEL: Record<TorrentStatus["state"], string> = {
@@ -22,11 +22,18 @@ export default function DownloadsPage({ onOpenSettings }: { onOpenSettings: () =
   const [error, setError] = useState<string | null>(null);
   const [removing, setRemoving] = useState<TorrentStatus | null>(null);
   const [deleteFiles, setDeleteFiles] = useState(false);
+  const [copies, setCopies] = useState<CopyJob[]>([]);
 
   useEffect(() => {
     void window.api.getTorrents().then(setTorrents);
     void window.api.getTorrentDownloadFolder().then(setFolder);
-    return window.api.onTorrentUpdate(setTorrents);
+    void window.api.getCopies().then(setCopies);
+    const offCopies = window.api.onCopyUpdate(setCopies);
+    const offTorrents = window.api.onTorrentUpdate(setTorrents);
+    return () => {
+      offCopies();
+      offTorrents();
+    };
   }, []);
 
   async function run(action: () => Promise<unknown>) {
@@ -144,6 +151,56 @@ export default function DownloadsPage({ onOpenSettings }: { onOpenSettings: () =
             </li>
           ))}
         </ul>
+      )}
+
+      {copies.length > 0 && (
+        <>
+          <div className="page-header copies-header">
+            <h2>Copies</h2>
+            {copies.some((c) => c.state === "done" || c.state === "failed") && (
+              <button className="btn btn-small" onClick={() => void window.api.clearFinishedCopies().then(setCopies)}>
+                Clear finished
+              </button>
+            )}
+          </div>
+          <ul className="download-list">
+            {[...copies].reverse().map((c) => (
+              <li key={c.id} className={`download-row download-${c.state === "done" ? "done" : c.state === "failed" ? "error" : "downloading"}`}>
+                <div className="download-main">
+                  <div className="download-name" title={c.itemName}>
+                    {c.itemName}
+                  </div>
+                  <div className="download-progress">
+                    <div
+                      className="download-progress-fill"
+                      style={{ width: `${c.totalBytes > 0 ? Math.round((c.copiedBytes / c.totalBytes) * 100) : c.state === "done" ? 100 : 0}%` }}
+                    />
+                  </div>
+                  <div className="download-meta">
+                    <span className="download-state">
+                      {c.state === "queued" && `Waiting · to ${c.targetLabel}`}
+                      {c.state === "running" && `Copying to ${c.targetLabel}`}
+                      {c.state === "done" && `Copied to ${c.targetLabel}${c.savedAs ? ` as “${c.savedAs}”` : ""}`}
+                      {c.state === "failed" && `Failed: ${c.error}`}
+                    </span>
+                    {c.state === "running" && (
+                      <span>
+                        {formatSize(c.copiedBytes)} of {formatSize(c.totalBytes)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {(c.state === "queued" || c.state === "running") && (
+                  <div className="download-actions">
+                    <button className="btn btn-small" onClick={() => void window.api.cancelCopy(c.id)}>
+                      Cancel
+                    </button>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        </>
       )}
 
       {removing && (

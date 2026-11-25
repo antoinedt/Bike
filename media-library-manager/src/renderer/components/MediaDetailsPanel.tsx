@@ -7,6 +7,7 @@ export default function MediaDetailsPanel({
   allTags,
   onOpen,
   onDownload,
+  onCopy,
   onClose,
   onItemUpdated
 }: {
@@ -14,6 +15,7 @@ export default function MediaDetailsPanel({
   allTags: string[];
   onOpen: () => void;
   onDownload?: () => void;
+  onCopy?: () => void;
   onClose: () => void;
   onItemUpdated: (item: MediaItem) => void;
 }) {
@@ -206,6 +208,11 @@ export default function MediaDetailsPanel({
               {onDownload && item.source.type === "network" && (
                 <button className="btn" onClick={onDownload}>
                   Download…
+                </button>
+              )}
+              {onCopy && (
+                <button className="btn" onClick={onCopy} title="Copy to a folder on this computer or a network share">
+                  Copy to…
                 </button>
               )}
               <button className="btn" onClick={startEdit}>

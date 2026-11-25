@@ -1,7 +1,7 @@
 # Media Library Manager — Android
 
 The Android counterpart to the `media-library-manager/` desktop app: the same three sources
-(local device, local network SMB, configurable site search with torrent-app handoff), adapted to
+(local device, local network SMB, configurable site search with in-app torrent downloads), adapted to
 Android's platform idioms rather than sharing a codebase with the Electron app — the storage,
 network, and media-playback APIs are different enough that trying to share code would fight the
 platform on all three.
@@ -51,7 +51,13 @@ app/src/main/java/com/medialibrary/manager/
 │   ├── SiteSearchRepository.kt    Jsoup-based generic scraper
 │   └── HeadlessWebViewFetcher.kt  Off-screen WebView fetch for JS-rendered sites (opt-in per profile)
 ├── artwork/ArtworkFetcher.kt Title-guessing + iTunes Search API cover/poster lookup
-├── torrent/TorrentHandoff.kt Intent-based magnet:/.torrent handoff
+├── torrent/
+│   ├── TorrentEngine.kt      In-app downloads on libtorrent (libtorrent4j); plain Kotlin, tested on a JVM
+│   └── TorrentHandoff.kt     "Other app": intent-based magnet:/.torrent handoff
+├── transfer/
+│   ├── TransferStorage.kt    Read/write device Downloads, SAF folders and SMB shares (never overwrites)
+│   ├── TransferManager.kt    App-wide: torrents, saving finished ones to their folder, "Copy to…" queue
+│   └── TransferService.kt    Foreground service + progress notification while anything is running
 └── ui/                       MediaLibraryViewModel + Compose screens/components
 ```
 
@@ -61,16 +67,41 @@ app/src/main/java/com/medialibrary/manager/
   (API ≤32) — requested at launch, needed for the Library scan.
 - `INTERNET` — SMB (TCP, not HTTP, but still needs this permission), site search, `.torrent`
   downloads.
-- No `MANAGE_EXTERNAL_STORAGE`, no `QUERY_ALL_PACKAGES` — torrent handoff uses an implicit
+- `FOREGROUND_SERVICE` (+ `_SPECIAL_USE` on Android 14+, `_DATA_SYNC` on 10–13) and
+  `POST_NOTIFICATIONS` (asked at launch on Android 13+) — downloads and copies keep running, with a
+  progress notification, when you leave the app.
+- Local folders are picked with read **and write** access, so "Copy to…" and finished downloads
+  can be saved into them. Folders added before this version only have read access: use
+  **Change folder…** in Settings and pick the same folder again to allow writing.
+- No `MANAGE_EXTERNAL_STORAGE`, no `QUERY_ALL_PACKAGES` — "Other app" uses an implicit
   `ACTION_VIEW` intent and lets the OS resolve/chooser whatever's installed.
+
+## Downloads and "Copy to…"
+
+- **Downloads tab** (phone and TV): paste a magnet link / info hash / `.torrent` link, open a
+  `.torrent` file, or use **Download** on a search result. Live progress, speed, peers and time
+  left; pause, resume, remove. Downloads stop sharing as soon as they're complete and pick up where
+  they left off after the app (or phone) restarts, using libtorrent's resume data.
+- libtorrent writes into app storage first (it needs real file paths, which SAF folders and SMB
+  shares don't have); once a download is complete it's copied to the folder chosen under
+  **Downloads → Saving to** (or **Settings → Torrent downloads**) — this device's
+  `Downloads/MediaLibraryManager`, any of your local folders, or a network share — and removed
+  from app storage. If that's a Library folder or share, the Library rescans it.
+- **Copy to…** (the copy icon on every Library tile): copies a local or network item into any
+  folder of any location the app knows — e.g. from the NAS to the phone, from the phone to the NAS,
+  or between two shares — with **New folder…**. Copies run one at a time in the background,
+  never overwrite (an existing name gets " (2)"), and show progress on the tile and in Downloads.
+  This replaces the old network-only Download button (copy to "This device · Downloads" for that).
+- Tests: `engine-test/run.sh` runs the torrent engine against a local WebTorrent seeder on a
+  desktop JVM (magnet, .torrent file and link, pause/resume, restart, remove, bad input).
 
 ## Legal / scope note
 
-Same as the desktop app: no torrent client, tracker, or indexer is embedded, and no sites ship
-pre-configured. Search only runs against sites you add yourself in **Settings**, and downloads are
-handed off to whatever app the OS has registered for `magnet:` links or `.torrent` files — this
-app never downloads or manages torrent content itself. Only use it against sites and content
-you're legally permitted to search and download.
+Same as the desktop app: the app includes a BitTorrent client (libtorrent) but no tracker or
+indexer, and no sites ship pre-configured. Search only runs against sites you add yourself in
+**Settings**; the Downloads tab only downloads links you give it. While a download runs, BitTorrent
+shares the pieces you already have with other peers (that's how the protocol works); once it's
+complete the app stops sharing it. Only use it for content you're legally permitted to download.
 
 ## Building
 
@@ -137,7 +168,11 @@ any further D-pad-specific polish.
   desktop app's electron-store).
 - Site profiles assume server-rendered HTML; JS-rendered result pages need a headless browser,
   which this build doesn't include (matches the desktop app's same limitation).
-- Not tested against a live SMB server or real device — see the build note above.
+- Not tested against a live SMB server or real device — see the build note above. The torrent
+  engine and the SMB write steps "Copy to…" uses were tested on a desktop JVM (local seeder, local
+  test SMB server); the Android UI, service and SAF/MediaStore writes still need a real device.
+- The APK carries libtorrent's native code for arm64, 32-bit ARM and x86_64, which makes it
+  noticeably bigger than before.
 - iTunes Search API access wasn't reachable from this sandbox either (same network-policy class
   as `dl.google.com`), so the artwork feature is untested beyond title-guessing logic; verify the
   actual lookup on a real device.

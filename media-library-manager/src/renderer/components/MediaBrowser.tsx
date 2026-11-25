@@ -19,6 +19,7 @@ export default function MediaBrowser({
   tagFilter = [],
   onOpen,
   onDownload,
+  onCopy,
   onItemUpdated,
   onItemsChanged
 }: {
@@ -28,6 +29,7 @@ export default function MediaBrowser({
   tagFilter?: string[];
   onOpen: (item: MediaItem) => void;
   onDownload?: (item: MediaItem) => void;
+  onCopy?: (item: MediaItem) => void;
   onItemUpdated: (item: MediaItem) => void;
   /** Called with the full, freshly-refreshed item list after a "Fetch artwork & info" run. */
   onItemsChanged: (items: MediaItem[]) => void;
@@ -123,7 +125,7 @@ export default function MediaBrowser({
         {progressDialog}
         {fetchError && <p className="error">{fetchError}</p>}
         {fetchButton(matched, false)}
-        <MediaGrid items={matched} allTags={allTags} onOpen={onOpen} onDownload={onDownload} onItemUpdated={onItemUpdated} />
+        <MediaGrid items={matched} allTags={allTags} onOpen={onOpen} onDownload={onDownload} onCopy={onCopy} onItemUpdated={onItemUpdated} />
       </div>
     );
   }
@@ -180,6 +182,7 @@ export default function MediaBrowser({
           allTags={allTags}
           onOpen={onOpen}
           onDownload={onDownload}
+          onCopy={onCopy}
           onItemUpdated={onItemUpdated}
         />
       )}
