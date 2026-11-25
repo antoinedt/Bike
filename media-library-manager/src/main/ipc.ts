@@ -13,7 +13,8 @@ import {
   updateLocalFolder,
   updateNetworkShare,
   updateSiteProfile,
-  updateTmdbApiKey
+  updateTmdbApiKey,
+  updateTorrentDownloadFolder
 } from "./settings.js";
 import { scanLocalFolders } from "./library/scanner.js";
 import { relPathFromMediaPath, scanNetworkShare, testShareConnection } from "./network/smbClient.js";
@@ -21,12 +22,15 @@ import { downloadRawFile } from "./network/smbRawClient.js";
 import { ensureStreamServer, registerStream, unregisterStream } from "./network/streamServer.js";
 import { searchSites } from "./search/siteSearch.js";
 import { handOffDownload } from "./torrent/handoff.js";
+import { registerTorrentHandlers } from "./torrent/torrentIpc.js";
 import { applyManualEdit, applyMetadata, clearMetadata, getAllItems, replaceItemsForSource } from "./db.js";
 import { readSidecar, scanMetadataForLibrary, writeSidecar } from "./metadata/metadataScanner.js";
 
 export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.settingsGet, () => getSettings());
   ipcMain.handle(IPC.settingsUpdateTmdbApiKey, (_e, tmdbApiKey: string) => updateTmdbApiKey(tmdbApiKey));
+  ipcMain.handle(IPC.settingsUpdateTorrentDownloadFolder, (_e, folder: string) => updateTorrentDownloadFolder(folder));
+  registerTorrentHandlers();
 
   ipcMain.handle(IPC.folderPick, async () => {
     const result = await dialog.showOpenDialog({ properties: ["openDirectory"] });

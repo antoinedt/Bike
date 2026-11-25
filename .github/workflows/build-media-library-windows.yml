@@ -1,0 +1,71 @@
+name: Build Media Library Manager for Windows
+
+on:
+  push:
+    branches: [ "main", "claude/**" ]
+    paths:
+      - "media-library-manager/**"
+      - ".github/workflows/build-media-library-windows.yml"
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - "media-library-manager/**"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    working-directory: media-library-manager
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: media-library-manager/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test (in-app torrent downloads, against a local seeder)
+        run: npm test
+
+      - name: Build installer
+        run: |
+          npm run build
+          npx electron-builder --win nsis --x64 --publish never
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: media-library-manager-setup
+          path: media-library-manager/release/media-library-manager-setup.exe
+          if-no-files-found: error
+
+      - name: Publish Release
+        if: github.event_name != 'pull_request'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: mlm-win-build-${{ github.run_number }}
+          name: Media Library Manager for Windows, build ${{ github.run_number }}
+          body: |
+            Automated build of the Media Library Manager desktop app for Windows (64-bit).
+
+            `media-library-manager-setup.exe` isn't code-signed, so Windows SmartScreen may
+            say "Windows protected your PC" — click "More info", then "Run anyway".
+            Installing over a previous version keeps your settings and library.
+          prerelease: true
+          target_commitish: ${{ github.sha }}
+          files: media-library-manager/release/media-library-manager-setup.exe

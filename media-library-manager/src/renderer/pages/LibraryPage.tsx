@@ -23,6 +23,8 @@ export default function LibraryPage({ settings }: { settings: AppSettings }) {
 
   useEffect(() => {
     void window.api.getLibraryItems().then(setItems);
+    // A finished download inside a Library folder gets scanned in by the main process.
+    return window.api.onLibraryChanged(() => void window.api.getLibraryItems().then(setItems));
   }, []);
 
   // Closes whichever stream was active whenever a new one starts, and on unmount.

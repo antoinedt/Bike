@@ -109,6 +109,32 @@ export interface AppSettings {
   siteProfiles: SiteProfile[];
   /** Free key from themoviedb.org/settings/api — used for the TMDb artwork/year fallback (movies & TV) when iTunes has nothing. Empty means that fallback is skipped. */
   tmdbApiKey: string;
+  /** Where in-app torrent downloads are saved. Empty means the default (Downloads/Media Library Manager). */
+  torrentDownloadFolder: string;
+}
+
+/** One in-app torrent download, as shown on the Downloads page. */
+export interface TorrentStatus {
+  /** The torrent's info hash once known; a temporary id before that (e.g. while a .torrent URL downloads). */
+  id: string;
+  name: string;
+  /** "metadata": connected to the swarm but still fetching the file list (magnet links). */
+  state: "metadata" | "downloading" | "paused" | "done" | "error";
+  /** 0..1 */
+  progress: number;
+  /** Bytes per second. */
+  downloadSpeed: number;
+  uploadSpeed: number;
+  peers: number;
+  /** Total size in bytes; 0 until the file list is known. */
+  length: number;
+  downloaded: number;
+  /** Estimated time left, or null when unknown (no peers, or not downloading). */
+  timeRemainingMs: number | null;
+  /** Folder the torrent's files are saved into. */
+  savePath: string;
+  error?: string;
+  addedAt: number;
 }
 
 /** One lookup step's outcome for a single item during "Fetch artwork & info" — what the progress dialog's log is built from. */

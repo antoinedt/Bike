@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { AppSettings, LocalFolder, NetworkShare, SiteProfile } from "../../shared/types.js";
 
 const EMPTY_SHARE = { label: "", host: "", share: "", subPath: "", domain: "", username: "", password: "" };
@@ -29,6 +29,7 @@ export default function SettingsPage({
       <FoldersSection settings={settings} refreshSettings={refreshSettings} />
       <SharesSection settings={settings} refreshSettings={refreshSettings} />
       <TmdbSection settings={settings} refreshSettings={refreshSettings} />
+      <DownloadsSection settings={settings} refreshSettings={refreshSettings} />
       <ProfilesSection settings={settings} refreshSettings={refreshSettings} />
     </div>
   );
@@ -170,6 +171,58 @@ function TmdbSection({
         </button>
         {saved && <span className="hint-inline">Saved.</span>}
       </div>
+    </section>
+  );
+}
+
+function DownloadsSection({
+  settings,
+  refreshSettings
+}: {
+  settings: AppSettings;
+  refreshSettings: () => Promise<void>;
+}) {
+  const [folder, setFolder] = useState("");
+
+  useEffect(() => {
+    void window.api.getTorrentDownloadFolder().then(setFolder);
+  }, [settings.torrentDownloadFolder]);
+
+  async function change(next: string) {
+    await window.api.updateTorrentDownloadFolder(next);
+    await refreshSettings();
+  }
+
+  async function pick() {
+    const picked = await window.api.pickFolder();
+    if (picked) await change(picked);
+  }
+
+  return (
+    <section className="settings-section">
+      <h2>Torrent downloads</h2>
+      <p className="hint">
+        Where the Downloads page saves files. Pick one of your Library folders (or a folder inside
+        one) and finished downloads show up in the Library by themselves. Downloads stop once
+        complete — nothing is seeded afterwards. Only download content you're allowed to.
+      </p>
+      <ul className="settings-list">
+        <li>
+          <span className="settings-item-label">Save to</span>
+          <span className="settings-item-sub" title={folder}>
+            {folder}
+            {!settings.torrentDownloadFolder && " (default)"}
+          </span>
+          <button className="btn btn-small" onClick={() => void pick()}>
+            Change…
+          </button>
+          {settings.torrentDownloadFolder && (
+            <button className="btn btn-small" onClick={() => void change("")}>
+              Use default
+            </button>
+          )}
+        </li>
+      </ul>
     </section>
   );
 }

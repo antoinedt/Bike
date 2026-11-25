@@ -2,7 +2,13 @@ import { useState } from "react";
 import type { AppSettings, SearchResultItem } from "../../shared/types.js";
 import ResultsTable from "../components/ResultsTable.js";
 
-export default function SearchPage({ settings }: { settings: AppSettings }) {
+export default function SearchPage({
+  settings,
+  onOpenDownloads
+}: {
+  settings: AppSettings;
+  onOpenDownloads: () => void;
+}) {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [results, setResults] = useState<SearchResultItem[]>([]);
@@ -10,6 +16,7 @@ export default function SearchPage({ settings }: { settings: AppSettings }) {
   const [downloadingUrl, setDownloadingUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [addedToDownloads, setAddedToDownloads] = useState(false);
 
   function toggleProfile(id: string) {
     setSelected((prev) => {
@@ -36,15 +43,22 @@ export default function SearchPage({ settings }: { settings: AppSettings }) {
     }
   }
 
-  async function download(result: SearchResultItem) {
+  async function download(result: SearchResultItem, externally: boolean) {
     setDownloadingUrl(result.downloadUrl);
     setError(null);
     setNotice(null);
+    setAddedToDownloads(false);
     try {
-      await window.api.downloadTorrent(result.downloadUrl);
-      setNotice(`Sent "${result.title}" to your default torrent app.`);
+      if (externally) {
+        await window.api.downloadTorrent(result.downloadUrl);
+        setNotice(`Sent "${result.title}" to your default torrent app.`);
+      } else {
+        await window.api.addTorrent(result.downloadUrl);
+        setNotice(`Added "${result.title}" to Downloads.`);
+        setAddedToDownloads(true);
+      }
     } catch (err) {
-      setError((err as Error).message);
+      setError((err as Error).message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ""));
     } finally {
       setDownloadingUrl(null);
     }
@@ -93,9 +107,26 @@ export default function SearchPage({ settings }: { settings: AppSettings }) {
           </form>
 
           {error && <p className="error">{error}</p>}
-          {notice && <p className="notice">{notice}</p>}
+          {notice && (
+            <p className="notice">
+              {notice}
+              {addedToDownloads && (
+                <>
+                  {" "}
+                  <button className="link-button" onClick={onOpenDownloads}>
+                    View downloads
+                  </button>
+                </>
+              )}
+            </p>
+          )}
 
-          <ResultsTable results={results} onDownload={(r) => void download(r)} downloadingUrl={downloadingUrl} />
+          <ResultsTable
+            results={results}
+            onDownload={(r) => void download(r, false)}
+            onOpenExternally={(r) => void download(r, true)}
+            downloadingUrl={downloadingUrl}
+          />
         </>
       )}
     </div>

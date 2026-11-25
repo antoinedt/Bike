@@ -40,7 +40,26 @@ const api = {
     return () => ipcRenderer.removeListener("network:downloadProgress", listener);
   },
   runSearch: (query: string, profileIds?: string[]) => ipcRenderer.invoke("search:run", query, profileIds),
-  downloadTorrent: (url: string) => ipcRenderer.invoke("torrent:download", url)
+  downloadTorrent: (url: string) => ipcRenderer.invoke("torrent:download", url),
+  updateTorrentDownloadFolder: (folder: string) => ipcRenderer.invoke("settings:updateTorrentDownloadFolder", folder),
+  getTorrentDownloadFolder: () => ipcRenderer.invoke("torrent:downloadFolder"),
+  getTorrents: () => ipcRenderer.invoke("torrent:list"),
+  addTorrent: (source: string) => ipcRenderer.invoke("torrent:add", source),
+  addTorrentFile: () => ipcRenderer.invoke("torrent:addFile"),
+  pauseTorrent: (id: string) => ipcRenderer.invoke("torrent:pause", id),
+  resumeTorrent: (id: string) => ipcRenderer.invoke("torrent:resume", id),
+  removeTorrent: (id: string, deleteFiles: boolean) => ipcRenderer.invoke("torrent:remove", id, deleteFiles),
+  openTorrentFolder: (id: string) => ipcRenderer.invoke("torrent:openFolder", id),
+  onTorrentUpdate: (callback: (torrents: unknown) => void) => {
+    const listener = (_e: unknown, torrents: unknown) => callback(torrents);
+    ipcRenderer.on("torrent:update", listener);
+    return () => ipcRenderer.removeListener("torrent:update", listener);
+  },
+  onLibraryChanged: (callback: () => void) => {
+    const listener = () => callback();
+    ipcRenderer.on("library:changed", listener);
+    return () => ipcRenderer.removeListener("library:changed", listener);
+  }
 };
 
 contextBridge.exposeInMainWorld("api", api);

@@ -1,6 +1,6 @@
 {
   "name": "media-library-manager",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Cross-platform desktop app to manage a media library: local device files, local network shares, and configurable site search with seamless handoff to your default torrent app.",
   "private": true,
   "main": "dist-electron/main/index.js",
@@ -10,13 +10,16 @@
     "dev:electron": "wait-on tcp:5173 && tsc -p tsconfig.electron.json && cross-env NODE_ENV=development electron .",
     "build": "tsc -p tsconfig.electron.json && vite build",
     "typecheck": "tsc -p tsconfig.electron.json --noEmit && tsc -p tsconfig.json --noEmit",
-    "dist": "npm run build && electron-builder"
+    "dist": "npm run build && electron-builder",
+    "test": "tsc -p tsconfig.electron.json && node --test --test-force-exit --test-reporter=spec \"test/**/*.test.mjs\""
   },
   "dependencies": {
     "cheerio": "^1.0.0",
     "electron-store": "^10.0.0",
     "lowdb": "^7.0.1",
-    "smb2": "^0.2.11"
+    "parse-torrent": "11.0.19",
+    "smb2": "^0.2.11",
+    "webtorrent": "2.8.5"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

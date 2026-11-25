@@ -3,10 +3,14 @@ import type { SearchResultItem } from "../../shared/types.js";
 export default function ResultsTable({
   results,
   onDownload,
+  onOpenExternally,
   downloadingUrl
 }: {
   results: SearchResultItem[];
+  /** Downloads in-app (Downloads page). */
   onDownload: (result: SearchResultItem) => void;
+  /** Hands the link to the OS's default torrent app instead. */
+  onOpenExternally: (result: SearchResultItem) => void;
   downloadingUrl: string | null;
 }) {
   if (results.length === 0) {
@@ -33,13 +37,21 @@ export default function ResultsTable({
             <td>{r.sourceProfileLabel}</td>
             <td>{r.size || "—"}</td>
             <td>{r.seeders || "—"}</td>
-            <td>
+            <td className="results-actions">
               <button
-                className="btn btn-small"
+                className="btn btn-small btn-primary"
                 onClick={() => onDownload(r)}
                 disabled={downloadingUrl === r.downloadUrl}
               >
-                {downloadingUrl === r.downloadUrl ? "Opening…" : "Download"}
+                {downloadingUrl === r.downloadUrl ? "Adding…" : "Download"}
+              </button>
+              <button
+                className="btn btn-small"
+                onClick={() => onOpenExternally(r)}
+                disabled={downloadingUrl === r.downloadUrl}
+                title="Open in your default torrent app instead"
+              >
+                Open in torrent app
               </button>
             </td>
           </tr>

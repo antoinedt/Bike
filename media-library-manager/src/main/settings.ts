@@ -6,7 +6,8 @@ const defaults: AppSettings = {
   localFolders: [],
   networkShares: [],
   siteProfiles: [],
-  tmdbApiKey: ""
+  tmdbApiKey: "",
+  torrentDownloadFolder: ""
 };
 
 const store = new Store<AppSettings>({
@@ -19,12 +20,18 @@ export function getSettings(): AppSettings {
     localFolders: store.get("localFolders"),
     networkShares: store.get("networkShares"),
     siteProfiles: store.get("siteProfiles"),
-    tmdbApiKey: store.get("tmdbApiKey", "")
+    tmdbApiKey: store.get("tmdbApiKey", ""),
+    torrentDownloadFolder: store.get("torrentDownloadFolder", "")
   };
 }
 
 export function updateTmdbApiKey(tmdbApiKey: string): void {
   store.set("tmdbApiKey", tmdbApiKey);
+}
+
+/** Empty resets to the default (Downloads/Media Library Manager). */
+export function updateTorrentDownloadFolder(folder: string): void {
+  store.set("torrentDownloadFolder", folder);
 }
 
 export function addLocalFolder(path: string, label: string): LocalFolder {

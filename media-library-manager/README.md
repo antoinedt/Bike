@@ -6,19 +6,25 @@ sources:
 - **Local device** — folders on this machine, recursively scanned for video/audio/image files.
 - **Local network** — SMB/Windows shares (e.g. a NAS), browsed and **streamed live** (seekable,
   no full download first) via an in-app player.
-- **Search** — a user-configured search against a site you have the legal right to use, with
-  results handed off to your OS's default torrent app (magnet links or `.torrent` files).
+- **Search** — a user-configured search against a site you have the legal right to use.
+- **Downloads** — a built-in torrent client: **Download** on a search result (or a pasted magnet
+  link / `.torrent` URL / `.torrent` file) downloads in-app with live progress, pause/resume and
+  remove. Downloads stop as soon as they finish (no seeding afterwards) and pick up where they
+  left off after the app restarts. If the download folder (Settings → Torrent downloads) is inside
+  one of your Library folders, finished downloads appear in the Library automatically. **Open in
+  torrent app** still hands a result to your OS's default torrent app instead.
 
 Built with Electron + React + TypeScript.
 
 ## Legal / scope note
 
-This app does not embed a torrent client, tracker, or any indexer of its own, and ships with no
-sites pre-configured. The **Search** feature only works after you add a site profile yourself in
-**Settings → Search sites**, and it only fetches sites you explicitly configure. Downloads are
-handed off to whatever application your OS already has registered for `magnet:` links / `.torrent`
-files — the app never downloads torrent content itself. Only use this against sites and content
-you're legally permitted to search and download.
+The app includes a BitTorrent client ([WebTorrent](https://webtorrent.io/)) but no tracker or
+indexer of its own, and ships with no sites pre-configured. The **Search** feature only works
+after you add a site profile yourself in **Settings → Search sites**, and it only fetches sites you
+explicitly configure; the **Downloads** page only downloads links you give it. While a download is
+running, BitTorrent shares the pieces you already have with other peers (that's how the protocol
+works); once it's complete the app stops sharing it. Only use this for content you're legally
+permitted to download.
 
 ## Project layout
 
@@ -39,7 +45,10 @@ src/
 │   │   ├── siteSearch.ts     cheerio-based generic scraper driven by SiteProfile selectors
 │   │   └── headlessFetch.ts  hidden BrowserWindow fetch for JS-rendered sites (opt-in per profile)
 │   ├── artwork/artworkFetcher.ts  title-guessing + iTunes Search API cover/poster lookup
-│   └── torrent/handoff.ts   magnet: → shell.openExternal; .torrent → download + shell.openPath
+│   └── torrent/
+│       ├── torrentManager.ts  in-app downloads on WebTorrent (add/pause/resume/remove, persistence)
+│       ├── torrentIpc.ts      wires it to the UI, notifications, and the Library
+│       └── handoff.ts         "Open in torrent app": magnet: → shell.openExternal, .torrent → shell.openPath
 ├── renderer/              React UI (Vite)
 │   ├── App.tsx, components/ (incl. StreamPlayer), pages/
 └── shared/                Types shared between main and renderer
@@ -58,6 +67,7 @@ npm run dev       # Vite dev server + Electron, with hot reload for the renderer
 npm run typecheck # tsc --noEmit for both the main and renderer projects
 npm run build      # compiles main + bundles renderer into dist/ and dist-electron/
 npm run dist        # build + package an installer with electron-builder
+npm test            # torrent download tests against a local seeder (no internet needed)
 ```
 
 ## Configuring sources
@@ -94,6 +104,13 @@ remote URL on the item (not downloaded/cached locally), so it needs the network 
 fetched, same as any `<img src>`.
 
 ## Known limitations (first version)
+
+- `webtorrent` is pinned to 2.8.5: 3.x needs Node 22, and Electron 33 ships Node 20. Its
+  dependency tree in `package-lock.json` was resolved as of late 2025 on purpose — newer
+  `parse-torrent` releases changed the `infoHash` type and break 2.8.5, so don't `npm update` those
+  packages without re-running `npm test`.
+- In-app downloads find peers via trackers, DHT and peer exchange; behind a strict NAT/firewall
+  with no UPnP, fewer peers can connect, so downloads may be slower than in a dedicated client.
 
 - The bundled `smb2` package's public API is read-only and whole-file (`readdir`/`readFile`), with
   no `stat` call — so directory listing still can't report file sizes/dates during a scan (shown

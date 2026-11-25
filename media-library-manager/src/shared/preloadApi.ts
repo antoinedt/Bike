@@ -6,7 +6,8 @@ import type {
   NetworkShare,
   ScanProgressEvent,
   SearchResultItem,
-  SiteProfile
+  SiteProfile,
+  TorrentStatus
 } from "./types.js";
 
 export interface PreloadApi {
@@ -88,7 +89,27 @@ export interface PreloadApi {
    */
   onNetworkDownloadProgress(callback: (event: DownloadProgressEvent) => void): () => void;
   runSearch(query: string, profileIds?: string[]): Promise<SearchResultItem[]>;
+  /** Hands a magnet/.torrent link to the OS's default torrent app instead of downloading in-app. */
   downloadTorrent(url: string): Promise<void>;
+  /** Empty resets to the default folder. */
+  updateTorrentDownloadFolder(folder: string): Promise<void>;
+  /** Where in-app downloads go right now (the setting, or the default). */
+  getTorrentDownloadFolder(): Promise<string>;
+  getTorrents(): Promise<TorrentStatus[]>;
+  /** Starts an in-app download from a magnet link, info hash, or http(s) .torrent URL. */
+  addTorrent(source: string): Promise<TorrentStatus>;
+  /** Opens a file picker for a .torrent file and starts downloading it; null if cancelled. */
+  addTorrentFile(): Promise<TorrentStatus | null>;
+  pauseTorrent(id: string): Promise<TorrentStatus[]>;
+  resumeTorrent(id: string): Promise<TorrentStatus[]>;
+  /** With deleteFiles, also deletes what it downloaded. */
+  removeTorrent(id: string, deleteFiles: boolean): Promise<TorrentStatus[]>;
+  /** Shows the download in the OS file manager. */
+  openTorrentFolder(id: string): Promise<void>;
+  /** Live list of downloads, pushed about once a second while any is active. Returns an unsubscribe function. */
+  onTorrentUpdate(callback: (torrents: TorrentStatus[]) => void): () => void;
+  /** Fired when a finished download was added to the Library. Returns an unsubscribe function. */
+  onLibraryChanged(callback: () => void): () => void;
 }
 
 declare global {

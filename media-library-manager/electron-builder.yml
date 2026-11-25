@@ -2,12 +2,18 @@ appId: com.medialibrarymanager.app
 productName: Media Library Manager
 directories:
   output: release
+# The torrent client's native modules (utp-native, node-datachannel, bufferutil, utf-8-validate)
+# are N-API and ship prebuilt binaries for each OS, so there's nothing to recompile for Electron
+# (and recompiling node-datachannel would need CMake + a C++ toolchain).
+npmRebuild: false
 files:
   - dist/**
   - dist-electron/**
   - package.json
 win:
   target: nsis
+  # Fixed name so the download link stays the same from one build to the next.
+  artifactName: media-library-manager-setup.${ext}
 mac:
   target: dmg
   category: public.app-category.utilities

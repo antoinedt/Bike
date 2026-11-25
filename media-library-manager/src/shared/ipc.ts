@@ -28,5 +28,17 @@ export const IPC = {
   networkDownload: "network:download",
   networkDownloadProgress: "network:downloadProgress",
   searchRun: "search:run",
-  torrentDownload: "torrent:download"
+  /** Hands a magnet/.torrent link to the OS's default torrent app (not the in-app downloader). */
+  torrentDownload: "torrent:download",
+  settingsUpdateTorrentDownloadFolder: "settings:updateTorrentDownloadFolder",
+  torrentDownloadFolder: "torrent:downloadFolder",
+  torrentList: "torrent:list",
+  torrentAdd: "torrent:add",
+  torrentAddFile: "torrent:addFile",
+  torrentPause: "torrent:pause",
+  torrentResume: "torrent:resume",
+  torrentRemove: "torrent:remove",
+  torrentOpenFolder: "torrent:openFolder",
+  torrentUpdate: "torrent:update",
+  libraryChanged: "library:changed"
 } as const;
