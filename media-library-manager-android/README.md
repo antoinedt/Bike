@@ -111,6 +111,12 @@ default — there's no touch-only gesture (swipe, long-press, drag) anywhere in 
 couldn't reach. `PlayerOverlay`'s `PlayerView` is explicitly set focusable and requests focus on
 open so D-pad/media-key input reaches ExoPlayer's own controls.
 
+On a TV (detected via `UiModeManager` / the leanback feature) the layout adapts so the media grid
+gets most of the screen: the tabs move to a side rail, the Search tab and the Settings "Search
+sites" section are hidden, and the Library's filter/path/tags sit on one line above the grid with
+the scan and fetch buttons on one line below it. Moving the D-pad between those bars and the grid
+lands on the first control or tile rather than whichever is nearest.
+
 Not verified on a real TV or emulator (no Android SDK/emulator in the sandbox that added this) —
 install a CI-built APK on an actual Google TV / Android TV device and check: it appears on the home
 screen row, and D-pad navigation/text entry (search box, Settings fields, the TMDb API key) works

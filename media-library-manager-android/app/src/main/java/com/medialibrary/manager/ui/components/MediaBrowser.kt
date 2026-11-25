@@ -1,30 +1,37 @@
 package com.medialibrary.manager.ui.components
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.AssistChip
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.dp
 import com.medialibrary.manager.model.AppSettings
 import com.medialibrary.manager.model.MediaItem
@@ -50,22 +57,24 @@ private fun segmentsForItem(item: MediaItem, settings: AppSettings): List<String
 }
 
 /**
- * Groups a flat item list into a navigable folder tree using [segmentsForItem] when no filter is
- * active. Any active filter (name text, tags, or a date range) switches to a flat search across
+ * The Library's browsing area: a slim top bar (filter field, folder path, tag chips), the grid of
+ * subfolders + files taking all the remaining height, and a slim bottom bar (scan buttons, then
+ * "Fetch artwork & info" and its options). With no filter active it browses one folder at a time
+ * using [segmentsForItem]; any active filter (name text or tags) switches to a flat search across
  * every folder instead — browsing one folder and filtering the whole library are different
- * intents. All active filter kinds combine with AND; selecting several tags matches an item with
- * ANY of them. "Fetch artwork & info" is scoped to whatever folder is currently being browsed
- * (optionally including its subfolders), not the whole library — see [onFetchInfo].
+ * intents. Several selected tags match an item with ANY of them. "Fetch artwork & info" is scoped
+ * to the folder being browsed (optionally with its subfolders), or to the filter's matches.
+ *
+ * On a TV ([isTv]) the top bar is a single line, and the remote moves between bars and grid
+ * by landing on the first control/tile, not on whatever happens to be nearest.
  */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun MediaBrowser(
     items: List<MediaItem>,
     settings: AppSettings,
     filter: String,
     tagFilter: List<String> = emptyList(),
-    dateFrom: Long? = null,
-    dateTo: Long? = null,
     onOpen: (MediaItem) -> Unit,
     onItemUpdated: (title: String, year: String, tags: List<String>, artworkUrl: String?, item: MediaItem) -> Unit,
     onClearInfo: (MediaItem) -> Unit,
@@ -75,53 +84,154 @@ fun MediaBrowser(
     onDownload: ((MediaItem) -> Unit)? = null,
     downloadingItemId: String? = null,
     downloadProgress: Float? = null,
-    /** Attached to the first control of this browser's top row, so the screen above can send D-pad Down here. */
-    topFocusRequester: FocusRequester? = null,
-    /** Where D-pad Up goes from this browser's top row. */
-    aboveFocusRequester: FocusRequester = FocusRequester.Default,
+    isTv: Boolean = false,
+    /** First thing in the top bar. */
+    filterField: @Composable () -> Unit = {},
+    /** Last thing in the top bar. */
+    tagChips: @Composable () -> Unit = {},
+    /** First things in the bottom bar. */
+    scanButtons: @Composable () -> Unit = {},
+    /** Attached (by the caller) to [filterField]: where Up from the grid's top row goes. */
+    topBarFirst: FocusRequester? = null,
+    /** Attached (by the caller) to the first *enabled* scan button, or null if none is enabled. */
+    bottomBarFirst: FocusRequester? = null,
     modifier: Modifier = Modifier
 ) {
     var path by remember { mutableStateOf(listOf<String>()) }
     var includeSubfolders by remember { mutableStateOf(false) }
     var forceRefetch by remember { mutableStateOf(false) }
-    val crumbRequester = remember { FocusRequester() }
-    val fetchRowRequester = remember { FocusRequester() }
+    var browserHasFocus by remember { mutableStateOf(false) }
+    val gridFocus = remember { GridFocus() }
+    val fetchFirst = remember { FocusRequester() }
+    // Scan buttons are disabled (unfocusable) while scanning; the fetch options never are.
+    val bottomEntry = bottomBarFirst ?: fetchFirst
 
     val allTags = remember(items) { items.flatMap { it.tags }.distinct().sorted() }
-
-    val hasActiveFilter = filter.isNotBlank() || tagFilter.isNotEmpty() || dateFrom != null || dateTo != null
+    val hasActiveFilter = filter.isNotBlank() || tagFilter.isNotEmpty()
     fun matches(item: MediaItem): Boolean {
         if (filter.isNotBlank() && !item.name.contains(filter, ignoreCase = true)) return false
         if (tagFilter.isNotEmpty() && item.tags.none { it in tagFilter }) return false
-        if (dateFrom != null && item.modifiedAtMillis < dateFrom) return false
-        if (dateTo != null && item.modifiedAtMillis > dateTo) return false
         return true
     }
 
-    // Up/Down between this browser's control rows always lands on the row's first control. Left to
-    // itself, the D-pad picks whatever's nearest the *center* of the control it's leaving, which on
-    // a wide TV screen is often the second or third control in the row.
+    val depth = path.size
+    val folders: List<String>
+    val files: List<MediaItem>
+    val fetchScope: List<MediaItem>
+    if (hasActiveFilter) {
+        folders = emptyList()
+        files = items.filter(::matches)
+        fetchScope = files
+    } else {
+        val subfolders = sortedSetOf<String>()
+        val filesHere = mutableListOf<MediaItem>()
+        val filesHereAndBelow = mutableListOf<MediaItem>()
+        for (item in items) {
+            val segments = segmentsForItem(item, settings)
+            if (segments.size < depth) continue
+            if ((0 until depth).any { segments.getOrNull(it) != path[it] }) continue
+            filesHereAndBelow += item
+            if (segments.size == depth) filesHere += item else subfolders += segments[depth]
+        }
+        folders = subfolders.toList()
+        files = filesHere
+        fetchScope = if (includeSubfolders) filesHereAndBelow else filesHere
+    }
+    val showSubfolderToggle = !hasActiveFilter && folders.isNotEmpty()
+    val gridHasTiles = folders.isNotEmpty() || files.isNotEmpty()
+
+    // On a TV, opening a folder (or going back up) would otherwise leave nothing focused, since the
+    // tile you clicked is gone — land on the new folder's first tile instead. Same on first load.
+    LaunchedEffect(path) {
+        gridFocus.state.scrollToItem(0)
+        if (isTv) {
+            withFrameNanos { }
+            gridFocus.focusFirstVisible()
+        }
+    }
+    LaunchedEffect(gridHasTiles) {
+        if (isTv && gridHasTiles && !browserHasFocus) {
+            withFrameNanos { }
+            gridFocus.focusFirstVisible()
+        }
+    }
+
     @Composable
-    fun FetchInfoRow(scope: List<MediaItem>, showSubfolderToggle: Boolean, upTarget: FocusRequester, isTopRow: Boolean) {
-        val first = Modifier
-            .focusRequester(fetchRowRequester)
-            .then(if (isTopRow && topFocusRequester != null) Modifier.focusRequester(topFocusRequester) else Modifier)
-            .focusProperties { up = upTarget }
-        val rest = Modifier.focusProperties { up = upTarget }
-        // FlowRow, not a plain Row: on a narrow phone (e.g. a folded Galaxy Z Flip's cover/inner
-        // width), two checkboxes + labels + this button don't all fit on one line. A plain Row
-        // would squeeze the button down to almost no width instead of letting it keep its natural
-        // size, wrapping its text across many lines into a tall unreadable sliver; a scrollable
-        // Row keeps the size right but hides the button off-screen with no visible hint to swipe.
-        // Wrapping onto a second line instead guarantees every control is actually visible,
-        // full-size, with no gesture required.
+    fun RowScope.Crumbs() {
+        if (hasActiveFilter || depth == 0) return
+        TextButton(onClick = { path = emptyList() }) { Text("Root") }
+        path.forEachIndexed { index, segment ->
+            Text("/", modifier = Modifier.align(Alignment.CenterVertically))
+            TextButton(onClick = { path = path.take(index + 1) }, enabled = index != depth - 1) {
+                Text(segment)
+            }
+        }
+    }
+
+    Column(modifier.onFocusChanged { browserHasFocus = it.hasFocus }) {
+        if (isTv) {
+            // One line, so Down from anywhere in it can go straight to the grid's first tile.
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth().onPreviewKeyEvent { event ->
+                    if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionDown) {
+                        gridFocus.focusFirstVisible() || runCatching { bottomEntry.requestFocus() }.isSuccess
+                    } else {
+                        false
+                    }
+                }
+            ) {
+                filterField()
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState())
+                ) {
+                    Crumbs()
+                    tagChips()
+                }
+            }
+        } else {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                filterField()
+                Crumbs()
+                tagChips()
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        MediaGrid(
+            items = files,
+            allTags = allTags,
+            folders = folders,
+            onOpenFolder = { name -> path = path + name },
+            gridFocus = gridFocus,
+            upFromFirstRow = topBarFirst,
+            downFromLastRow = bottomEntry,
+            onOpen = onOpen,
+            onItemUpdated = onItemUpdated,
+            onClearInfo = onClearInfo,
+            onPickImage = onPickImage,
+            onDownload = onDownload,
+            downloadingItemId = downloadingItemId,
+            downloadProgress = downloadProgress,
+            modifier = Modifier.weight(1f).fillMaxWidth()
+        )
+        Spacer(Modifier.height(4.dp))
+        // FlowRow, not a plain Row: on a narrow phone (e.g. a folded Galaxy Z Flip) these don't
+        // all fit on one line, and a plain Row would squeeze the buttons into unreadable slivers.
         FlowRow(
             verticalArrangement = Arrangement.spacedBy(4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            scanButtons()
             if (showSubfolderToggle) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = includeSubfolders, onCheckedChange = { includeSubfolders = it }, modifier = first)
+                    Checkbox(
+                        checked = includeSubfolders,
+                        onCheckedChange = { includeSubfolders = it },
+                        modifier = Modifier.focusRequester(fetchFirst)
+                    )
                     Text("Include subfolders")
                 }
             }
@@ -129,121 +239,16 @@ fun MediaBrowser(
                 Checkbox(
                     checked = forceRefetch,
                     onCheckedChange = { forceRefetch = it },
-                    modifier = if (showSubfolderToggle) rest else first
+                    modifier = if (showSubfolderToggle) Modifier else Modifier.focusRequester(fetchFirst)
                 )
                 Text("Force")
             }
             Button(
-                onClick = { onFetchInfo(scope.map { it.id }.toSet(), forceRefetch) },
-                enabled = !fetchingInfo && scope.isNotEmpty(),
-                modifier = rest
+                onClick = { onFetchInfo(fetchScope.map { it.id }.toSet(), forceRefetch) },
+                enabled = !fetchingInfo && fetchScope.isNotEmpty()
             ) {
                 Text(if (fetchingInfo) "Fetching artwork & info…" else "Fetch artwork & info", maxLines = 1)
             }
-        }
-    }
-
-    if (hasActiveFilter) {
-        val matched = items.filter(::matches)
-        Column(modifier = modifier) {
-            FetchInfoRow(matched, showSubfolderToggle = false, upTarget = aboveFocusRequester, isTopRow = true)
-            MediaGrid(
-                items = matched,
-                allTags = allTags,
-                onOpen = onOpen,
-                onItemUpdated = onItemUpdated,
-                onClearInfo = onClearInfo,
-                onPickImage = onPickImage,
-                onDownload = onDownload,
-                downloadingItemId = downloadingItemId,
-                downloadProgress = downloadProgress,
-                modifier = Modifier.weight(1f)
-            )
-        }
-        return
-    }
-
-    val depth = path.size
-    val subfolders = sortedSetOf<String>()
-    val filesHere = mutableListOf<MediaItem>()
-    val filesHereAndBelow = mutableListOf<MediaItem>()
-    for (item in items) {
-        val segments = segmentsForItem(item, settings)
-        if (segments.size < depth) continue
-        if ((0 until depth).any { segments.getOrNull(it) != path[it] }) continue
-        filesHereAndBelow += item
-        if (segments.size == depth) {
-            filesHere += item
-        } else {
-            subfolders += segments[depth]
-        }
-    }
-    val scope = if (includeSubfolders) filesHereAndBelow else filesHere
-
-    // Root is only focusable (enabled) once you're inside a folder; at the top level the fetch row
-    // is this browser's first focusable row instead.
-    val crumbsFocusable = depth > 0
-    Column(modifier = modifier) {
-        if (depth > 0 || subfolders.isNotEmpty()) {
-            // FlowRow (not LazyRow) so every crumb stays composed: the D-pad targets below point
-            // at Root, and a focus target scrolled out of a lazy list no longer exists to land on.
-            FlowRow {
-                val crumbNav = Modifier.focusProperties {
-                    up = aboveFocusRequester
-                    down = fetchRowRequester
-                }
-                TextButton(
-                    onClick = { path = emptyList() },
-                    enabled = depth > 0,
-                    modifier = (
-                        if (crumbsFocusable && topFocusRequester != null) {
-                            Modifier.focusRequester(crumbRequester).focusRequester(topFocusRequester)
-                        } else {
-                            Modifier.focusRequester(crumbRequester)
-                        }
-                        ).then(crumbNav)
-                ) { Text("Root") }
-                path.forEachIndexed { index, segment ->
-                    Text(" / ", modifier = Modifier.padding(top = 10.dp))
-                    TextButton(
-                        onClick = { path = path.take(index + 1) },
-                        enabled = index != depth - 1,
-                        modifier = crumbNav
-                    ) {
-                        Text(segment)
-                    }
-                }
-            }
-        }
-        FetchInfoRow(
-            scope,
-            showSubfolderToggle = subfolders.isNotEmpty(),
-            upTarget = if (crumbsFocusable) crumbRequester else aboveFocusRequester,
-            isTopRow = !crumbsFocusable
-        )
-        if (subfolders.isNotEmpty()) {
-            LazyRow(
-                contentPadding = PaddingValues(vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(subfolders.toList()) { name ->
-                    AssistChip(onClick = { path = path + name }, label = { Text("📁 $name") })
-                }
-            }
-        }
-        if (filesHere.isNotEmpty() || subfolders.isEmpty()) {
-            MediaGrid(
-                items = filesHere,
-                allTags = allTags,
-                onOpen = onOpen,
-                onItemUpdated = onItemUpdated,
-                onClearInfo = onClearInfo,
-                onPickImage = onPickImage,
-                onDownload = onDownload,
-                downloadingItemId = downloadingItemId,
-                downloadProgress = downloadProgress,
-                modifier = Modifier.weight(1f)
-            )
         }
     }
 }

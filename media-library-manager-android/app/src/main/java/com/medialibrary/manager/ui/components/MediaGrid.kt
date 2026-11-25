@@ -11,8 +11,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
@@ -24,6 +25,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -31,7 +33,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -50,6 +60,35 @@ private fun formatSize(bytes: Long): String {
     return "%.${if (group == 0) 0 else 1}f %s".format(value, units[group])
 }
 
+/**
+ * The grid's scroll state plus what a TV remote needs from it: which tile has focus, and a focus
+ * handle for each tile currently on screen. Only on-screen tiles are registered — a tile scrolled
+ * out of a lazy grid no longer exists, so it can't be a focus target.
+ */
+class GridFocus {
+    val state = LazyGridState()
+    internal val tiles = mutableMapOf<Int, FocusRequester>()
+    internal var focusedIndex = -1
+
+    /** Focuses the top-left tile currently on screen. False if there's none (empty grid). */
+    fun focusFirstVisible(): Boolean {
+        val requester = tiles[state.firstVisibleItemIndex] ?: return false
+        return runCatching { requester.requestFocus() }.isSuccess
+    }
+}
+
+@Composable
+private fun rememberTileModifier(gridFocus: GridFocus, index: Int): Modifier {
+    val requester = remember { FocusRequester() }
+    DisposableEffect(index, requester) {
+        gridFocus.tiles[index] = requester
+        onDispose { if (gridFocus.tiles[index] === requester) gridFocus.tiles.remove(index) }
+    }
+    return Modifier
+        .focusRequester(requester)
+        .onFocusChanged { if (it.hasFocus) gridFocus.focusedIndex = index }
+}
+
 private fun iconFor(kind: MediaKind) = when (kind) {
     MediaKind.VIDEO -> "🎬"
     MediaKind.AUDIO -> "🎵"
@@ -57,10 +96,20 @@ private fun iconFor(kind: MediaKind) = when (kind) {
     MediaKind.OTHER -> "📄"
 }
 
+/**
+ * Subfolders (as 📁 tiles, first) and files. With a TV remote, Up from the top row goes to
+ * [upFromFirstRow] and Down from the bottom row to [downFromLastRow] — the first control of the bar
+ * above/below — rather than whichever control happens to be nearest the tile.
+ */
 @Composable
 fun MediaGrid(
     items: List<MediaItem>,
     allTags: List<String>,
+    folders: List<String> = emptyList(),
+    onOpenFolder: (String) -> Unit = {},
+    gridFocus: GridFocus = remember { GridFocus() },
+    upFromFirstRow: FocusRequester? = null,
+    downFromLastRow: FocusRequester? = null,
     onOpen: (MediaItem) -> Unit,
     onItemUpdated: (title: String, year: String, tags: List<String>, artworkUrl: String?, item: MediaItem) -> Unit,
     onClearInfo: (MediaItem) -> Unit,
@@ -73,7 +122,7 @@ fun MediaGrid(
 ) {
     var editingItem by remember { mutableStateOf<MediaItem?>(null) }
 
-    if (items.isEmpty()) {
+    if (items.isEmpty() && folders.isEmpty()) {
         Box(modifier.fillMaxWidth().padding(24.dp)) {
             Text("No media found yet. Try a scan.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -81,13 +130,41 @@ fun MediaGrid(
     }
     LazyVerticalGrid(
         columns = GridCells.Adaptive(minSize = 120.dp),
-        modifier = modifier,
+        state = gridFocus.state,
+        modifier = modifier.onPreviewKeyEvent { event ->
+            if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+            val layout = gridFocus.state.layoutInfo
+            val focused = layout.visibleItemsInfo.firstOrNull { it.index == gridFocus.focusedIndex }
+                ?: return@onPreviewKeyEvent false
+            val target = when (event.key) {
+                Key.DirectionUp -> upFromFirstRow.takeIf { focused.row == 0 }
+                Key.DirectionDown -> {
+                    val lastTile = layout.visibleItemsInfo.firstOrNull { it.index == layout.totalItemsCount - 1 }
+                    downFromLastRow.takeIf { lastTile != null && lastTile.row == focused.row }
+                }
+                else -> null
+            } ?: return@onPreviewKeyEvent false
+            runCatching { target.requestFocus() }
+            true
+        },
         contentPadding = PaddingValues(8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        items(items, key = { it.id }) { item ->
-            Card(onClick = { onOpen(item) }) {
+        itemsIndexed(folders, key = { _, name -> "folder:$name" }) { index, name ->
+            Card(onClick = { onOpenFolder(name) }, modifier = rememberTileModifier(gridFocus, index)) {
+                Column(
+                    modifier = Modifier.padding(12.dp).fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text("📁", style = MaterialTheme.typography.headlineMedium)
+                    Box(Modifier.height(4.dp))
+                    Text(name, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+        itemsIndexed(items, key = { _, item -> item.id }) { fileIndex, item ->
+            Card(onClick = { onOpen(item) }, modifier = rememberTileModifier(gridFocus, folders.size + fileIndex)) {
                 Box {
                     Column(
                         modifier = Modifier.padding(12.dp).fillMaxWidth(),

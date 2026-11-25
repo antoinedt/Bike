@@ -1,8 +1,10 @@
 package com.medialibrary.manager
 
 import android.Manifest
+import android.app.UiModeManager
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -11,6 +13,9 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.documentfile.provider.DocumentFile
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
@@ -19,6 +24,8 @@ import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -102,12 +109,14 @@ class MainActivity : ComponentActivity() {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
         }
         if (missing.isNotEmpty()) requestPermissions.launch(missing.toTypedArray())
+        val isTv = isTelevision()
 
         setContent {
             MediaLibraryTheme {
                 Surface {
                     MediaLibraryApp(
                         viewModel = viewModel,
+                        isTv = isTv,
                         onPickFolder = { pickFolder.launch(null) },
                         onChangeFolder = { id ->
                             pendingFolderEditId = id
@@ -121,6 +130,13 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    /** Google TV / Android TV. Checks the leanback feature too, since some TV boxes don't report the TV UI mode. */
+    private fun isTelevision(): Boolean {
+        val uiMode = getSystemService(UiModeManager::class.java)?.currentModeType
+        return uiMode == Configuration.UI_MODE_TYPE_TELEVISION ||
+            packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
     }
 
     private fun requiredMediaPermissions(): Array<String> {
@@ -142,6 +158,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun MediaLibraryApp(
     viewModel: MediaLibraryViewModel,
+    isTv: Boolean,
     onPickFolder: () -> Unit,
     onChangeFolder: (String) -> Unit,
     onPickImage: (onPicked: (String) -> Unit) -> Unit
@@ -158,37 +175,59 @@ private fun MediaLibraryApp(
         }
     }
 
+    // On a TV: no site search (nothing to hand a torrent to, and typing queries with a remote is
+    // painful), and the tabs sit in a side rail instead of a bottom bar so the media grid gets
+    // most of the screen's height.
+    val tabs = if (isTv) TABS.filter { it.route != "search" } else TABS
+    val backStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = backStackEntry?.destination?.route
+    val goTo: (String) -> Unit = { route ->
+        navController.navigate(route) {
+            popUpTo(navController.graph.startDestinationId) { saveState = true }
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
-            val backStackEntry by navController.currentBackStackEntryAsState()
-            val currentRoute = backStackEntry?.destination?.route
-            NavigationBar {
-                TABS.forEach { tab ->
-                    NavigationBarItem(
-                        selected = currentRoute == tab.route,
-                        onClick = {
-                            navController.navigate(tab.route) {
-                                popUpTo(navController.graph.startDestinationId) { saveState = true }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        },
-                        icon = { Icon(tab.icon, contentDescription = tab.label) },
-                        label = { Text(tab.label) }
-                    )
+            if (!isTv) {
+                NavigationBar {
+                    tabs.forEach { tab ->
+                        NavigationBarItem(
+                            selected = currentRoute == tab.route,
+                            onClick = { goTo(tab.route) },
+                            icon = { Icon(tab.icon, contentDescription = tab.label) },
+                            label = { Text(tab.label) }
+                        )
+                    }
                 }
             }
         }
     ) { padding ->
-        NavHost(
-            navController = navController,
-            startDestination = "library",
-            modifier = Modifier.padding(padding)
-        ) {
-            composable("library") { LibraryScreen(viewModel, onPickImage) }
-            composable("search") { SearchScreen(viewModel) }
-            composable("settings") { SettingsScreen(viewModel, onPickFolder, onChangeFolder) }
+        Row(Modifier.padding(padding).fillMaxSize()) {
+            if (isTv) {
+                NavigationRail {
+                    tabs.forEach { tab ->
+                        NavigationRailItem(
+                            selected = currentRoute == tab.route,
+                            onClick = { goTo(tab.route) },
+                            icon = { Icon(tab.icon, contentDescription = tab.label) },
+                            label = { Text(tab.label) }
+                        )
+                    }
+                }
+            }
+            NavHost(
+                navController = navController,
+                startDestination = "library",
+                modifier = Modifier.weight(1f).fillMaxHeight()
+            ) {
+                composable("library") { LibraryScreen(viewModel, isTv, onPickImage) }
+                if (!isTv) composable("search") { SearchScreen(viewModel) }
+                composable("settings") { SettingsScreen(viewModel, onPickFolder, onChangeFolder, showSearchSites = !isTv) }
+            }
         }
     }
 

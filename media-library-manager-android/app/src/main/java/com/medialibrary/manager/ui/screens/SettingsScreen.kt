@@ -31,7 +31,13 @@ import com.medialibrary.manager.model.SiteProfile
 import com.medialibrary.manager.ui.MediaLibraryViewModel
 
 @Composable
-fun SettingsScreen(viewModel: MediaLibraryViewModel, onPickFolder: () -> Unit, onChangeFolder: (String) -> Unit) {
+fun SettingsScreen(
+    viewModel: MediaLibraryViewModel,
+    onPickFolder: () -> Unit,
+    onChangeFolder: (String) -> Unit,
+    /** False on a TV, which has no Search tab to use these with. */
+    showSearchSites: Boolean = true
+) {
     val settings by viewModel.settings.collectAsState()
     val shareTestResult by viewModel.shareTestResult.collectAsState()
 
@@ -44,8 +50,10 @@ fun SettingsScreen(viewModel: MediaLibraryViewModel, onPickFolder: () -> Unit, o
         item { SharesSection(settings.networkShares, shareTestResult, viewModel) }
         item { HorizontalDivider() }
         item { TmdbSection(settings.tmdbApiKey, viewModel) }
-        item { HorizontalDivider() }
-        item { ProfilesSection(settings.siteProfiles, viewModel) }
+        if (showSearchSites) {
+            item { HorizontalDivider() }
+            item { ProfilesSection(settings.siteProfiles, viewModel) }
+        }
     }
 }
 
