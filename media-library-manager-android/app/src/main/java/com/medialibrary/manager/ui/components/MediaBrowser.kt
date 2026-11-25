@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
@@ -23,6 +22,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.unit.dp
 import com.medialibrary.manager.model.AppSettings
 import com.medialibrary.manager.model.MediaItem
@@ -73,11 +75,17 @@ fun MediaBrowser(
     onDownload: ((MediaItem) -> Unit)? = null,
     downloadingItemId: String? = null,
     downloadProgress: Float? = null,
+    /** Attached to the first control of this browser's top row, so the screen above can send D-pad Down here. */
+    topFocusRequester: FocusRequester? = null,
+    /** Where D-pad Up goes from this browser's top row. */
+    aboveFocusRequester: FocusRequester = FocusRequester.Default,
     modifier: Modifier = Modifier
 ) {
     var path by remember { mutableStateOf(listOf<String>()) }
     var includeSubfolders by remember { mutableStateOf(false) }
     var forceRefetch by remember { mutableStateOf(false) }
+    val crumbRequester = remember { FocusRequester() }
+    val fetchRowRequester = remember { FocusRequester() }
 
     val allTags = remember(items) { items.flatMap { it.tags }.distinct().sorted() }
 
@@ -90,8 +98,16 @@ fun MediaBrowser(
         return true
     }
 
+    // Up/Down between this browser's control rows always lands on the row's first control. Left to
+    // itself, the D-pad picks whatever's nearest the *center* of the control it's leaving, which on
+    // a wide TV screen is often the second or third control in the row.
     @Composable
-    fun FetchInfoRow(scope: List<MediaItem>, showSubfolderToggle: Boolean) {
+    fun FetchInfoRow(scope: List<MediaItem>, showSubfolderToggle: Boolean, upTarget: FocusRequester, isTopRow: Boolean) {
+        val first = Modifier
+            .focusRequester(fetchRowRequester)
+            .then(if (isTopRow && topFocusRequester != null) Modifier.focusRequester(topFocusRequester) else Modifier)
+            .focusProperties { up = upTarget }
+        val rest = Modifier.focusProperties { up = upTarget }
         // FlowRow, not a plain Row: on a narrow phone (e.g. a folded Galaxy Z Flip's cover/inner
         // width), two checkboxes + labels + this button don't all fit on one line. A plain Row
         // would squeeze the button down to almost no width instead of letting it keep its natural
@@ -105,17 +121,22 @@ fun MediaBrowser(
         ) {
             if (showSubfolderToggle) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = includeSubfolders, onCheckedChange = { includeSubfolders = it })
+                    Checkbox(checked = includeSubfolders, onCheckedChange = { includeSubfolders = it }, modifier = first)
                     Text("Include subfolders")
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked = forceRefetch, onCheckedChange = { forceRefetch = it })
+                Checkbox(
+                    checked = forceRefetch,
+                    onCheckedChange = { forceRefetch = it },
+                    modifier = if (showSubfolderToggle) rest else first
+                )
                 Text("Force")
             }
             Button(
                 onClick = { onFetchInfo(scope.map { it.id }.toSet(), forceRefetch) },
-                enabled = !fetchingInfo && scope.isNotEmpty()
+                enabled = !fetchingInfo && scope.isNotEmpty(),
+                modifier = rest
             ) {
                 Text(if (fetchingInfo) "Fetching artwork & info…" else "Fetch artwork & info", maxLines = 1)
             }
@@ -125,7 +146,7 @@ fun MediaBrowser(
     if (hasActiveFilter) {
         val matched = items.filter(::matches)
         Column(modifier = modifier) {
-            FetchInfoRow(matched, showSubfolderToggle = false)
+            FetchInfoRow(matched, showSubfolderToggle = false, upTarget = aboveFocusRequester, isTopRow = true)
             MediaGrid(
                 items = matched,
                 allTags = allTags,
@@ -159,21 +180,47 @@ fun MediaBrowser(
     }
     val scope = if (includeSubfolders) filesHereAndBelow else filesHere
 
+    // Root is only focusable (enabled) once you're inside a folder; at the top level the fetch row
+    // is this browser's first focusable row instead.
+    val crumbsFocusable = depth > 0
     Column(modifier = modifier) {
         if (depth > 0 || subfolders.isNotEmpty()) {
-            LazyRow {
-                item {
-                    TextButton(onClick = { path = emptyList() }, enabled = depth > 0) { Text("Root") }
+            // FlowRow (not LazyRow) so every crumb stays composed: the D-pad targets below point
+            // at Root, and a focus target scrolled out of a lazy list no longer exists to land on.
+            FlowRow {
+                val crumbNav = Modifier.focusProperties {
+                    up = aboveFocusRequester
+                    down = fetchRowRequester
                 }
-                itemsIndexed(path) { index, segment ->
+                TextButton(
+                    onClick = { path = emptyList() },
+                    enabled = depth > 0,
+                    modifier = (
+                        if (crumbsFocusable && topFocusRequester != null) {
+                            Modifier.focusRequester(crumbRequester).focusRequester(topFocusRequester)
+                        } else {
+                            Modifier.focusRequester(crumbRequester)
+                        }
+                        ).then(crumbNav)
+                ) { Text("Root") }
+                path.forEachIndexed { index, segment ->
                     Text(" / ", modifier = Modifier.padding(top = 10.dp))
-                    TextButton(onClick = { path = path.take(index + 1) }, enabled = index != depth - 1) {
+                    TextButton(
+                        onClick = { path = path.take(index + 1) },
+                        enabled = index != depth - 1,
+                        modifier = crumbNav
+                    ) {
                         Text(segment)
                     }
                 }
             }
         }
-        FetchInfoRow(scope, showSubfolderToggle = subfolders.isNotEmpty())
+        FetchInfoRow(
+            scope,
+            showSubfolderToggle = subfolders.isNotEmpty(),
+            upTarget = if (crumbsFocusable) crumbRequester else aboveFocusRequester,
+            isTopRow = !crumbsFocusable
+        )
         if (subfolders.isNotEmpty()) {
             LazyRow(
                 contentPadding = PaddingValues(vertical = 4.dp),

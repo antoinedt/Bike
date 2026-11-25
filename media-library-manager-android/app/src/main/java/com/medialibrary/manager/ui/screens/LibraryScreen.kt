@@ -26,6 +26,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.medialibrary.manager.model.MediaItem
@@ -64,6 +67,23 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, onPickImage: (onPicked: (Str
     var dateFrom by remember { mutableStateOf("") }
     var dateTo by remember { mutableStateOf("") }
 
+    // D-pad routing between the screen's rows (TV remote): moving up/down into a row always lands
+    // on that row's first control. Left alone, Compose picks whatever is nearest the *center* of
+    // the control you're leaving — so on a wide TV, Down from the full-width Filter field
+    // highlighted "Scan shares" instead of "Scan folders".
+    val scanFoldersRequester = remember { FocusRequester() }
+    val scanSharesRequester = remember { FocusRequester() }
+    val dateFromRequester = remember { FocusRequester() }
+    val browserTopRequester = remember { FocusRequester() }
+    // A disabled (scanning) button can't take focus, so route to the first one that can.
+    val scanRowFirst = when {
+        !scanningLocal -> scanFoldersRequester
+        !scanningNetwork -> scanSharesRequester
+        else -> FocusRequester.Default
+    }
+    val scanButtonNav = Modifier.focusProperties { down = dateFromRequester }
+    val hasTags = items.any { it.tags.isNotEmpty() }
+
     if (showScanDialog) {
         ScanProgressDialog(
             running = fetchingArtwork,
@@ -83,11 +103,15 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, onPickImage: (onPicked: (Str
             onValueChange = { filter = it },
             label = { Text("Filter") },
             singleLine = true,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth().focusProperties { down = scanRowFirst }
         )
         Spacer(Modifier.height(8.dp))
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { viewModel.scanLocal() }, enabled = !scanningLocal) {
+            Button(
+                onClick = { viewModel.scanLocal() },
+                enabled = !scanningLocal,
+                modifier = Modifier.focusRequester(scanFoldersRequester).then(scanButtonNav)
+            ) {
                 if (scanningLocal) {
                     CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
                 } else {
@@ -96,7 +120,11 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, onPickImage: (onPicked: (Str
                 Spacer(Modifier.width(4.dp))
                 Text(if (scanningLocal) "Scanning…" else "Scan folders")
             }
-            Button(onClick = { viewModel.scanNetwork() }, enabled = !scanningNetwork) {
+            Button(
+                onClick = { viewModel.scanNetwork() },
+                enabled = !scanningNetwork,
+                modifier = Modifier.focusRequester(scanSharesRequester).then(scanButtonNav)
+            ) {
                 if (scanningNetwork) {
                     CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
                 } else {
@@ -130,7 +158,10 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, onPickImage: (onPicked: (Str
             dateFrom = dateFrom,
             dateTo = dateTo,
             onDateFromChange = { dateFrom = it },
-            onDateToChange = { dateTo = it }
+            onDateToChange = { dateTo = it },
+            dateFromFocusRequester = dateFromRequester,
+            aboveFocusRequester = scanRowFirst,
+            belowFocusRequester = browserTopRequester
         )
         Spacer(Modifier.height(8.dp))
         MediaBrowser(
@@ -157,6 +188,10 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, onPickImage: (onPicked: (Str
             onDownload = { viewModel.downloadNetworkItem(it) },
             downloadingItemId = downloadingItemId,
             downloadProgress = downloadProgress,
+            topFocusRequester = browserTopRequester,
+            // With tags showing, Up from the browser's top row goes to the nearest chip above it
+            // (they wrap onto several lines, so "first chip" would skip lines); otherwise to "From".
+            aboveFocusRequester = if (hasTags) FocusRequester.Default else dateFromRequester,
             modifier = Modifier.weight(1f)
         )
     }
