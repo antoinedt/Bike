@@ -13,7 +13,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+import com.medialibrary.manager.ui.components.AppTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -105,7 +105,7 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, isTv: Boolean, onPickImage: 
             isTv = isTv,
             filterField = {
                 // A placeholder rather than a floating label keeps the field one line tall.
-                OutlinedTextField(
+                AppTextField(
                     value = filter,
                     onValueChange = { filter = it },
                     placeholder = { Text("Filter") },

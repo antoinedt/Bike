@@ -14,7 +14,6 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -91,11 +90,11 @@ fun MediaDetailsDialog(
                         Text("Choose image…")
                     }
                 }
-                OutlinedTextField(
+                AppTextField(
                     title, { title = it },
                     label = { Text("Title") }, singleLine = true, modifier = Modifier.fillMaxWidth()
                 )
-                OutlinedTextField(
+                AppTextField(
                     year, { year = it },
                     label = { Text("Year") }, singleLine = true, modifier = Modifier.fillMaxWidth()
                 )
@@ -106,7 +105,7 @@ fun MediaDetailsDialog(
                         }
                     }
                 }
-                OutlinedTextField(
+                AppTextField(
                     tagInput, { tagInput = it },
                     label = { Text("Add tag") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),

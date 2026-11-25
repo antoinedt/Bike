@@ -32,6 +32,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -44,6 +45,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.medialibrary.manager.ui.MediaLibraryViewModel
+import com.medialibrary.manager.ui.components.LocalIsTv
 import com.medialibrary.manager.ui.components.PlayerOverlay
 import com.medialibrary.manager.ui.screens.LibraryScreen
 import com.medialibrary.manager.ui.screens.SearchScreen
@@ -114,19 +116,21 @@ class MainActivity : ComponentActivity() {
         setContent {
             MediaLibraryTheme {
                 Surface {
-                    MediaLibraryApp(
-                        viewModel = viewModel,
-                        isTv = isTv,
-                        onPickFolder = { pickFolder.launch(null) },
-                        onChangeFolder = { id ->
-                            pendingFolderEditId = id
-                            pickFolder.launch(null)
-                        },
-                        onPickImage = { onPicked ->
-                            pendingImagePick = onPicked
-                            pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                        }
-                    )
+                    CompositionLocalProvider(LocalIsTv provides isTv) {
+                        MediaLibraryApp(
+                            viewModel = viewModel,
+                            isTv = isTv,
+                            onPickFolder = { pickFolder.launch(null) },
+                            onChangeFolder = { id ->
+                                pendingFolderEditId = id
+                                pickFolder.launch(null)
+                            },
+                            onPickImage = { onPicked ->
+                                pendingImagePick = onPicked
+                                pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            }
+                        )
+                    }
                 }
             }
         }

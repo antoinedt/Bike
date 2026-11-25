@@ -12,7 +12,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+import com.medialibrary.manager.ui.components.AppTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -78,7 +78,7 @@ private fun FoldersSection(
         folders.forEach { folder ->
             if (editingId == folder.id) {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    OutlinedTextField(
+                    AppTextField(
                         label, { label = it },
                         label = { Text("Label") }, singleLine = true, modifier = Modifier.fillMaxWidth()
                     )
@@ -163,13 +163,13 @@ private fun SharesSection(shares: List<NetworkShare>, testResult: String?, viewM
             Text("Editing \"${label.ifBlank { host }}\" — Save changes to apply, or Cancel.", style = MaterialTheme.typography.bodySmall)
         }
 
-        OutlinedTextField(label, { label = it }, label = { Text("Label") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(host, { host = it }, label = { Text("Host / IP") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(share, { share = it }, label = { Text("Share name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(subPath, { subPath = it }, label = { Text("Sub-path (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(domain, { domain = it }, label = { Text("Domain (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(username, { username = it }, label = { Text("Username") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(
+        AppTextField(label, { label = it }, label = { Text("Label") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        AppTextField(host, { host = it }, label = { Text("Host / IP") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        AppTextField(share, { share = it }, label = { Text("Share name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        AppTextField(subPath, { subPath = it }, label = { Text("Sub-path (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        AppTextField(domain, { domain = it }, label = { Text("Domain (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        AppTextField(username, { username = it }, label = { Text("Username") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        AppTextField(
             password,
             { password = it },
             label = { Text("Password") },
@@ -223,7 +223,7 @@ private fun TmdbSection(tmdbApiKey: String, viewModel: MediaLibraryViewModel) {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        OutlinedTextField(
+        AppTextField(
             key,
             { key = it; saved = false },
             label = { Text("TMDb API key") },
@@ -292,32 +292,32 @@ private fun ProfilesSection(profiles: List<SiteProfile>, viewModel: MediaLibrary
         if (editingId != null) {
             Text("Editing \"$label\" — Save changes to apply, or Cancel.", style = MaterialTheme.typography.bodySmall)
         }
-        OutlinedTextField(label, { label = it }, label = { Text("Label") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(
+        AppTextField(label, { label = it }, label = { Text("Label") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        AppTextField(
             searchUrlTemplate, { searchUrlTemplate = it },
             label = { Text("Search URL template ({query})") }, singleLine = true, modifier = Modifier.fillMaxWidth()
         )
-        OutlinedTextField(
+        AppTextField(
             resultItemSelector, { resultItemSelector = it },
             label = { Text("Result item selector") }, singleLine = true, modifier = Modifier.fillMaxWidth()
         )
-        OutlinedTextField(
+        AppTextField(
             titleSelector, { titleSelector = it },
             label = { Text("Title selector") }, singleLine = true, modifier = Modifier.fillMaxWidth()
         )
-        OutlinedTextField(
+        AppTextField(
             linkSelector, { linkSelector = it },
             label = { Text("Link selector") }, singleLine = true, modifier = Modifier.fillMaxWidth()
         )
-        OutlinedTextField(
+        AppTextField(
             sizeSelector, { sizeSelector = it },
             label = { Text("Size selector (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth()
         )
-        OutlinedTextField(
+        AppTextField(
             seedersSelector, { seedersSelector = it },
             label = { Text("Seeders selector (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth()
         )
-        OutlinedTextField(
+        AppTextField(
             detailPageLinkSelector, { detailPageLinkSelector = it },
             label = { Text("Detail-page link selector (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth()
         )
