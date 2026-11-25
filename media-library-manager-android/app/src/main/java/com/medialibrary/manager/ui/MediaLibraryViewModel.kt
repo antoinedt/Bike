@@ -20,6 +20,9 @@ import com.medialibrary.manager.model.SiteProfile
 import com.medialibrary.manager.network.SmbContextFactory
 import com.medialibrary.manager.network.SmbDataSource
 import com.medialibrary.manager.network.SmbSidecar
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DataSource
+import androidx.media3.datasource.DefaultDataSource
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -32,7 +35,9 @@ import kotlinx.coroutines.launch
 data class PlaybackRequest(
     val item: MediaItem,
     val streamUrl: String,
-    val dataSourceFactory: SmbDataSource.Factory
+    val dataSourceFactory: DataSource.Factory,
+    /** Streams from an SMB share (the player shows network speed for these). */
+    val isNetwork: Boolean
 )
 
 class MediaLibraryViewModel : ViewModel() {
@@ -332,8 +337,18 @@ class MediaLibraryViewModel : ViewModel() {
             val relPath = item.path.removePrefix("smb://${share.id}/")
             val streamUrl = SmbContextFactory.urlFor(share, relPath)
             val factory = SmbDataSource.Factory(SmbContextFactory.contextFor(share))
-            _playback.value = PlaybackRequest(item, streamUrl, factory)
+            _playback.value = PlaybackRequest(item, streamUrl, factory, isNetwork = true)
         }
+    }
+
+    /**
+     * Local video/audio plays in the same in-app player as network items (full screen, with the
+     * diagnostics panel) rather than being handed to another app — a TV often has no app at all
+     * that opens a video file.
+     */
+    @OptIn(UnstableApi::class)
+    fun playLocalItem(context: Context, item: MediaItem) {
+        _playback.value = PlaybackRequest(item, item.path, DefaultDataSource.Factory(context.applicationContext), isNetwork = false)
     }
 
     fun stopPlayback() {

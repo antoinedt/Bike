@@ -240,6 +240,7 @@ private fun MediaLibraryApp(
             item = request.item,
             streamUrl = request.streamUrl,
             dataSourceFactory = request.dataSourceFactory,
+            isNetwork = request.isNetwork,
             onClose = { viewModel.stopPlayback() }
         )
     }

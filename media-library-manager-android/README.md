@@ -22,9 +22,14 @@ version catalog style, `di/ServiceLocator` manual DI, dark Material3 theme).
 | electron-store (JSON on disk) | Jetpack **DataStore** (Preferences, JSON-serialized `AppSettings`) | Platform-idiomatic equivalent; same shape (folders, network shares, site profiles), serialized with kotlinx.serialization. |
 | iTunes Search API artwork fetcher | Same API, Kotlin port (`ArtworkFetcher`) | Identical approach on both platforms — no API key, no scraping. |
 
-Local playback opens with the OS's default app immediately (same as desktop — it's already
-on-disk, no reason to route it through the in-app player). Network playback streams live inside
-the app via ExoPlayer.
+Video and audio — local and network — play in the app's own full-screen ExoPlayer (a TV often has
+no other app that opens a video file). Network items stream live from the share through
+`SmbDataSource`, which keeps 8 reads in flight in parallel and ~8 MB buffered ahead: jcifs-ng 2.1.x
+caps each SMB read at ~64 KB and waits for each reply, so one-read-at-a-time streaming is limited
+by network latency rather than bandwidth (measured: 8 Mbit/s → 78 Mbit/s at a 30 ms round trip).
+While buffering, on an error, or whenever the controls are showing, the player shows a diagnostics
+panel: buffer level, real network speed, codecs and chosen decoders, tracks the device can't play,
+dropped frames, and the full error text.
 
 ## Project layout
 

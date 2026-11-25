@@ -27,6 +27,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.medialibrary.manager.model.MediaItem
+import com.medialibrary.manager.model.MediaKind
 import com.medialibrary.manager.model.MediaSourceType
 import com.medialibrary.manager.ui.MediaLibraryViewModel
 import com.medialibrary.manager.ui.components.MediaBrowser
@@ -86,10 +87,10 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, isTv: Boolean, onPickImage: 
             filter = filter,
             tagFilter = selectedTags,
             onOpen = { item: MediaItem ->
-                if (item.sourceType == MediaSourceType.LOCAL) {
-                    viewModel.openLocalItem(context, item)
-                } else {
-                    viewModel.playNetworkItem(item)
+                when {
+                    item.sourceType == MediaSourceType.NETWORK -> viewModel.playNetworkItem(item)
+                    item.kind == MediaKind.VIDEO || item.kind == MediaKind.AUDIO -> viewModel.playLocalItem(context, item)
+                    else -> viewModel.openLocalItem(context, item)
                 }
             },
             onItemUpdated = { title, year, tags, artworkUrl, item ->
