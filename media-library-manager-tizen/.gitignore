@@ -1,0 +1,6 @@
+app/.buildResult/
+app/.sign/
+*.wgt
+test/node_modules/
+test/.media/
+test/screenshots/

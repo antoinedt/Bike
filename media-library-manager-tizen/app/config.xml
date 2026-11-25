@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<widget xmlns="http://www.w3.org/ns/widgets"
+        xmlns:tizen="http://tizen.org/ns/widgets"
+        id="https://github.com/antoinedt/Bike/media-library-manager-tizen"
+        version="1.0.0"
+        viewmodes="maximized">
+    <!-- Tizen package ids are exactly 10 letters/digits; "MLMTizenAp" is just this app's own
+         id on your TV. required_version 3.0 = Samsung TVs from 2017 on — the JS/CSS is kept
+         to what those older TV browsers support. -->
+    <tizen:application id="MLMTizenAp.MediaLibraryManager"
+                        package="MLMTizenAp"
+                        required_version="3.0"/>
+    <name>Media Library Manager</name>
+    <icon src="icon.png"/>
+    <content src="index.html"/>
+    <feature name="http://tizen.org/feature/screen.size.all"/>
+    <tizen:profile name="tv"/>
+    <!-- content.read: tizen.content.find() to list video/audio the TV has already indexed.
+         externalstorage/mediastorage: walking a USB drive's folders directly when the index
+         doesn't have it. No internet privilege: this build is local browse + play only. -->
+    <tizen:privilege name="http://tizen.org/privilege/content.read"/>
+    <tizen:privilege name="http://tizen.org/privilege/externalstorage"/>
+    <tizen:privilege name="http://tizen.org/privilege/mediastorage"/>
+    <!-- tvinputdevice: the remote's play/pause/stop/FF/rewind keys are only delivered to the
+         app after tizen.tvinputdevice.registerKey(), which needs this. -->
+    <tizen:privilege name="http://tizen.org/privilege/tv.inputdevice"/>
+    <tizen:setting screen-orientation="landscape"
+                   context-menu="disable"
+                   background-support="disable"
+                   encryption="disable"
+                   install-location="auto"
+                   hwkey-event="enable"/>
+</widget>

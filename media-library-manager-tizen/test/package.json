@@ -1,0 +1,11 @@
+{
+  "name": "media-library-manager-tizen-test",
+  "private": true,
+  "description": "Browser test for the Tizen TV app against a mocked tizen API",
+  "scripts": {
+    "test": "node run.js"
+  },
+  "devDependencies": {
+    "playwright": "^1.48.0"
+  }
+}

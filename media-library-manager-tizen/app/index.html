@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Media Library Manager</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="library-view" class="view">
+    <header class="app-header">
+      <h1>Media Library</h1>
+      <div class="kind-tabs">
+        <button id="tab-video" class="tab active" data-kind="video">Video</button>
+        <button id="tab-audio" class="tab" data-kind="audio">Audio</button>
+      </div>
+    </header>
+    <div id="status" class="status"></div>
+    <div id="grid" class="grid"></div>
+  </div>
+
+  <div id="player-view" class="view hidden">
+    <div class="player-header">
+      <button id="back-button" class="back-button">&larr; Back</button>
+      <span id="now-playing" class="now-playing"></span>
+    </div>
+    <video id="video-player" class="player hidden" controls></video>
+    <audio id="audio-player" class="player hidden" controls></audio>
+  </div>
+
+  <script src="js/titleGuess.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,232 @@
+/* Sized for a 1920x1080 TV viewed from the couch: large type, large targets, and a focus ring
+   that's impossible to miss, since focus is the only "cursor" a remote has.
+
+   Deliberately avoids CSS variables, CSS Grid, flexbox `gap` and `aspect-ratio`: Samsung TVs
+   from 2017-2020 run browser engines too old for some or all of them, and the app should look
+   the same there. Colors match the other two apps: #14161a background, #1c1f26 panels,
+   #5b8cff accent, #f4f6f8 text. */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  background: #14161a;
+  color: #f4f6f8;
+  font-family: "SamsungOne", "Samsung Sans", "Helvetica Neue", Arial, sans-serif;
+  font-size: 28px;
+  overflow: hidden;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  border: none;
+  cursor: pointer;
+}
+
+button:focus,
+video:focus,
+audio:focus {
+  outline: 6px solid #5b8cff;
+  outline-offset: 4px;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.view {
+  width: 100%;
+  height: 100%;
+}
+
+#library-view {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: column;
+  flex-direction: column;
+  padding: 48px 56px 0;
+}
+
+.app-header {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  margin: 0 24px 24px;
+}
+
+.app-header h1 {
+  margin: 0 48px 0 0;
+  font-size: 52px;
+  font-weight: 600;
+}
+
+.tab {
+  margin-right: 16px;
+  padding: 14px 36px;
+  border-radius: 40px;
+  background: #1c1f26;
+  color: #9aa3b2;
+}
+
+.tab.active {
+  background: #5b8cff;
+  color: #f4f6f8;
+}
+
+.status {
+  display: none;
+  font-size: 32px;
+  color: #9aa3b2;
+  margin: 40px 24px;
+}
+
+/* Wrapping flex row of fixed-width cards: 5 per row at 1920px. The padding leaves room for
+   the focused card's scale + outline so it isn't clipped at the edges. */
+.grid {
+  -webkit-flex: 1;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-wrap: wrap;
+  flex-wrap: wrap;
+  -webkit-align-content: flex-start;
+  align-content: flex-start;
+  padding: 24px 0 80px 24px;
+}
+
+.card {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: column;
+  flex-direction: column;
+  width: 316px;
+  margin: 0 36px 36px 0;
+  padding: 0 0 18px;
+  text-align: left;
+  border-radius: 16px;
+  background: #1c1f26;
+  overflow: hidden;
+  -webkit-transition: -webkit-transform 0.12s ease;
+  transition: transform 0.12s ease;
+}
+
+.card:focus {
+  -webkit-transform: scale(1.05);
+  transform: scale(1.05);
+  background: #252a33;
+}
+
+/* 16:9 box via the padding trick (works on every engine, unlike aspect-ratio). */
+.card-art {
+  position: relative;
+  width: 100%;
+  height: 0;
+  padding-top: 56.25%;
+  background: #252a33;
+  overflow: hidden;
+}
+
+.card-art.audio {
+  background: -webkit-linear-gradient(315deg, #2a3350, #252a33);
+  background: linear-gradient(135deg, #2a3350, #252a33);
+}
+
+.card-art:after {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  -webkit-transform: translate(-50%, -50%);
+  transform: translate(-50%, -50%);
+  font-size: 64px;
+  color: #9aa3b2;
+}
+
+.card-art.video:after {
+  content: "\25B6";
+}
+
+.card-art.audio:after {
+  content: "\266B";
+}
+
+.card-art img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: 1;
+}
+
+.card-title {
+  padding: 16px 20px 0;
+  font-size: 28px;
+  line-height: 1.25;
+  max-height: 86px;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.card-meta {
+  padding: 8px 20px 0;
+  font-size: 22px;
+  color: #9aa3b2;
+}
+
+#player-view {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: column;
+  flex-direction: column;
+  background: #000;
+}
+
+.player-header {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  padding: 24px 48px;
+  background: #14161a;
+}
+
+.back-button {
+  margin-right: 32px;
+  padding: 12px 32px;
+  border-radius: 40px;
+  background: #1c1f26;
+}
+
+.now-playing {
+  font-size: 30px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.player {
+  -webkit-flex: 1;
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  background: #000;
+}
+
+audio.player {
+  -webkit-flex: 0 0 auto;
+  flex: 0 0 auto;
+  margin: auto 80px;
+  width: auto;
+}
