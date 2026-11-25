@@ -111,6 +111,20 @@ export interface AppSettings {
   tmdbApiKey: string;
   /** Where in-app torrent downloads are saved. Empty means the default (Downloads/Media Library Manager). */
   torrentDownloadFolder: string;
+  /** This computer's id for "Send to another device" (made up once, then kept). */
+  deviceId: string;
+  /** How this computer shows up on other devices ("" = the computer's name). */
+  deviceName: string;
+  /** The network share used as the mailbox for "Send to another device"; "" = off. */
+  remoteShareId: string;
+}
+
+export interface RemoteDeviceInfo {
+  id: string;
+  name: string;
+  platform: string;
+  lastSeen: number;
+  online: boolean;
 }
 
 /** One in-app torrent download, as shown on the Downloads page. */

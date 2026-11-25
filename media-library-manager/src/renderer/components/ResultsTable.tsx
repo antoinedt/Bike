@@ -4,6 +4,7 @@ export default function ResultsTable({
   results,
   onDownload,
   onOpenExternally,
+  onSendTo,
   downloadingUrl
 }: {
   results: SearchResultItem[];
@@ -11,6 +12,8 @@ export default function ResultsTable({
   onDownload: (result: SearchResultItem) => void;
   /** Hands the link to the OS's default torrent app instead. */
   onOpenExternally: (result: SearchResultItem) => void;
+  /** "Download on another device"; absent when that's not set up. */
+  onSendTo?: (result: SearchResultItem) => void;
   downloadingUrl: string | null;
 }) {
   if (results.length === 0) {
@@ -53,6 +56,11 @@ export default function ResultsTable({
               >
                 Open in torrent app
               </button>
+              {onSendTo && (
+                <button className="btn btn-small" onClick={() => onSendTo(r)} title="Start this download on another device">
+                  Send to…
+                </button>
+              )}
             </td>
           </tr>
         ))}

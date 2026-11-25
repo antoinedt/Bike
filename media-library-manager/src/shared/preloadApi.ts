@@ -6,6 +6,7 @@ import type {
   LocalFolder,
   MediaItem,
   NetworkShare,
+  RemoteDeviceInfo,
   ScanProgressEvent,
   SearchResultItem,
   SiteProfile,
@@ -124,6 +125,14 @@ export interface PreloadApi {
   pickCopyFolder(): Promise<string | null>;
   /** Live list of copies. Returns an unsubscribe function. */
   onCopyUpdate(callback: (jobs: CopyJob[]) => void): () => void;
+  /** "Send to another device": this computer's name and the mailbox share ("" = off). */
+  updateRemoteSettings(deviceName: string, remoteShareId: string): Promise<void>;
+  /** Other devices using the same mailbox share. */
+  getRemoteDevices(): Promise<RemoteDeviceInfo[]>;
+  /** Starts a download on another device (fetches a .torrent link here first). Returns the name sent. */
+  sendToDevice(deviceId: string, source: string, title?: string): Promise<string>;
+  /** "Started X on TV" / "Started X sent from Phone" messages. Returns an unsubscribe function. */
+  onRemoteEvent(callback: (message: string) => void): () => void;
 }
 
 declare global {

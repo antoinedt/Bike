@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { AppSettings, SearchResultItem } from "../../shared/types.js";
 import ResultsTable from "../components/ResultsTable.js";
+import SendToDialog from "../components/SendToDialog.js";
 
 export default function SearchPage({
   settings,
@@ -17,6 +18,7 @@ export default function SearchPage({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [addedToDownloads, setAddedToDownloads] = useState(false);
+  const [sendingResult, setSendingResult] = useState<SearchResultItem | null>(null);
 
   function toggleProfile(id: string) {
     setSelected((prev) => {
@@ -125,9 +127,22 @@ export default function SearchPage({
             results={results}
             onDownload={(r) => void download(r, false)}
             onOpenExternally={(r) => void download(r, true)}
+            onSendTo={settings.remoteShareId ? setSendingResult : undefined}
             downloadingUrl={downloadingUrl}
           />
         </>
+      )}
+      {sendingResult && (
+        <SendToDialog
+          source={sendingResult.downloadUrl}
+          title={sendingResult.title}
+          onClose={() => setSendingResult(null)}
+          onSent={(message) => {
+            setSendingResult(null);
+            setAddedToDownloads(false);
+            setNotice(message);
+          }}
+        />
       )}
     </div>
   );

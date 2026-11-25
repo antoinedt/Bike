@@ -92,6 +92,12 @@ app/src/main/java/com/medialibrary/manager/
   or between two shares — with **New folder…**. Copies run one at a time in the background,
   never overwrite (an existing name gets " (2)"), and show progress on the tile and in Downloads.
   This replaces the old network-only Download button (copy to "This device · Downloads" for that).
+- **Send to another device**: start a download on another computer, phone or TV running this app
+  ("Send to…" on search results and in the Downloads tab). Devices find each other through a hidden
+  `.media-library-manager` folder on a network share; pick the same share under **Settings → Send to
+  another device** on each one. The receiving device starts it while the app is open there and the
+  sender gets a "started on …" message back. Same format on Android and desktop (checked by
+  `media-library-manager-android/engine-test/run.sh`).
 - Tests: `engine-test/run.sh` runs the torrent engine against a local WebTorrent seeder on a
   desktop JVM (magnet, .torrent file and link, pause/resume, restart, remove, bad input).
 

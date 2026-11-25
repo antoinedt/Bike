@@ -704,3 +704,37 @@ body {
   width: 100%;
   text-align: left;
 }
+
+.toast {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  max-width: min(420px, 90vw);
+  background: var(--bg-alt);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 13px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+  z-index: 200;
+  cursor: pointer;
+}
+
+.device-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  margin-right: 6px;
+}
+
+.device-dot.online {
+  background: #6fce8a;
+}
+
+.device-seen {
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+}

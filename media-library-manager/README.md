@@ -13,6 +13,12 @@ sources:
   left off after the app restarts. If the download folder (Settings → Torrent downloads) is inside
   one of your Library folders, finished downloads appear in the Library automatically. **Open in
   torrent app** still hands a result to your OS's default torrent app instead.
+- **Send to another device**: start a download on another computer, phone or TV running this app
+  ("Send to…" on search results and on the Downloads page). Devices find each other through a hidden
+  `.media-library-manager` folder on a network share; pick the same share under **Settings → Send to
+  another device** on each one. The receiving device starts it while the app is open there and the
+  sender gets a "started on …" message back. Same format on Android and desktop (checked by
+  `media-library-manager-android/engine-test/run.sh`).
 - **Copy to…** (in an item's details): copies a local or network item into a folder inside any of
   your Library folders or network shares (with **New folder**), or any folder on this computer.
   Copies run one at a time in the background, never overwrite (an existing name gets " (2)"),

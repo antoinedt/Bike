@@ -135,6 +135,19 @@ object Notifications {
             .setContentIntent(openApp(context))
             .build()
 
+    fun remote(context: Context, title: String, text: String) {
+        ensureChannels(context)
+        val notification = NotificationCompat.Builder(context, CHANNEL_DONE)
+            .setSmallIcon(R.drawable.ic_stat_transfer)
+            .setContentTitle(title)
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setAutoCancel(true)
+            .setContentIntent(openApp(context))
+            .build()
+        runCatching { NotificationManagerCompat.from(context).notify(text.hashCode(), notification) }
+    }
+
     fun downloadSaved(context: Context, name: String, where: String) {
         ensureChannels(context)
         val notification = NotificationCompat.Builder(context, CHANNEL_DONE)

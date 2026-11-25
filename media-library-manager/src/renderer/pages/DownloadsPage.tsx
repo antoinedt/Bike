@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { CopyJob, TorrentStatus } from "../../shared/types.js";
 import { formatDuration, formatSize } from "../lib/format.js";
+import SendToDialog from "../components/SendToDialog.js";
 
 const STATE_LABEL: Record<TorrentStatus["state"], string> = {
   metadata: "Getting file list…",
@@ -14,7 +15,7 @@ function formatSpeed(bytesPerSecond: number): string {
   return bytesPerSecond > 0 ? `${formatSize(bytesPerSecond)}/s` : "—";
 }
 
-export default function DownloadsPage({ onOpenSettings }: { onOpenSettings: () => void }) {
+export default function DownloadsPage({ onOpenSettings, remoteEnabled }: { onOpenSettings: () => void; remoteEnabled: boolean }) {
   const [torrents, setTorrents] = useState<TorrentStatus[]>([]);
   const [folder, setFolder] = useState("");
   const [source, setSource] = useState("");
@@ -23,6 +24,8 @@ export default function DownloadsPage({ onOpenSettings }: { onOpenSettings: () =
   const [removing, setRemoving] = useState<TorrentStatus | null>(null);
   const [deleteFiles, setDeleteFiles] = useState(false);
   const [copies, setCopies] = useState<CopyJob[]>([]);
+  const [sendingSource, setSendingSource] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     void window.api.getTorrents().then(setTorrents);
@@ -88,6 +91,11 @@ export default function DownloadsPage({ onOpenSettings }: { onOpenSettings: () =
         <button className="btn" type="button" onClick={() => void run(() => window.api.addTorrentFile())}>
           Open .torrent file…
         </button>
+        {remoteEnabled && (
+          <button className="btn" type="button" disabled={!source.trim()} onClick={() => setSendingSource(source.trim())} title="Start this download on another device">
+            Send to…
+          </button>
+        )}
       </form>
       <p className="hint">
         Saving to <code>{folder}</code> ·{" "}
@@ -98,6 +106,18 @@ export default function DownloadsPage({ onOpenSettings }: { onOpenSettings: () =
         Downloads stop once complete (no seeding afterwards). Only download content you're allowed to.
       </p>
       {error && <p className="error">{error}</p>}
+      {notice && <p className="notice">{notice}</p>}
+      {sendingSource && (
+        <SendToDialog
+          source={sendingSource}
+          onClose={() => setSendingSource(null)}
+          onSent={(message) => {
+            setSendingSource(null);
+            setSource("");
+            setNotice(message);
+          }}
+        />
+      )}
 
       {torrents.length === 0 ? (
         <div className="empty-state">No downloads yet. Use Download on a search result, or paste a magnet link above.</div>

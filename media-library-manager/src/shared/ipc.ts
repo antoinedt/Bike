@@ -48,5 +48,9 @@ export const IPC = {
   copyListFolders: "copy:listFolders",
   copyCreateFolder: "copy:createFolder",
   copyPickFolder: "copy:pickFolder",
-  copyUpdate: "copy:update"
+  copyUpdate: "copy:update",
+  remoteUpdateSettings: "remote:updateSettings",
+  remoteDevices: "remote:devices",
+  remoteSend: "remote:send",
+  remoteEvent: "remote:event"
 } as const;

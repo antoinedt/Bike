@@ -53,6 +53,8 @@ fun SettingsScreen(
         item { TmdbSection(settings.tmdbApiKey, viewModel) }
         item { HorizontalDivider() }
         item { DownloadsSection(settings, viewModel) }
+        item { HorizontalDivider() }
+        item { RemoteSection(settings, viewModel) }
         if (showSearchSites) {
             item { HorizontalDivider() }
             item { ProfilesSection(settings.siteProfiles, viewModel) }
@@ -208,6 +210,40 @@ private fun SharesSection(shares: List<NetworkShare>, testResult: String?, viewM
                 TextButton(onClick = { editingId = null; clearForm() }) { Text("Cancel") }
             }
         }
+    }
+}
+
+@Composable
+private fun RemoteSection(settings: com.medialibrary.manager.model.AppSettings, viewModel: MediaLibraryViewModel) {
+    var name by remember(settings.deviceName) { mutableStateOf(settings.deviceName.ifBlank { viewModel.thisDeviceName() }) }
+    var shareId by remember(settings.remoteShareId) { mutableStateOf(settings.remoteShareId) }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Send to another device", style = MaterialTheme.typography.titleMedium)
+        Text(
+            "Start a download on another phone, TV or computer running this app (\"Send to…\" on search results " +
+                "and in Downloads), and receive ones sent here. Devices find each other through a hidden folder on a " +
+                "network share: pick the same share on every device. Downloads sent here start while the app is open.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        AppTextField(name, { name = it }, label = { Text("This device's name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(checked = shareId.isEmpty(), onCheckedChange = { if (it) shareId = "" })
+            Text("Off")
+        }
+        settings.networkShares.forEach { share ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = shareId == share.id, onCheckedChange = { if (it) shareId = share.id })
+                Text("Use share: ${share.label}")
+            }
+        }
+        if (settings.networkShares.isEmpty()) {
+            Text("Add a network share above first.", style = MaterialTheme.typography.bodySmall)
+        }
+        Button(
+            onClick = { viewModel.updateRemote(name, shareId) },
+            enabled = name.trim() != settings.deviceName.ifBlank { viewModel.thisDeviceName() } || shareId != settings.remoteShareId
+        ) { Text("Save") }
     }
 }
 

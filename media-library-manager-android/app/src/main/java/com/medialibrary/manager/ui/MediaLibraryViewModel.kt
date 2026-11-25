@@ -55,6 +55,7 @@ class MediaLibraryViewModel : ViewModel() {
     private val smbBrowser = ServiceLocator.smbShareBrowser
     private val transfers = ServiceLocator.transferManager
     private val transferStorage = ServiceLocator.transferStorage
+    private val remote = ServiceLocator.remoteManager
     private val siteSearch = ServiceLocator.siteSearchRepository
     private val torrentHandoff = ServiceLocator.torrentHandoff
 
@@ -137,6 +138,8 @@ class MediaLibraryViewModel : ViewModel() {
         viewModelScope.launch {
             settingsRepo.settingsFlow.collect { _settings.value = it }
         }
+        // "Started X on TV" / "Started X, sent from Phone".
+        viewModelScope.launch { remote.events.collect { _errorMessage.value = it } }
         // New files landed in a library folder or share (a copy, or a finished download): rescan it.
         viewModelScope.launch {
             transfers.libraryChanged.collect { target ->
@@ -147,6 +150,22 @@ class MediaLibraryViewModel : ViewModel() {
             }
         }
     }
+
+    /** Other devices using the same mailbox share, most recently seen first. */
+    suspend fun remoteDevices(): List<com.medialibrary.manager.remote.RemoteDevice> = remote.devices()
+
+    /** Starts a download on another device; returns the message to show. */
+    suspend fun sendTo(device: com.medialibrary.manager.remote.RemoteDevice, source: String, title: String?): String {
+        val name = remote.send(device.id, source, title)
+        return "Sent \"$name\" to ${device.name}." + if (device.isOnline()) "" else " It starts next time the app is open there."
+    }
+
+    fun updateRemote(deviceName: String, remoteShareId: String) = viewModelScope.launch {
+        settingsRepo.updateRemote(deviceName, remoteShareId)
+        remote.refreshNow()
+    }
+
+    fun thisDeviceName(): String = remote.deviceName(_settings.value)
 
     fun showMessage(message: String) {
         _errorMessage.value = message

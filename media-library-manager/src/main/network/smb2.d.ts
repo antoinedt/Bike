@@ -20,6 +20,7 @@ declare module "smb2" {
     writeFile(filename: string, data: string | Buffer, callback: (err: Error | null) => void): void;
     mkdir(path: string, callback: (err: Error | null) => void): void;
     unlink(path: string, callback: (err: Error | null) => void): void;
+    rename(oldPath: string, newPath: string, callback: (err: Error | null) => void): void;
     close(): void;
   }
 

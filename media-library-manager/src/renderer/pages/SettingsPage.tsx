@@ -29,6 +29,7 @@ export default function SettingsPage({
       <FoldersSection settings={settings} refreshSettings={refreshSettings} />
       <SharesSection settings={settings} refreshSettings={refreshSettings} />
       <TmdbSection settings={settings} refreshSettings={refreshSettings} />
+      <RemoteSection settings={settings} refreshSettings={refreshSettings} />
       <DownloadsSection settings={settings} refreshSettings={refreshSettings} />
       <ProfilesSection settings={settings} refreshSettings={refreshSettings} />
     </div>
@@ -170,6 +171,75 @@ function TmdbSection({
           Save
         </button>
         {saved && <span className="hint-inline">Saved.</span>}
+      </div>
+    </section>
+  );
+}
+
+function RemoteSection({
+  settings,
+  refreshSettings
+}: {
+  settings: AppSettings;
+  refreshSettings: () => Promise<void>;
+}) {
+  const [name, setName] = useState(settings.deviceName);
+  const [shareId, setShareId] = useState(settings.remoteShareId);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save() {
+    setError(null);
+    try {
+      await window.api.updateRemoteSettings(name, shareId);
+      await refreshSettings();
+      setSaved(true);
+    } catch (err) {
+      setError((err as Error).message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ""));
+    }
+  }
+
+  return (
+    <section className="settings-section">
+      <h2>Send to another device</h2>
+      <p className="hint">
+        Start a download on another computer, phone or TV running this app (“Send to…” on search results and the
+        Downloads page), and receive ones sent here. Devices find each other through a hidden folder on a network share:
+        pick the same share on every device. Downloads sent here start while the app is open.
+      </p>
+      <div className="form-grid">
+        <input
+          className="text-input"
+          placeholder="This computer's name"
+          value={name}
+          onChange={(e) => {
+            setName(e.target.value);
+            setSaved(false);
+          }}
+        />
+        <select
+          className="text-input"
+          value={shareId}
+          onChange={(e) => {
+            setShareId(e.target.value);
+            setSaved(false);
+          }}
+        >
+          <option value="">Off</option>
+          {settings.networkShares.map((s) => (
+            <option key={s.id} value={s.id}>
+              Use share: {s.label}
+            </option>
+          ))}
+        </select>
+      </div>
+      {settings.networkShares.length === 0 && <p className="hint">Add a network share above first.</p>}
+      <div className="form-actions">
+        <button className="btn" onClick={() => void save()} disabled={name === settings.deviceName && shareId === settings.remoteShareId}>
+          Save
+        </button>
+        {saved && <span className="hint-inline">Saved.</span>}
+        {error && <span className="error">{error}</span>}
       </div>
     </section>
   );

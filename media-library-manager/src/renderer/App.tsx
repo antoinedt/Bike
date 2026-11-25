@@ -20,6 +20,17 @@ export default function App() {
     void refreshSettings();
   }, [refreshSettings]);
 
+  // "Started X on TV" / "Started X, sent from Phone": shown wherever you are in the app.
+  const [toast, setToast] = useState<string | null>(null);
+  useEffect(
+    () =>
+      window.api.onRemoteEvent((message) => {
+        setToast(message);
+        window.setTimeout(() => setToast((current) => (current === message ? null : current)), 8000);
+      }),
+    []
+  );
+
   return (
     <div className="app-shell">
       <Sidebar active={tab} onSelect={setTab} />
@@ -31,11 +42,16 @@ export default function App() {
         ) : tab === "search" ? (
           <SearchPage settings={settings} onOpenDownloads={() => setTab("downloads")} />
         ) : tab === "downloads" ? (
-          <DownloadsPage onOpenSettings={() => setTab("settings")} />
+          <DownloadsPage onOpenSettings={() => setTab("settings")} remoteEnabled={!!settings.remoteShareId} />
         ) : (
           <SettingsPage settings={settings} refreshSettings={refreshSettings} />
         )}
       </main>
+      {toast && (
+        <div className="toast" onClick={() => setToast(null)}>
+          {toast}
+        </div>
+      )}
     </div>
   );
 }

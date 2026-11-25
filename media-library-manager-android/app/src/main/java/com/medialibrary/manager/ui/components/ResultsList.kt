@@ -27,6 +27,8 @@ fun ResultsList(
     onDownload: (SearchResultItem) -> Unit,
     /** Hands it to another installed torrent app. */
     onOpenInOtherApp: (SearchResultItem) -> Unit,
+    /** "Download on another device"; null when that isn't set up. */
+    onSendTo: ((SearchResultItem) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     if (results.isEmpty()) {
@@ -50,6 +52,11 @@ fun ResultsList(
                         }
                         TextButton(onClick = { onOpenInOtherApp(result) }, enabled = !isBusy) {
                             Text("Other app", style = MaterialTheme.typography.labelSmall)
+                        }
+                        if (onSendTo != null) {
+                            TextButton(onClick = { onSendTo(result) }, enabled = !isBusy) {
+                                Text("Send to…", style = MaterialTheme.typography.labelSmall)
+                            }
                         }
                     }
                 }

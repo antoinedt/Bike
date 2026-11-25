@@ -9,5 +9,7 @@ class MediaLibraryApplication : Application() {
         ServiceLocator.init(this)
         // Picks unfinished downloads back up (and finishes saving any that were mid-save).
         ServiceLocator.transferManager.start()
+        // Picks up downloads other devices send here (while the app is running).
+        ServiceLocator.remoteManager.start()
     }
 }

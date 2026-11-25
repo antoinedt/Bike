@@ -34,6 +34,20 @@ fun SearchScreen(viewModel: MediaLibraryViewModel) {
     val downloadingUrl by viewModel.downloadingUrl.collectAsState()
     var query by remember { mutableStateOf("") }
     var selected by remember { mutableStateOf(setOf<String>()) }
+    var sendingResult by remember { mutableStateOf<com.medialibrary.manager.model.SearchResultItem?>(null) }
+
+    sendingResult?.let { result ->
+        com.medialibrary.manager.ui.components.SendToDialog(
+            viewModel = viewModel,
+            source = result.downloadUrl,
+            title = result.title,
+            onDismiss = { sendingResult = null },
+            onSent = { message ->
+                sendingResult = null
+                viewModel.showMessage(message)
+            }
+        )
+    }
 
     Column(Modifier.fillMaxSize().padding(16.dp)) {
         if (settings.siteProfiles.isEmpty()) {
@@ -75,6 +89,7 @@ fun SearchScreen(viewModel: MediaLibraryViewModel) {
             downloadingUrl = downloadingUrl,
             onDownload = { viewModel.download(it) },
             onOpenInOtherApp = { viewModel.openInOtherApp(it) },
+            onSendTo = if (settings.remoteShareId.isNotBlank()) ({ sendingResult = it }) else null,
             modifier = Modifier.weight(1f)
         )
     }

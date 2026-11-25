@@ -271,7 +271,7 @@ function downloadedPath(stored: StoredTorrent): string | null {
 }
 
 /** Magnet links and bare info hashes pass through; http(s) .torrent URLs are downloaded. */
-async function resolveSource(source: string): Promise<string | Uint8Array> {
+export async function resolveSource(source: string): Promise<string | Uint8Array> {
   const value = source.trim();
   if (value.startsWith("magnet:")) return value;
   if (/^[0-9a-f]{40}$/i.test(value) || /^[a-z2-7]{32}$/i.test(value)) return `magnet:?xt=urn:btih:${value}`;

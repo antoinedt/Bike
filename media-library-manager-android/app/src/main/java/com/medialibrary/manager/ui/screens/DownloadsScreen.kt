@@ -56,6 +56,21 @@ fun DownloadsScreen(viewModel: MediaLibraryViewModel, onOpenTorrentFile: (onPick
     var source by remember { mutableStateOf("") }
     var pickingTarget by remember { mutableStateOf(false) }
     var removing by remember { mutableStateOf<TorrentSnapshot?>(null) }
+    var sendingSource by remember { mutableStateOf<String?>(null) }
+
+    sendingSource?.let { link ->
+        com.medialibrary.manager.ui.components.SendToDialog(
+            viewModel = viewModel,
+            source = link,
+            title = null,
+            onDismiss = { sendingSource = null },
+            onSent = { message ->
+                sendingSource = null
+                source = ""
+                viewModel.showMessage(message)
+            }
+        )
+    }
     val scope = rememberCoroutineScope()
 
     if (pickingTarget) {
@@ -97,6 +112,11 @@ fun DownloadsScreen(viewModel: MediaLibraryViewModel, onOpenTorrentFile: (onPick
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = { onOpenTorrentFile { bytes -> scope.launch { viewModel.addTorrent(bytes) } } }) {
                         Text("Open .torrent file…")
+                    }
+                    if (settings.remoteShareId.isNotBlank()) {
+                        OutlinedButton(enabled = source.isNotBlank(), onClick = { sendingSource = source.trim() }) {
+                            Text("Send to…")
+                        }
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {

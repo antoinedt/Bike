@@ -1,5 +1,6 @@
 import Store from "electron-store";
 import { randomUUID } from "node:crypto";
+import { hostname } from "node:os";
 import type { AppSettings, LocalFolder, NetworkShare, SiteProfile } from "../shared/types.js";
 
 const defaults: AppSettings = {
@@ -7,7 +8,10 @@ const defaults: AppSettings = {
   networkShares: [],
   siteProfiles: [],
   tmdbApiKey: "",
-  torrentDownloadFolder: ""
+  torrentDownloadFolder: "",
+  deviceId: "",
+  deviceName: "",
+  remoteShareId: ""
 };
 
 const store = new Store<AppSettings>({
@@ -21,8 +25,25 @@ export function getSettings(): AppSettings {
     networkShares: store.get("networkShares"),
     siteProfiles: store.get("siteProfiles"),
     tmdbApiKey: store.get("tmdbApiKey", ""),
-    torrentDownloadFolder: store.get("torrentDownloadFolder", "")
+    torrentDownloadFolder: store.get("torrentDownloadFolder", ""),
+    deviceId: deviceId(),
+    deviceName: store.get("deviceName", "") || hostname(),
+    remoteShareId: store.get("remoteShareId", "")
   };
+}
+
+function deviceId(): string {
+  let id = store.get("deviceId", "");
+  if (!id) {
+    id = randomUUID();
+    store.set("deviceId", id);
+  }
+  return id;
+}
+
+export function updateRemoteSettings(deviceName: string, remoteShareId: string): void {
+  store.set("deviceName", deviceName.trim());
+  store.set("remoteShareId", remoteShareId);
 }
 
 export function updateTmdbApiKey(tmdbApiKey: string): void {

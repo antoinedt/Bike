@@ -176,7 +176,13 @@ data class AppSettings(
     /** Free key from themoviedb.org/settings/api — used for the TMDb artwork/year fallback (movies & TV) when iTunes has nothing. Empty means that fallback is skipped. */
     val tmdbApiKey: String = "",
     /** Where finished torrent downloads are saved. */
-    val torrentTarget: TransferTarget = TransferTarget()
+    val torrentTarget: TransferTarget = TransferTarget(),
+    /** This device's id for "Send to another device" (made up once, then kept). */
+    val deviceId: String = "",
+    /** How this device shows up on other devices ("" = its model name). */
+    val deviceName: String = "",
+    /** The network share used as the mailbox for "Send to another device"; "" = off. */
+    val remoteShareId: String = ""
 )
 
 /** One lookup step's outcome for a single item during "Fetch artwork & info" — what the progress dialog's log is built from. */

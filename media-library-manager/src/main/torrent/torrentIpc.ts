@@ -38,11 +38,20 @@ async function onComplete(torrent: StoredTorrent): Promise<void> {
   broadcast(IPC.libraryChanged);
 }
 
+let current: TorrentManager | null = null;
+
+/** Starts a download here (used by downloads sent from another device). */
+export async function addTorrentHere(source: string | Uint8Array) {
+  if (!current) throw new Error("Downloads aren't ready yet.");
+  return current.add(source, downloadFolder());
+}
+
 export function registerTorrentHandlers(): void {
   const manager = new TorrentManager(
     { load: () => store.get("torrents"), save: (torrents) => store.set("torrents", torrents) },
     { onComplete: (torrent) => void onComplete(torrent).catch((err) => console.error("[torrent] after-download rescan failed:", err)) }
   );
+  current = manager;
   manager.restore();
 
   // Push progress to the Downloads page once a second while anything is downloading (and once

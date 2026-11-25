@@ -64,4 +64,11 @@ class SettingsRepository(private val context: Context) {
     suspend fun updateTmdbApiKey(tmdbApiKey: String) = update { it.copy(tmdbApiKey = tmdbApiKey) }
 
     suspend fun updateTorrentTarget(target: TransferTarget) = update { it.copy(torrentTarget = target) }
+
+    suspend fun updateRemote(deviceName: String, remoteShareId: String) =
+        update { it.copy(deviceName = deviceName.trim(), remoteShareId = remoteShareId) }
+
+    suspend fun ensureDeviceId() {
+        if (current().deviceId.isBlank()) update { if (it.deviceId.isBlank()) it.copy(deviceId = java.util.UUID.randomUUID().toString()) else it }
+    }
 }
