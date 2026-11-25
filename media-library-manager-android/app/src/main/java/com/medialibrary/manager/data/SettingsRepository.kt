@@ -8,6 +8,7 @@ import com.medialibrary.manager.model.AppSettings
 import com.medialibrary.manager.model.LocalFolder
 import com.medialibrary.manager.model.NetworkShare
 import com.medialibrary.manager.model.SiteProfile
+import com.medialibrary.manager.model.TransferTarget
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.encodeToString
@@ -61,4 +62,6 @@ class SettingsRepository(private val context: Context) {
     suspend fun shareById(id: String): NetworkShare? = current().networkShares.find { it.id == id }
 
     suspend fun updateTmdbApiKey(tmdbApiKey: String) = update { it.copy(tmdbApiKey = tmdbApiKey) }
+
+    suspend fun updateTorrentTarget(target: TransferTarget) = update { it.copy(torrentTarget = target) }
 }

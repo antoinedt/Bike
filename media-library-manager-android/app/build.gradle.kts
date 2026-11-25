@@ -18,7 +18,7 @@ android {
         // a build could look installed without it taking effect. CI passes -PversionCode=<run
         // number>, strictly increasing per build; local/dev builds fall back to 1.
         versionCode = (project.findProperty("versionCode") as String?)?.toIntOrNull() ?: 1
-        versionName = "0.1.0"
+        versionName = "0.2.0"
     }
 
     signingConfigs {
@@ -62,6 +62,14 @@ android {
     buildFeatures {
         compose = true
     }
+
+    packaging {
+        jniLibs {
+            // Compress the torrent library's native code in the APK (~16 MB per CPU type
+            // uncompressed); it's unpacked once at install instead.
+            useLegacyPackaging = true
+        }
+    }
 }
 
 dependencies {
@@ -99,4 +107,10 @@ dependencies {
     implementation(libs.androidx.documentfile)
     // Artwork loading (fetched cover/poster URLs) in Compose.
     implementation(libs.coil.compose)
+    // In-app torrent downloads: libtorrent's Java API plus its native library for ARM phones/TV
+    // boxes (64- and 32-bit; many Google TV devices run 32-bit) and x86_64 (emulators, Chromebooks).
+    implementation(libs.libtorrent4j)
+    implementation(libs.libtorrent4j.android.arm64)
+    implementation(libs.libtorrent4j.android.arm)
+    implementation(libs.libtorrent4j.android.x64)
 }

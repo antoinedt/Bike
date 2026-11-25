@@ -137,13 +137,46 @@ data class SearchResultItem(
     val sourceProfileLabel: String
 )
 
+/**
+ * A folder somewhere the app can write to: this device's Downloads/MediaLibraryManager folder, a
+ * folder inside one of the configured local folders, or a folder on one of the configured network
+ * shares. Used by "Copy to…" and as where finished torrent downloads are saved.
+ */
+@Serializable
+data class TransferTarget(
+    val type: String = DEVICE_DOWNLOADS,
+    /** The LocalFolder / NetworkShare id; unused for DEVICE_DOWNLOADS. */
+    val id: String = "",
+    /** Folder inside it, "" for its top level, "Movies/Action" for a nested one. */
+    val relPath: String = ""
+) {
+    fun encode(): String = listOf(type, id, relPath).joinToString("\u0000")
+
+    fun child(name: String) = copy(relPath = if (relPath.isEmpty()) name else "$relPath/$name")
+
+    fun parent() = copy(relPath = relPath.substringBeforeLast('/', ""))
+
+    companion object {
+        const val DEVICE_DOWNLOADS = "downloads"
+        const val FOLDER = "folder"
+        const val SHARE = "share"
+
+        fun decode(value: String): TransferTarget {
+            val parts = value.split("\u0000")
+            return if (parts.size == 3) TransferTarget(parts[0], parts[1], parts[2]) else TransferTarget()
+        }
+    }
+}
+
 @Serializable
 data class AppSettings(
     val localFolders: List<LocalFolder> = emptyList(),
     val networkShares: List<NetworkShare> = emptyList(),
     val siteProfiles: List<SiteProfile> = emptyList(),
     /** Free key from themoviedb.org/settings/api — used for the TMDb artwork/year fallback (movies & TV) when iTunes has nothing. Empty means that fallback is skipped. */
-    val tmdbApiKey: String = ""
+    val tmdbApiKey: String = "",
+    /** Where finished torrent downloads are saved. */
+    val torrentTarget: TransferTarget = TransferTarget()
 )
 
 /** One lookup step's outcome for a single item during "Fetch artwork & info" — what the progress dialog's log is built from. */

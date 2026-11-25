@@ -12,6 +12,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import com.medialibrary.manager.ui.components.AppTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -50,6 +51,8 @@ fun SettingsScreen(
         item { SharesSection(settings.networkShares, shareTestResult, viewModel) }
         item { HorizontalDivider() }
         item { TmdbSection(settings.tmdbApiKey, viewModel) }
+        item { HorizontalDivider() }
+        item { DownloadsSection(settings, viewModel) }
         if (showSearchSites) {
             item { HorizontalDivider() }
             item { ProfilesSection(settings.siteProfiles, viewModel) }
@@ -205,6 +208,36 @@ private fun SharesSection(shares: List<NetworkShare>, testResult: String?, viewM
                 TextButton(onClick = { editingId = null; clearForm() }) { Text("Cancel") }
             }
         }
+    }
+}
+
+@Composable
+private fun DownloadsSection(settings: com.medialibrary.manager.model.AppSettings, viewModel: MediaLibraryViewModel) {
+    var picking by remember { mutableStateOf(false) }
+    if (picking) {
+        com.medialibrary.manager.ui.components.FolderPickerDialog(
+            title = "Save finished downloads to…",
+            confirmLabel = "Save here",
+            settings = settings,
+            viewModel = viewModel,
+            onPick = {
+                viewModel.setTorrentTarget(it)
+                picking = false
+            },
+            onDismiss = { picking = false }
+        )
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Torrent downloads", style = MaterialTheme.typography.titleMedium)
+        Text(
+            "Where finished downloads are saved: this device's Downloads folder, one of your local " +
+                "folders, or a network share. Pick a Library folder or share and they show up in the " +
+                "Library by themselves. Downloads stop sharing once complete.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(viewModel.transferLabel(settings.torrentTarget), style = MaterialTheme.typography.bodyMedium)
+        OutlinedButton(onClick = { picking = true }) { Text("Change…") }
     }
 }
 

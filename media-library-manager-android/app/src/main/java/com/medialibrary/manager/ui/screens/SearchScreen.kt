@@ -74,6 +74,7 @@ fun SearchScreen(viewModel: MediaLibraryViewModel) {
             results = results,
             downloadingUrl = downloadingUrl,
             onDownload = { viewModel.download(it) },
+            onOpenInOtherApp = { viewModel.openInOtherApp(it) },
             modifier = Modifier.weight(1f)
         )
     }

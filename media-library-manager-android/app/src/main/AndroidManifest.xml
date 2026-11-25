@@ -5,6 +5,14 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!-- Downloads and copies keep running in a foreground service (with a progress notification)
+         when you leave the app. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
     <!-- Same APK runs on phones/tablets and Android TV / Google TV: neither a touchscreen nor
          the TV-app ("leanback") system is required, just supported when present. Without the
          touchscreen line, a non-touch device is implicitly assumed to need one and the app is
@@ -50,6 +58,17 @@
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- specialUse on Android 14+ (dataSync is capped at 6 hours a day there, too short for a
+             big download); dataSync on Android 10-13, which have no specialUse. -->
+        <service
+            android:name=".transfer.TransferService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync|specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="User-started file downloads and copies between devices" />
+        </service>
 
         <!-- Grants other apps (torrent clients) read access to downloaded .torrent files
              from this app's private cache, without exposing the whole cache dir. -->

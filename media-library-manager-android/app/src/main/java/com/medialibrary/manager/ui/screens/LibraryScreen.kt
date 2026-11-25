@@ -30,6 +30,7 @@ import com.medialibrary.manager.model.MediaItem
 import com.medialibrary.manager.model.MediaKind
 import com.medialibrary.manager.model.MediaSourceType
 import com.medialibrary.manager.ui.MediaLibraryViewModel
+import com.medialibrary.manager.ui.components.FolderPickerDialog
 import com.medialibrary.manager.ui.components.MediaBrowser
 import com.medialibrary.manager.ui.components.ScanProgressDialog
 import com.medialibrary.manager.ui.components.TagFilterChips
@@ -37,7 +38,8 @@ import com.medialibrary.manager.ui.components.TagFilterChips
 /**
  * Local folders and network shares live in one browsable library here (see MediaBrowser's "Local"
  * + per-share top-level grouping). Tapping a local item opens it with the OS's default app; tapping
- * a network item streams it live in-app; only network items offer a Download action.
+ * a network item streams it live in-app. Every item has "Copy to…" (any folder on this device or a
+ * network share), which runs in the background; progress shows on the tile and in Downloads.
  */
 @Composable
 fun LibraryScreen(viewModel: MediaLibraryViewModel, isTv: Boolean, onPickImage: (onPicked: (String) -> Unit) -> Unit) {
@@ -49,8 +51,9 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, isTv: Boolean, onPickImage: 
     val fetchingArtwork by viewModel.isFetchingArtwork.collectAsState()
     val scanEvents by viewModel.scanEvents.collectAsState()
     val showScanDialog by viewModel.showScanDialog.collectAsState()
-    val downloadingItemId by viewModel.downloadingItemId.collectAsState()
-    val downloadProgress by viewModel.downloadProgress.collectAsState()
+    val copyingItemId by viewModel.copyingItemId.collectAsState()
+    val copyProgress by viewModel.copyProgress.collectAsState()
+    var copyingFrom by remember { mutableStateOf<MediaItem?>(null) }
     var filter by remember { mutableStateOf("") }
     var selectedTags by remember { mutableStateOf(listOf<String>()) }
 
@@ -62,6 +65,20 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, isTv: Boolean, onPickImage: 
         !scanningLocal -> scanFoldersRequester
         !scanningNetwork -> scanSharesRequester
         else -> null
+    }
+
+    copyingFrom?.let { item ->
+        FolderPickerDialog(
+            title = "Copy \"${item.title ?: item.name}\" to…",
+            confirmLabel = "Copy here",
+            settings = settings,
+            viewModel = viewModel,
+            onPick = { target ->
+                viewModel.copyItem(item, target)
+                copyingFrom = null
+            },
+            onDismiss = { copyingFrom = null }
+        )
     }
 
     if (showScanDialog) {
@@ -100,9 +117,9 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, isTv: Boolean, onPickImage: 
             onFetchInfo = { itemIds, force -> viewModel.fetchInfo(itemIds, force) },
             fetchingInfo = fetchingArtwork,
             onPickImage = onPickImage,
-            onDownload = { viewModel.downloadNetworkItem(it) },
-            downloadingItemId = downloadingItemId,
-            downloadProgress = downloadProgress,
+            onCopy = { copyingFrom = it },
+            copyingItemId = copyingItemId,
+            copyProgress = copyProgress,
             isTv = isTv,
             filterField = {
                 // A placeholder rather than a floating label keeps the field one line tall.

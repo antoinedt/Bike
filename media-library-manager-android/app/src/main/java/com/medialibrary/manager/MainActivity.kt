@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.VideoLibrary
@@ -47,6 +48,7 @@ import androidx.navigation.compose.rememberNavController
 import com.medialibrary.manager.ui.MediaLibraryViewModel
 import com.medialibrary.manager.ui.components.LocalIsTv
 import com.medialibrary.manager.ui.components.PlayerOverlay
+import com.medialibrary.manager.ui.screens.DownloadsScreen
 import com.medialibrary.manager.ui.screens.LibraryScreen
 import com.medialibrary.manager.ui.screens.SearchScreen
 import com.medialibrary.manager.ui.screens.SettingsScreen
@@ -57,6 +59,7 @@ private data class BottomTab(val route: String, val label: String, val icon: Ima
 private val TABS = listOf(
     BottomTab("library", "Library", Icons.Filled.VideoLibrary),
     BottomTab("search", "Search", Icons.Filled.Search),
+    BottomTab("downloads", "Downloads", Icons.Filled.Download),
     BottomTab("settings", "Settings", Icons.Filled.Settings)
 )
 
@@ -70,6 +73,17 @@ class MainActivity : ComponentActivity() {
 
     /** Set just before launching [pickImage]; invoked with the picked image's URI once the photo picker returns. */
     private var pendingImagePick: ((String) -> Unit)? = null
+
+    /** Set just before launching [pickTorrentFile]; gets the picked file's bytes. */
+    private var pendingTorrentPick: ((ByteArray) -> Unit)? = null
+
+    private val pickTorrentFile = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        val callback = pendingTorrentPick
+        pendingTorrentPick = null
+        if (uri == null || callback == null) return@registerForActivityResult
+        val bytes = runCatching { contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
+        if (bytes != null) callback(bytes) else viewModel.showMessage("Couldn't read that file.")
+    }
 
     private val requestPermissions =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { /* handled via re-check on scan */ }
@@ -88,10 +102,13 @@ class MainActivity : ComponentActivity() {
             pendingFolderEditId = null
             return@registerForActivityResult
         }
-        contentResolver.takePersistableUriPermission(
-            uri,
-            Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
-        )
+        // Read for scanning, write for "Copy to…" and saving downloads into it. Some providers only
+        // grant read; that's still fine for browsing.
+        runCatching {
+            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        }.onFailure {
+            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
         val editId = pendingFolderEditId
         pendingFolderEditId = null
         if (editId != null) {
@@ -125,6 +142,10 @@ class MainActivity : ComponentActivity() {
                                 pendingFolderEditId = id
                                 pickFolder.launch(null)
                             },
+                            onOpenTorrentFile = { onPicked ->
+                                pendingTorrentPick = onPicked
+                                pickTorrentFile.launch(arrayOf("application/x-bittorrent", "application/octet-stream"))
+                            },
                             onPickImage = { onPicked ->
                                 pendingImagePick = onPicked
                                 pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
@@ -134,6 +155,11 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        viewModel.onAppForeground()
     }
 
     /** Google TV / Android TV. Checks the leanback feature too, since some TV boxes don't report the TV UI mode. */
@@ -151,10 +177,12 @@ class MainActivity : ComponentActivity() {
         }
         // Needed to save a network item's download pre-scoped-storage; API 29+ writes to
         // MediaStore.Downloads instead, which needs no extra permission.
+        // Progress / "download finished" notifications (Android 13+ asks for this).
+        val notify = if (Build.VERSION.SDK_INT >= 33) arrayOf(Manifest.permission.POST_NOTIFICATIONS) else emptyArray()
         return if (Build.VERSION.SDK_INT < 29) {
-            readPermissions + Manifest.permission.WRITE_EXTERNAL_STORAGE
+            readPermissions + Manifest.permission.WRITE_EXTERNAL_STORAGE + notify
         } else {
-            readPermissions
+            readPermissions + notify
         }
     }
 }
@@ -165,6 +193,7 @@ private fun MediaLibraryApp(
     isTv: Boolean,
     onPickFolder: () -> Unit,
     onChangeFolder: (String) -> Unit,
+    onOpenTorrentFile: (onPicked: (ByteArray) -> Unit) -> Unit,
     onPickImage: (onPicked: (String) -> Unit) -> Unit
 ) {
     val navController = rememberNavController()
@@ -230,6 +259,7 @@ private fun MediaLibraryApp(
             ) {
                 composable("library") { LibraryScreen(viewModel, isTv, onPickImage) }
                 if (!isTv) composable("search") { SearchScreen(viewModel) }
+                composable("downloads") { DownloadsScreen(viewModel, onOpenTorrentFile) }
                 composable("settings") { SettingsScreen(viewModel, onPickFolder, onChangeFolder, showSearchSites = !isTv) }
             }
         }

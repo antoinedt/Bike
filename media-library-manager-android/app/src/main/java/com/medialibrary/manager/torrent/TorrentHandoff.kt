@@ -13,8 +13,8 @@ import java.io.File
 import java.util.UUID
 
 /**
- * Hands a download off to whatever app the user has installed for it — this app never
- * downloads or manages torrents itself. Magnet links go straight to an ACTION_VIEW intent
+ * "Other app" on a search result: hands the download to whatever torrent app the user has
+ * installed, instead of downloading it in this app (TorrentEngine). Magnet links go straight to an ACTION_VIEW intent
  * (whatever's registered for the magnet: scheme, e.g. a torrent client); .torrent URLs are
  * downloaded to this app's cache first (Android has no equivalent of "open this remote URL in
  * another app" for arbitrary file types), then shared out via FileProvider so the OS can offer

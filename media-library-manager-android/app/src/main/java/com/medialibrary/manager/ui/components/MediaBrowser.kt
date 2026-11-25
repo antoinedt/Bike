@@ -81,9 +81,9 @@ fun MediaBrowser(
     onFetchInfo: (itemIds: Set<String>, force: Boolean) -> Unit,
     fetchingInfo: Boolean,
     onPickImage: ((onPicked: (String) -> Unit) -> Unit)? = null,
-    onDownload: ((MediaItem) -> Unit)? = null,
-    downloadingItemId: String? = null,
-    downloadProgress: Float? = null,
+    onCopy: ((MediaItem) -> Unit)? = null,
+    copyingItemId: String? = null,
+    copyProgress: Float? = null,
     isTv: Boolean = false,
     /** First thing in the top bar. */
     filterField: @Composable () -> Unit = {},
@@ -212,9 +212,9 @@ fun MediaBrowser(
             onItemUpdated = onItemUpdated,
             onClearInfo = onClearInfo,
             onPickImage = onPickImage,
-            onDownload = onDownload,
-            downloadingItemId = downloadingItemId,
-            downloadProgress = downloadProgress,
+            onCopy = onCopy,
+            copyingItemId = copyingItemId,
+            copyProgress = copyProgress,
             modifier = Modifier.weight(1f).fillMaxWidth()
         )
         Spacer(Modifier.height(4.dp))

@@ -1,6 +1,9 @@
 package com.medialibrary.manager.ui.components
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -20,7 +23,10 @@ import com.medialibrary.manager.model.SearchResultItem
 fun ResultsList(
     results: List<SearchResultItem>,
     downloadingUrl: String?,
+    /** Downloads in the app (Downloads tab). */
     onDownload: (SearchResultItem) -> Unit,
+    /** Hands it to another installed torrent app. */
+    onOpenInOtherApp: (SearchResultItem) -> Unit,
     modifier: Modifier = Modifier
 ) {
     if (results.isEmpty()) {
@@ -38,8 +44,13 @@ fun ResultsList(
                 },
                 trailingContent = {
                     val isBusy = downloadingUrl == result.downloadUrl
-                    TextButton(onClick = { onDownload(result) }, enabled = !isBusy) {
-                        Text(if (isBusy) "Opening…" else "Download")
+                    Column(horizontalAlignment = Alignment.End) {
+                        TextButton(onClick = { onDownload(result) }, enabled = !isBusy) {
+                            Text(if (isBusy) "Adding…" else "Download")
+                        }
+                        TextButton(onClick = { onOpenInOtherApp(result) }, enabled = !isBusy) {
+                            Text("Other app", style = MaterialTheme.typography.labelSmall)
+                        }
                     }
                 }
             )

@@ -16,7 +16,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -114,10 +114,11 @@ fun MediaGrid(
     onItemUpdated: (title: String, year: String, tags: List<String>, artworkUrl: String?, item: MediaItem) -> Unit,
     onClearInfo: (MediaItem) -> Unit,
     onPickImage: ((onPicked: (String) -> Unit) -> Unit)? = null,
-    onDownload: ((MediaItem) -> Unit)? = null,
-    downloadingItemId: String? = null,
-    /** 0f..1f for the item currently downloading; null while its size is unknown (shows an indeterminate spinner instead of a percentage). */
-    downloadProgress: Float? = null,
+    /** "Copy to…" on any item, local or network. */
+    onCopy: ((MediaItem) -> Unit)? = null,
+    copyingItemId: String? = null,
+    /** 0f..1f for the item being copied; null while its size is unknown (shows an indeterminate spinner instead of a percentage). */
+    copyProgress: Float? = null,
     modifier: Modifier = Modifier
 ) {
     var editingItem by remember { mutableStateOf<MediaItem?>(null) }
@@ -203,19 +204,19 @@ fun MediaGrid(
                             tint = MaterialTheme.colorScheme.primary
                         )
                     }
-                    if (onDownload != null && item.sourceType == MediaSourceType.NETWORK) {
-                        if (item.id == downloadingItemId) {
+                    if (onCopy != null) {
+                        if (item.id == copyingItemId) {
                             Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = 0.6f)), contentAlignment = Alignment.Center) {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    if (downloadProgress != null) {
+                                    if (copyProgress != null) {
                                         CircularProgressIndicator(
-                                            progress = { downloadProgress },
+                                            progress = { copyProgress },
                                             modifier = Modifier.size(32.dp),
                                             color = Color.White,
                                             strokeWidth = 3.dp
                                         )
                                         Text(
-                                            "${(downloadProgress * 100).toInt()}%",
+                                            "${(copyProgress * 100).toInt()}%",
                                             color = Color.White,
                                             style = MaterialTheme.typography.labelMedium
                                         )
@@ -226,12 +227,12 @@ fun MediaGrid(
                             }
                         } else {
                             IconButton(
-                                onClick = { onDownload(item) },
+                                onClick = { onCopy(item) },
                                 modifier = Modifier.align(Alignment.TopEnd).size(28.dp)
                             ) {
                                 Icon(
-                                    Icons.Filled.Download,
-                                    contentDescription = "Download",
+                                    Icons.Filled.ContentCopy,
+                                    contentDescription = "Copy to…",
                                     tint = MaterialTheme.colorScheme.primary
                                 )
                             }

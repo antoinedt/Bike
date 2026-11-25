@@ -17,6 +17,11 @@ import com.medialibrary.manager.model.NetworkShare
 import com.medialibrary.manager.model.ScanProgressEvent
 import com.medialibrary.manager.model.SearchResultItem
 import com.medialibrary.manager.model.SiteProfile
+import com.medialibrary.manager.model.TransferTarget
+import com.medialibrary.manager.torrent.TorrentSnapshot
+import com.medialibrary.manager.transfer.CopyJob
+import com.medialibrary.manager.transfer.CopyState
+import com.medialibrary.manager.transfer.Delivery
 import com.medialibrary.manager.network.SmbContextFactory
 import com.medialibrary.manager.network.SmbDataSource
 import com.medialibrary.manager.network.SmbSidecar
@@ -28,6 +33,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -47,7 +53,8 @@ class MediaLibraryViewModel : ViewModel() {
     private val artworkFetcher = ServiceLocator.artworkFetcher
     private val itemCache = ServiceLocator.itemCacheRepository
     private val smbBrowser = ServiceLocator.smbShareBrowser
-    private val networkDownloader = ServiceLocator.networkDownloader
+    private val transfers = ServiceLocator.transferManager
+    private val transferStorage = ServiceLocator.transferStorage
     private val siteSearch = ServiceLocator.siteSearchRepository
     private val torrentHandoff = ServiceLocator.torrentHandoff
 
@@ -80,12 +87,27 @@ class MediaLibraryViewModel : ViewModel() {
     private val _downloadingUrl = MutableStateFlow<String?>(null)
     val downloadingUrl: StateFlow<String?> = _downloadingUrl.asStateFlow()
 
-    private val _downloadingItemId = MutableStateFlow<String?>(null)
-    val downloadingItemId: StateFlow<String?> = _downloadingItemId.asStateFlow()
+    /** In-app torrent downloads, newest first. */
+    val torrents: StateFlow<List<TorrentSnapshot>> = transfers.torrents
 
-    /** 0f..1f while downloadingItemId is set and the share reported a real size; null otherwise (including an unknown/indeterminate size). */
-    private val _downloadProgress = MutableStateFlow<Float?>(null)
-    val downloadProgress: StateFlow<Float?> = _downloadProgress.asStateFlow()
+    /** Finished downloads being saved to their destination right now, by torrent id. */
+    val deliveries: StateFlow<Map<String, Delivery>> = transfers.deliveries
+
+    /** "Copy to…" jobs (running, queued, and finished ones until cleared). */
+    val copies: StateFlow<List<CopyJob>> = transfers.copies
+
+    /** The item being copied right now, for the progress overlay on its tile. */
+    val copyingItemId: StateFlow<String?> = transfers.copies
+        .map { jobs -> jobs.firstOrNull { it.state == CopyState.RUNNING }?.item?.id }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    /** 0f..1f for [copyingItemId]; null while its size is unknown. */
+    val copyProgress: StateFlow<Float?> = transfers.copies
+        .map { jobs -> jobs.firstOrNull { it.state == CopyState.RUNNING }?.let { if (it.totalBytes > 0) it.copiedBytes.toFloat() / it.totalBytes else null } }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    private val _addingTorrent = MutableStateFlow(false)
+    val addingTorrent: StateFlow<Boolean> = _addingTorrent.asStateFlow()
 
     private val _shareTestResult = MutableStateFlow<String?>(null)
     val shareTestResult: StateFlow<String?> = _shareTestResult.asStateFlow()
@@ -115,6 +137,69 @@ class MediaLibraryViewModel : ViewModel() {
         viewModelScope.launch {
             settingsRepo.settingsFlow.collect { _settings.value = it }
         }
+        // New files landed in a library folder or share (a copy, or a finished download): rescan it.
+        viewModelScope.launch {
+            transfers.libraryChanged.collect { target ->
+                when (target.type) {
+                    TransferTarget.FOLDER -> if (!_isScanningLocal.value) scanLocal()
+                    TransferTarget.SHARE -> if (!_isScanningNetwork.value) scanNetwork()
+                }
+            }
+        }
+    }
+
+    fun showMessage(message: String) {
+        _errorMessage.value = message
+    }
+
+    /** Starts an in-app download from a magnet link, info hash, http(s) .torrent link, or .torrent file bytes. Returns true if it was added. */
+    suspend fun addTorrent(source: Any): Boolean {
+        _addingTorrent.value = true
+        return try {
+            val added = transfers.addTorrent(source)
+            _errorMessage.value = "Downloading \"${added.name}\" — see Downloads."
+            true
+        } catch (e: Exception) {
+            _errorMessage.value = e.message ?: "Couldn't add that download."
+            false
+        } finally {
+            _addingTorrent.value = false
+        }
+    }
+
+    fun pauseTorrent(id: String) = transfers.pause(id)
+
+    fun resumeTorrent(id: String) = transfers.resume(id)
+
+    fun removeTorrent(id: String, deleteFiles: Boolean) = transfers.remove(id, deleteFiles)
+
+    fun retryTorrentSave(id: String) = transfers.retryDelivery(id)
+
+    fun setTorrentTarget(target: TransferTarget) = viewModelScope.launch { settingsRepo.updateTorrentTarget(target) }
+
+    fun copyItem(item: MediaItem, target: TransferTarget) {
+        transfers.copy(item, target)
+        _errorMessage.value = "Copying \"${item.name}\" to ${transferStorage.label(target, _settings.value)}…"
+    }
+
+    fun cancelCopy(jobId: String) = transfers.cancelCopy(jobId)
+
+    fun clearFinishedCopies() = transfers.clearFinishedCopies()
+
+    fun transferLabel(target: TransferTarget): String = transferStorage.label(target, _settings.value)
+
+    fun canBrowse(target: TransferTarget): Boolean = transferStorage.canBrowse(target)
+
+    suspend fun listFolders(target: TransferTarget): List<String> =
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { transferStorage.listFolders(target, _settings.value) }
+
+    suspend fun createFolder(target: TransferTarget, name: String) =
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { transferStorage.createFolder(target, _settings.value, name) }
+
+    /** The app came to the front: (re)start the background service if downloads or copies are running. */
+    fun onAppForeground() {
+        transfers.start()
+        transfers.updateService()
     }
 
     fun clearError() {
@@ -297,7 +382,17 @@ class MediaLibraryViewModel : ViewModel() {
         }
     }
 
+    /** Downloads a search result in the app (Downloads tab). */
     fun download(result: SearchResultItem) {
+        viewModelScope.launch {
+            _downloadingUrl.value = result.downloadUrl
+            addTorrent(result.downloadUrl)
+            _downloadingUrl.value = null
+        }
+    }
+
+    /** Hands a search result to another installed torrent app instead. */
+    fun openInOtherApp(result: SearchResultItem) {
         viewModelScope.launch {
             _downloadingUrl.value = result.downloadUrl
             runCatching { torrentHandoff.handOff(result.downloadUrl) }
@@ -353,32 +448,6 @@ class MediaLibraryViewModel : ViewModel() {
 
     fun stopPlayback() {
         _playback.value = null
-    }
-
-    /** Saves a full local copy of a network item to Downloads/MediaLibraryManager — distinct from streaming. */
-    fun downloadNetworkItem(item: MediaItem) {
-        viewModelScope.launch {
-            val share = item.shareId?.let { settingsRepo.shareById(it) }
-            if (share == null) {
-                _errorMessage.value = "Network share for this item is no longer configured."
-                return@launch
-            }
-            _downloadingItemId.value = item.id
-            _downloadProgress.value = null
-            runCatching {
-                val relPath = item.path.removePrefix("smb://${share.id}/")
-                val url = SmbContextFactory.urlFor(share, relPath)
-                networkDownloader.download(item.name, item.extension, url, SmbContextFactory.contextFor(share)) { bytesWritten, totalBytes ->
-                    _downloadProgress.value = if (totalBytes > 0) bytesWritten.toFloat() / totalBytes else null
-                }
-            }.onSuccess {
-                _errorMessage.value = "Downloaded \"${item.name}\" to Downloads/MediaLibraryManager."
-            }.onFailure {
-                _errorMessage.value = "Download failed: ${it.message}"
-            }
-            _downloadingItemId.value = null
-            _downloadProgress.value = null
-        }
     }
 
     /**
