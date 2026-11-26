@@ -32,6 +32,9 @@ object ServiceLocator {
     val artworkFetcher: ArtworkFetcher by lazy { ArtworkFetcher(appContext) }
     val transferStorage: TransferStorage by lazy { TransferStorage(appContext) }
     val transferManager: TransferManager by lazy { TransferManager(appContext, settingsRepository, transferStorage) }
+    val castManager: com.medialibrary.manager.cast.CastManager by lazy {
+        com.medialibrary.manager.cast.CastManager(appContext, settingsRepository)
+    }
     val remoteManager: com.medialibrary.manager.remote.RemoteManager by lazy {
         com.medialibrary.manager.remote.RemoteManager(appContext, settingsRepository, transferManager)
     }

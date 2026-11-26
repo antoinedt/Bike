@@ -54,6 +54,7 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, isTv: Boolean, onPickImage: 
     val copyingItemId by viewModel.copyingItemId.collectAsState()
     val copyProgress by viewModel.copyProgress.collectAsState()
     var copyingFrom by remember { mutableStateOf<MediaItem?>(null) }
+    val castTarget by viewModel.castTarget.collectAsState()
     var filter by remember { mutableStateOf("") }
     var selectedTags by remember { mutableStateOf(listOf<String>()) }
 
@@ -105,6 +106,8 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, isTv: Boolean, onPickImage: 
             tagFilter = selectedTags,
             onOpen = { item: MediaItem ->
                 when {
+                    // A TV is chosen with the Cast button: play it there instead.
+                    castTarget != null && item.kind != MediaKind.OTHER -> viewModel.castItem(item)
                     item.sourceType == MediaSourceType.NETWORK -> viewModel.playNetworkItem(item)
                     item.kind == MediaKind.VIDEO || item.kind == MediaKind.AUDIO -> viewModel.playLocalItem(context, item)
                     else -> viewModel.openLocalItem(context, item)
@@ -123,14 +126,30 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, isTv: Boolean, onPickImage: 
             isTv = isTv,
             filterField = {
                 // A placeholder rather than a floating label keeps the field one line tall.
-                AppTextField(
-                    value = filter,
-                    onValueChange = { filter = it },
-                    placeholder = { Text("Filter") },
-                    singleLine = true,
-                    modifier = (if (isTv) Modifier.width(280.dp) else Modifier.fillMaxWidth())
-                        .focusRequester(filterRequester)
-                )
+                if (isTv) {
+                    AppTextField(
+                        value = filter,
+                        onValueChange = { filter = it },
+                        placeholder = { Text("Filter") },
+                        singleLine = true,
+                        modifier = Modifier.width(280.dp).focusRequester(filterRequester)
+                    )
+                } else {
+                    // Phone: the Cast button sits next to the filter.
+                    androidx.compose.foundation.layout.Row(
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        AppTextField(
+                            value = filter,
+                            onValueChange = { filter = it },
+                            placeholder = { Text("Filter") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f).focusRequester(filterRequester)
+                        )
+                        com.medialibrary.manager.ui.components.CastButton(viewModel)
+                    }
+                }
             },
             tagChips = {
                 TagFilterChips(
@@ -147,6 +166,7 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, isTv: Boolean, onPickImage: 
             bottomBarFirst = firstEnabledScanButton,
             modifier = Modifier.weight(1f)
         )
+        if (!isTv) com.medialibrary.manager.ui.components.CastBar(viewModel, Modifier.padding(top = 6.dp))
     }
 }
 

@@ -151,13 +151,7 @@ class TransferManager(
             _copies.value.any { it.state == CopyState.QUEUED || it.state == CopyState.RUNNING }
 
     /** Starts the foreground service when work is running (called again when the app comes to the front). */
-    fun updateService() {
-        if (isBusy()) {
-            runCatching { ContextCompat.startForegroundService(context, Intent(context, TransferService::class.java)) }
-        } else {
-            context.stopService(Intent(context, TransferService::class.java))
-        }
-    }
+    fun updateService() = TransferService.refresh(context)
 
     private suspend fun runCopy(jobId: String) {
         val job = _copies.value.find { it.id == jobId } ?: return

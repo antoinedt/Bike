@@ -51,8 +51,7 @@ class TransferService : Service() {
             updater = scope.launch {
                 while (isActive) {
                     delay(1000)
-                    val manager = ServiceLocator.transferManager
-                    if (!manager.isBusy()) {
+                    if (!busy()) {
                         stopSelf()
                         break
                     }
@@ -69,6 +68,8 @@ class TransferService : Service() {
         scope.cancel()
         super.onDestroy()
     }
+
+    private fun busy() = ServiceLocator.transferManager.isBusy() || ServiceLocator.castManager.isActive()
 
     private fun progressText(): String {
         val manager = ServiceLocator.transferManager
@@ -90,7 +91,22 @@ class TransferService : Service() {
         manager.copies.value.find { it.state == CopyState.RUNNING }?.let { c ->
             parts += "Copying ${c.item.name}${if (c.totalBytes > 0) " · ${c.copiedBytes * 100 / c.totalBytes}%" else ""}"
         }
+        ServiceLocator.castManager.state.value?.let { c ->
+            if (ServiceLocator.castManager.isActive()) parts += "Casting ${c.itemName} to ${c.deviceName}"
+        }
         return parts.joinToString("\n").ifEmpty { "Working…" }
+    }
+
+    companion object {
+        /** Starts the service while downloads, copies or casting are running; stops it otherwise. */
+        fun refresh(context: Context) {
+            val busy = ServiceLocator.transferManager.isBusy() || ServiceLocator.castManager.isActive()
+            if (busy) {
+                runCatching { androidx.core.content.ContextCompat.startForegroundService(context, Intent(context, TransferService::class.java)) }
+            } else {
+                context.stopService(Intent(context, TransferService::class.java))
+            }
+        }
     }
 }
 

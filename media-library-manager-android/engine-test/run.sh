@@ -29,7 +29,8 @@ rm -rf "$CACHE/out"
 java -cp "$COMPILER_CP" org.jetbrains.kotlin.cli.jvm.K2JVMCompiler -no-stdlib -no-reflect -jvm-target 17 -nowarn \
   -classpath "$STDLIB:$LT_JAR:$JSON" -d "$CACHE/out" \
   ../app/src/main/java/com/medialibrary/manager/torrent/TorrentEngine.kt EngineTest.kt \
-  ../app/src/main/java/com/medialibrary/manager/remote/RemoteQueue.kt RemoteInterop.kt
+  ../app/src/main/java/com/medialibrary/manager/remote/RemoteQueue.kt RemoteInterop.kt \
+  ../app/src/main/java/com/medialibrary/manager/cast/CastProtocols.kt ../app/src/main/java/com/medialibrary/manager/cast/MediaHttpServer.kt CastInterop.kt
 
 WORK="$(mktemp -d)"
 trap 'kill $SEEDER 2>/dev/null || true; rm -rf "$WORK"' EXIT
@@ -47,3 +48,29 @@ node remote-interop.mjs "$BOX" send
 $KT_RUN receive
 node remote-interop.mjs "$BOX" receive
 $KT_RUN replies
+
+echo "--- Casting: Google Cast (fake TV on castv2) and DLNA (gmediarender, if installed)"
+CAST="$WORK/cast"
+mkdir -p "$CAST"
+openssl req -x509 -newkey rsa:2048 -nodes -keyout "$CAST/key.pem" -out "$CAST/cert.pem" -days 2 -subj "/CN=Chromecast" 2>/dev/null
+head -c 3000000 /dev/urandom > "$CAST/movie.mkv"
+node fake-chromecast.mjs 18009 "$CAST/key.pem" "$CAST/cert.pem" "$CAST/report.json" > "$CAST/fake.log" 2>&1 &
+FAKE=$!
+for _ in $(seq 1 40); do grep -q ready "$CAST/fake.log" 2>/dev/null && break; sleep 0.25; done
+java -cp "$CACHE/out:$STDLIB:$JSON" CastInteropKt cast 18009 "$CAST/movie.mkv" "$CAST/report.json"
+kill $FAKE 2>/dev/null || true
+if command -v gmediarender >/dev/null; then
+  python3 - "$CAST/tone.wav" <<'PY'
+import math, struct, sys, wave
+w = wave.open(sys.argv[1], "wb"); w.setnchannels(1); w.setsampwidth(2); w.setframerate(8000)
+w.writeframes(b"".join(struct.pack("<h", int(8000 * math.sin(2 * math.pi * 440 * i / 8000))) for i in range(8000 * 30))); w.close()
+PY
+  IFACE="$(awk '$2 == "00000000" { print $1; exit }' /proc/net/route)"
+  gmediarender -f "Living Room Samsung" -I "$IFACE" --gstout-audiopipe "fakesink sync=true" --gstout-videosink=fakesink > "$CAST/gmr.log" 2>&1 &
+  GMR=$!
+  sleep 2
+  java -cp "$CACHE/out:$STDLIB:$JSON" CastInteropKt dlna "$CAST/tone.wav"
+  kill $GMR 2>/dev/null || true
+else
+  echo "(skipped DLNA: install gmediarender to run it)"
+fi

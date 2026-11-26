@@ -56,6 +56,21 @@ class MediaLibraryViewModel : ViewModel() {
     private val transfers = ServiceLocator.transferManager
     private val transferStorage = ServiceLocator.transferStorage
     private val remote = ServiceLocator.remoteManager
+    private val castManager = ServiceLocator.castManager
+
+    /** The TV chosen with the Cast button (tapping an item plays it there), and what's playing on it. */
+    val castTarget: StateFlow<com.medialibrary.manager.cast.CastTarget?> = castManager.target
+    val castState: StateFlow<com.medialibrary.manager.cast.CastUiState?> = castManager.state
+
+    suspend fun discoverCastTargets() = castManager.discover()
+
+    fun selectCastTarget(target: com.medialibrary.manager.cast.CastTarget?) = castManager.selectTarget(target)
+
+    fun castItem(item: MediaItem) = castManager.cast(item)
+
+    fun castControl(action: String, value: Double = 0.0) = castManager.control(action, value)
+
+    fun stopCasting() = castManager.stopCasting()
     private val siteSearch = ServiceLocator.siteSearchRepository
     private val torrentHandoff = ServiceLocator.torrentHandoff
 

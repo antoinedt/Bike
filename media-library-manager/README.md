@@ -19,6 +19,10 @@ sources:
   another device** on each one. The receiving device starts it while the app is open there and the
   sender gets a "started on …" message back. Same format on Android and desktop (checked by
   `media-library-manager-android/engine-test/run.sh`).
+- **Cast…** (in an item's details): plays a video, song or photo on a Google TV / Chromecast
+  (Google Cast) or a DLNA TV such as a Samsung, with a remote-control bar (play/pause, ±30 s, seek,
+  stop). The TV streams the file from the app (local, or relayed from the share), so keep the app
+  open while casting. The TV must support the file's format (no conversion); MP4/H.264 is safest.
 - **Copy to…** (in an item's details): copies a local or network item into a folder inside any of
   your Library folders or network shares (with **New folder**), or any folder on this computer.
   Copies run one at a time in the background, never overwrite (an existing name gets " (2)"),

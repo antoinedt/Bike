@@ -98,8 +98,13 @@ app/src/main/java/com/medialibrary/manager/
   another device** on each one. The receiving device starts it while the app is open there and the
   sender gets a "started on …" message back. Same format on Android and desktop (checked by
   `media-library-manager-android/engine-test/run.sh`).
+- **Cast** (phone): the Cast button next to the Library filter finds Google TV / Chromecast
+  (Google Cast) and DLNA TVs such as Samsung on the Wi-Fi; once one is chosen, tapping a video, song
+  or photo plays it there, with a remote-control bar (play/pause, seek, stop). The TV streams the
+  file from the phone (a foreground notification keeps it going with the screen off). No format
+  conversion: the TV must support the file; MP4/H.264 is safest.
 - Tests: `engine-test/run.sh` runs the torrent engine against a local WebTorrent seeder on a
-  desktop JVM (magnet, .torrent file and link, pause/resume, restart, remove, bad input).
+  desktop JVM, plus the casting clients (a castv2-based fake Chromecast; gmediarender for DLNA) (magnet, .torrent file and link, pause/resume, restart, remove, bad input).
 
 ## Legal / scope note
 
