@@ -7,6 +7,7 @@ import android.view.WindowManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -143,7 +144,7 @@ private fun buildSource(stream: TvStream, httpFactory: DefaultHttpDataSource.Fac
 }
 
 private fun friendly(e: PlaybackException): String = when (e.errorCode) {
-    PlaybackException.ERROR_CODE_DRM_UNSUPPORTED_SCHEME,
+    PlaybackException.ERROR_CODE_DRM_SCHEME_UNSUPPORTED,
     PlaybackException.ERROR_CODE_DRM_SYSTEM_ERROR,
     PlaybackException.ERROR_CODE_DRM_PROVISIONING_FAILED,
     PlaybackException.ERROR_CODE_DRM_LICENSE_ACQUISITION_FAILED ->
