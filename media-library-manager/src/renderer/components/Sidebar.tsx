@@ -12,17 +12,18 @@ const ITEMS: { id: Tab; label: string; icon: IconName }[] = [
 export default function Sidebar({ active, onSelect }: { active: Tab; onSelect: (t: Tab) => void }) {
   return (
     <nav className="sidebar">
-      <div className="sidebar-title"><img className="sidebar-logo" src="./omniplay.svg" alt="" />OmniPlay</div>
+      <div className="sidebar-title" title="OmniPlay"><img className="sidebar-logo" src="./omniplay.svg" alt="OmniPlay" /></div>
       {ITEMS.map((item) => (
         <button
           key={item.id}
           className={`sidebar-item${active === item.id ? " active" : ""}`}
           onClick={() => onSelect(item.id)}
+          title={item.label}
+          aria-label={item.label}
         >
           <span className="sidebar-icon">
-            <Icon name={item.icon} size={20} />
+            <Icon name={item.icon} size={24} />
           </span>
-          {item.label}
         </button>
       ))}
     </nav>

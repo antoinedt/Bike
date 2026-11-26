@@ -92,6 +92,7 @@ fun main(args: Array<String>) {
     threads.forEach { it.join() }
     val after = JSONObject(get("$control/state")).getJSONArray("logins").length()
     ok(after - before == 1 && store.value != null, "parallel requests after expiry renew once and stay signed in")
+    ok(FizzTvClient.parseTime("/Date(1795680000000+0000)/") == 1795680000000L && FizzTvClient.parseTime("/Date(1795680000000-0500)/") == 1795680000000L, "Fizz's /Date(ms+zone)/ times")
     ok(FizzTvClient.parseTime("2026-11-26T05:00:00") == 1795669200000L && FizzTvClient.parseTime("2026-11-26T05:00:00-05:00") == 1795687200000L, "guide times without a zone are UTC")
 
     val big = client.guide((100 until 112).toList(), 0L, 24 * 3600_000L)

@@ -358,9 +358,12 @@ export class FizzTvClient {
   }
 }
 
-/** ISO time; one without a zone is UTC (the guide is asked for in UTC). */
+/** A guide time: Fizz's "/Date(ms+zone)/", or ISO (one without a zone is UTC). */
 export function parseTime(text: unknown): number {
   if (typeof text !== "string" || !text) return NaN;
+  // What Fizz actually sends: "/Date(1795680000000+0000)/" (epoch ms, then the zone).
+  const msDate = /\/Date\((-?\d+)([+-]\d{4})?\)\//.exec(text);
+  if (msDate) return Number(msDate[1]);
   const zoned = /(Z|[+-]\d\d:?\d\d)$/i.test(text);
   return Date.parse(zoned ? text : `${text}Z`);
 }

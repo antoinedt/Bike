@@ -376,9 +376,11 @@ class FizzTvClient(private val store: TvCredentialStore, private val newDeviceId
             }
         }
 
-        /** ISO time; one without a zone is UTC (the guide is asked for in UTC). */
+        /** A guide time: Fizz's "/Date(ms+zone)/", or ISO (one without a zone is UTC). */
         fun parseTime(text: String): Long? {
             if (text.isEmpty()) return null
+            // What Fizz actually sends: "/Date(1795680000000+0000)/" (epoch ms, then the zone).
+            Regex("""/Date\((-?\d+)([+-]\d{4})?\)/""").find(text)?.let { return it.groupValues[1].toLong() }
             return runCatching { OffsetDateTime.parse(text).toInstant().toEpochMilli() }.getOrNull()
                 ?: runCatching { java.time.LocalDateTime.parse(text).toInstant(java.time.ZoneOffset.UTC).toEpochMilli() }.getOrNull()
         }

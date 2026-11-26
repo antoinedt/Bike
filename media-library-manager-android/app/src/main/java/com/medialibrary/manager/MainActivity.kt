@@ -234,8 +234,7 @@ private fun MediaLibraryApp(
                         NavigationBarItem(
                             selected = currentRoute == tab.route,
                             onClick = { goTo(tab.route) },
-                            icon = { Icon(tab.icon, contentDescription = tab.label) },
-                            label = { Text(tab.label) }
+                            icon = { Icon(tab.icon, contentDescription = tab.label) }
                         )
                     }
                 }
@@ -249,8 +248,7 @@ private fun MediaLibraryApp(
                         NavigationRailItem(
                             selected = currentRoute == tab.route,
                             onClick = { goTo(tab.route) },
-                            icon = { Icon(tab.icon, contentDescription = tab.label) },
-                            label = { Text(tab.label) }
+                            icon = { Icon(tab.icon, contentDescription = tab.label) }
                         )
                     }
                 }

@@ -87,6 +87,8 @@ test("guide times without a zone are UTC", () => {
   assert.equal(parseTime("2026-11-26T05:00:00"), Date.UTC(2026, 10, 26, 5));
   assert.equal(parseTime("2026-11-26T05:00:00-05:00"), Date.UTC(2026, 10, 26, 10));
   assert.ok(Number.isNaN(parseTime("")));
+  assert.equal(parseTime("/Date(1795680000000+0000)/"), 1795680000000);
+  assert.equal(parseTime("/Date(1795680000000-0500)/"), 1795680000000);
 });
 
 test("a guide bigger than one page (500) is fetched in pages", async () => {

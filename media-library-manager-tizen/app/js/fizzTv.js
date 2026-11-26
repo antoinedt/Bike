@@ -240,6 +240,9 @@ var FizzTv = (function () {
   /** ISO time; one without a zone is UTC (the guide is asked for in UTC). */
   function parseTime(text) {
     if (typeof text !== "string" || !text) return NaN;
+    // What Fizz actually sends: "/Date(1795680000000+0000)/" (epoch ms, then the zone).
+    var msDate = /\/Date\((-?\d+)([+-]\d{4})?\)\//.exec(text);
+    if (msDate) return Number(msDate[1]);
     return Date.parse(/(Z|[+-]\d\d:?\d\d)$/i.test(text) ? text : text + "Z");
   }
 

@@ -26,7 +26,8 @@ body {
 }
 
 .sidebar {
-  width: 200px;
+  width: 72px;
+  align-items: center;
   flex-shrink: 0;
   background: var(--bg-alt);
   border-right: 1px solid var(--border);
@@ -37,7 +38,7 @@ body {
 
 .sidebar-title {
   font-weight: 700;
-  padding: 8px 12px 16px;
+  padding: 6px 0 18px;
   color: var(--text);
   font-size: 18px;
 }
@@ -45,8 +46,11 @@ body {
 .sidebar-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
+  justify-content: center;
+  width: 52px;
+  height: 48px;
+  margin-bottom: 4px;
+  padding: 0;
   border: none;
   background: transparent;
   color: var(--text);
@@ -744,7 +748,7 @@ body {
 
 .cast-bar {
   position: fixed;
-  left: 216px;
+  left: 88px;
   right: 16px;
   bottom: 16px;
   display: flex;
@@ -1032,6 +1036,6 @@ body {
   gap: 8px;
 }
 .sidebar-logo {
-  width: 26px;
-  height: 26px;
+  width: 36px;
+  height: 36px;
 }
