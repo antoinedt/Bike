@@ -88,3 +88,14 @@ test("guide times without a zone are UTC", () => {
   assert.equal(parseTime("2026-11-26T05:00:00-05:00"), Date.UTC(2026, 10, 26, 10));
   assert.ok(Number.isNaN(parseTime("")));
 });
+
+test("a guide bigger than one page (500) is fetched in pages", async () => {
+  const store = memoryStore();
+  const client = new FizzTvClient(store, fake.config);
+  await signIn(client);
+  const ids = Array.from({ length: 12 }, (_, i) => 100 + i);
+  const before = fake.state.guideRequests.length;
+  const programs = await client.guide(ids, 0, 24 * 3600_000); // 12 channels x 48 shows = 576
+  assert.equal(programs.length, 576);
+  assert.equal(fake.state.guideRequests.length - before, 2);
+});

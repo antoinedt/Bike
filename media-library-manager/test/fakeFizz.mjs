@@ -117,6 +117,10 @@ export async function startFakeFizz() {
     if (p === "/api/v3/guide/client" && req.method === "GET") {
       const session = req.headers["x-session-id"];
       if (!state.sessions.has(session)) return json(res, 500, { Message: "Object reference not set to an instance of an object." });
+      const pageSize = Number(url.searchParams.get("PageSize"));
+      const pageNumber = Number(url.searchParams.get("PageNumber") ?? 1);
+      // Like the real service.
+      if (!(pageSize >= 1 && pageSize <= 500)) return json(res, 400, { PageSize: ["The field PageSize must be between 1 and 500."] });
       const ids = (url.searchParams.get("ChannelIds") ?? "").split(",").map(Number);
       const from = Number(url.searchParams.get("StartDate"));
       state.guideRequests.push({ ids, from, to: Number(url.searchParams.get("EndDate")) });
@@ -138,7 +142,7 @@ export async function startFakeFizz() {
           });
         }
       }
-      return json(res, 200, { items });
+      return json(res, 200, { items: items.slice((pageNumber - 1) * pageSize, pageNumber * pageSize) });
     }
     json(res, 404, { Message: "not found" });
   });

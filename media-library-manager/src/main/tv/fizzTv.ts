@@ -65,6 +65,10 @@ class HttpError extends Error {
 
 const b64url = (b: Buffer) => b.toString("base64url");
 
+/** The service's maximum page size for the guide. */
+export const PAGE_SIZE = 500;
+const MAX_PAGES = 10;
+
 /** A device id like the Fizz app's (Android's 16-hex-digit ANDROID_ID). */
 export const randomDeviceId = () => crypto.randomBytes(8).toString("hex");
 
@@ -175,11 +179,17 @@ export class FizzTvClient {
   async guide(channelIds: number[], from: number, to: number): Promise<TvProgram[]> {
     if (channelIds.length === 0) return [];
     const ids = [...new Set(channelIds)].sort((a, b) => a - b).join(",");
-    const params = new URLSearchParams({ ChannelIds: ids, StartDate: String(from), EndDate: String(to), PageNumber: "1", PageSize: "1000" });
-    const body = await this.withSession((session) =>
-      this.http("GET", `${this.config.apiBase}/api/v3/guide/client?${params}`, { headers: { "X-Session-Id": session } })
-    );
-    const items: Json[] = JSON.parse(body).items ?? [];
+    // The service allows at most 500 results per request: page through them.
+    const items: Json[] = [];
+    for (let page = 1; page <= MAX_PAGES; page++) {
+      const params = new URLSearchParams({ ChannelIds: ids, StartDate: String(from), EndDate: String(to), PageNumber: String(page), PageSize: String(PAGE_SIZE) });
+      const body = await this.withSession((session) =>
+        this.http("GET", `${this.config.apiBase}/api/v3/guide/client?${params}`, { headers: { "X-Session-Id": session } })
+      );
+      const pageItems: Json[] = JSON.parse(body).items ?? [];
+      items.push(...pageItems);
+      if (pageItems.length < PAGE_SIZE) break;
+    }
     const seen = new Set<string>();
     const programs: TvProgram[] = [];
     for (const p of items) {

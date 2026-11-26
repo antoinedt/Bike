@@ -94,6 +94,9 @@ fun main(args: Array<String>) {
     ok(after - before == 1 && store.value != null, "parallel requests after expiry renew once and stay signed in")
     ok(FizzTvClient.parseTime("2026-11-26T05:00:00") == 1795669200000L && FizzTvClient.parseTime("2026-11-26T05:00:00-05:00") == 1795687200000L, "guide times without a zone are UTC")
 
+    val big = client.guide((100 until 112).toList(), 0L, 24 * 3600_000L)
+    ok(big.size == 576, "a guide bigger than one page (500) is fetched in pages")
+
     val logins = JSONObject(get("$control/state")).getJSONArray("logins")
     ok((0 until logins.length()).all { logins.getJSONObject(it).getString("appName") == "F-GOOGLE-PLAY-MOBILE" }, "logins identify as the Fizz phone app")
     println("TV interop: all passed")

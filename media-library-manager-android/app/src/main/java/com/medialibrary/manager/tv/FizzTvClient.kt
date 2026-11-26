@@ -187,17 +187,23 @@ class FizzTvClient(private val store: TvCredentialStore, private val newDeviceId
     fun guide(channelIds: List<Int>, from: Long, to: Long): List<TvProgram> {
         if (channelIds.isEmpty()) return emptyList()
         val ids = channelIds.distinct().sorted().joinToString(",")
-        val body = withSession { session ->
-            http(
-                "GET",
-                "${config.apiBase}/api/v3/guide/client?" + form(
-                    "ChannelIds" to ids, "StartDate" to from.toString(), "EndDate" to to.toString(),
-                    "PageNumber" to "1", "PageSize" to "1000"
-                ),
-                headers = mapOf("X-Session-Id" to session)
-            )
+        // The service allows at most 500 results per request: page through them.
+        val items = JSONArray()
+        for (page in 1..MAX_PAGES) {
+            val body = withSession { session ->
+                http(
+                    "GET",
+                    "${config.apiBase}/api/v3/guide/client?" + form(
+                        "ChannelIds" to ids, "StartDate" to from.toString(), "EndDate" to to.toString(),
+                        "PageNumber" to page.toString(), "PageSize" to PAGE_SIZE.toString()
+                    ),
+                    headers = mapOf("X-Session-Id" to session)
+                )
+            }
+            val pageItems = JSONObject(body).optJSONArray("items") ?: JSONArray()
+            for (i in 0 until pageItems.length()) items.put(pageItems.get(i))
+            if (pageItems.length() < PAGE_SIZE) break
         }
-        val items = JSONObject(body).optJSONArray("items") ?: JSONArray()
         return (0 until items.length()).mapNotNull { i ->
             val p = items.getJSONObject(i)
             val air = p.optJSONObject("recentAirTime") ?: return@mapNotNull null
@@ -354,6 +360,10 @@ class FizzTvClient(private val store: TvCredentialStore, private val newDeviceId
     private fun randomToken(bytes: Int) = b64url(ByteArray(bytes).also(random::nextBytes))
 
     companion object {
+        /** The service's maximum page size for the guide. */
+        const val PAGE_SIZE = 500
+        private const val MAX_PAGES = 10
+
         fun b64url(data: ByteArray): String = Base64.getUrlEncoder().withoutPadding().encodeToString(data)
 
         fun form(vararg fields: Pair<String, String>) =
