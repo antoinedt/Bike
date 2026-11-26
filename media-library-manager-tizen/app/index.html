@@ -12,10 +12,45 @@
       <div class="kind-tabs">
         <button id="tab-video" class="tab active" data-kind="video">Video</button>
         <button id="tab-audio" class="tab" data-kind="audio">Audio</button>
+        <button id="tab-tv" class="tab" data-kind="tv">TV</button>
       </div>
     </header>
     <div id="status" class="status"></div>
     <div id="grid" class="grid"></div>
+
+    <div id="tv-view" class="tv-view hidden">
+      <div id="tv-signin" class="tv-signin hidden">
+        <h2>Fizz TV</h2>
+        <p id="tv-signin-text">Sign in with your Fizz account to see the guide for the channels in your plan. You only need to do this once.</p>
+        <div id="tv-code" class="tv-code hidden">
+          <p>On your phone or computer, go to</p>
+          <p id="tv-code-url" class="tv-code-url"></p>
+          <p>and enter this code:</p>
+          <p id="tv-code-value" class="tv-code-value"></p>
+          <p class="tv-waiting">Waiting for you to sign in…</p>
+        </div>
+        <p id="tv-signin-error" class="tv-error"></p>
+        <button id="tv-signin-button" class="tv-button">Sign in with a code</button>
+      </div>
+      <div id="tv-guide" class="tv-guide hidden">
+        <div class="tv-bar">
+          <div id="tv-days" class="tv-days"></div>
+          <span id="tv-email" class="tv-email"></span>
+        </div>
+        <div id="tv-status" class="tv-status"></div>
+        <div id="tv-timeline" class="tv-timeline"></div>
+        <div id="tv-rows" class="tv-rows"></div>
+      </div>
+      <div id="tv-details" class="tv-details hidden">
+        <div class="tv-details-box">
+          <h2 class="tv-details-title"></h2>
+          <div class="tv-details-episode"></div>
+          <div class="tv-details-meta"></div>
+          <p class="tv-details-text"></p>
+          <button class="tv-button">Close</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div id="player-view" class="view hidden">
@@ -28,6 +63,8 @@
   </div>
 
   <script src="js/titleGuess.js"></script>
+  <script src="js/fizzTv.js"></script>
+  <script src="js/tvTab.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

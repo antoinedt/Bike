@@ -317,13 +317,22 @@
   }
 
   function selectKind(kind) {
-    currentKind = kind;
-    lastFocusedId = null;
     var tabs = document.querySelectorAll(".tab");
     for (var i = 0; i < tabs.length; i++) {
       if (tabs[i].getAttribute("data-kind") === kind) tabs[i].classList.add("active");
       else tabs[i].classList.remove("active");
     }
+    // The TV tab (Fizz guide) replaces the media grid while it's selected.
+    if (kind === "tv") {
+      grid.classList.add("hidden");
+      setStatus("");
+      TvTab.show();
+      return;
+    }
+    TvTab.hide();
+    grid.classList.remove("hidden");
+    currentKind = kind;
+    lastFocusedId = null;
     grid.scrollTop = 0;
     render();
   }
@@ -427,7 +436,9 @@
     // Moving between the tab row and the grid: "nearest" would mean nearest to the center of the
     // control you're leaving, so Down from a tab landed on the second tile. Down from the tabs
     // always lands on the first tile, and Up from the grid lands on the tab that's selected.
-    if (best && direction === "down" && header.contains(current) && grid.contains(best)) {
+    if (direction === "down" && header.contains(current) && TvTab.isActive()) {
+      best = TvTab.firstFocusable() || best;
+    } else if (best && direction === "down" && header.contains(current) && grid.contains(best)) {
       best = grid.firstChild;
     } else if (best && direction === "up" && grid.contains(current) && header.contains(best)) {
       best = header.querySelector(".tab.active") || best;
@@ -456,6 +467,12 @@
 
     // Remote "Return" closes the player if it's open, otherwise exits the app — without this
     // handler Return does nothing at all on a Tizen web app.
+    // The TV tab handles its own keys (guide navigation, details, Return back to the tabs).
+    if (!isPlayerOpen() && TvTab.isActive() && TvTab.handleKey(code, KEY, header)) {
+      e.preventDefault();
+      return;
+    }
+
     if (code === KEY.BACK) {
       e.preventDefault();
       if (isPlayerOpen()) stopPlayback();
@@ -482,6 +499,7 @@
 
   document.getElementById("tab-video").addEventListener("click", function () { selectKind("video"); });
   document.getElementById("tab-audio").addEventListener("click", function () { selectKind("audio"); });
+  document.getElementById("tab-tv").addEventListener("click", function () { selectKind("tv"); });
   backButton.addEventListener("click", stopPlayback);
   [videoPlayer, audioPlayer].forEach(function (p) {
     p.addEventListener("error", function () {

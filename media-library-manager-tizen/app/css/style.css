@@ -230,3 +230,226 @@ audio.player {
   margin: auto 80px;
   width: auto;
 }
+
+/* ---- TV tab (Fizz "My plan" guide) ---- */
+.tv-view {
+  position: relative;
+  -webkit-flex: 1;
+  flex: 1;
+  min-height: 0;
+  margin: 0 24px;
+}
+.tv-signin {
+  max-width: 1100px;
+  margin: 40px auto 0;
+  text-align: center;
+}
+.tv-signin h2 {
+  font-size: 52px;
+  margin: 0 0 16px;
+}
+.tv-signin p {
+  color: #9aa3b2;
+  margin: 8px 0;
+}
+.tv-code-url {
+  color: #5b8cff !important;
+  font-size: 40px;
+}
+.tv-code-value {
+  color: #f4f6f8 !important;
+  font-size: 96px;
+  font-weight: 700;
+  letter-spacing: 12px;
+  margin: 16px 0 !important;
+}
+.tv-error {
+  color: #e5637a !important;
+}
+.tv-button {
+  margin-top: 24px;
+  padding: 18px 48px;
+  border-radius: 40px;
+  background: #5b8cff;
+}
+.tv-guide {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+.tv-bar {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.tv-days {
+  -webkit-flex: 1;
+  flex: 1;
+  white-space: nowrap;
+}
+.tv-day,
+.tv-action {
+  margin-right: 10px;
+  padding: 10px 22px;
+  border-radius: 30px;
+  background: #1c1f26;
+  color: #9aa3b2;
+  font-size: 24px;
+}
+.tv-day.active {
+  background: #5b8cff;
+  color: #f4f6f8;
+}
+.tv-action {
+  margin-left: 6px;
+}
+.tv-email {
+  color: #9aa3b2;
+  font-size: 22px;
+}
+.tv-status {
+  display: none;
+  color: #9aa3b2;
+  margin: 8px 0;
+}
+.tv-timeline {
+  position: relative;
+  height: 40px;
+  border-bottom: 2px solid #2b2f38;
+}
+.tv-tick {
+  position: absolute;
+  top: 4px;
+  padding-left: 8px;
+  border-left: 2px solid #2b2f38;
+  color: #9aa3b2;
+  font-size: 22px;
+  white-space: nowrap;
+}
+.tv-now {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: #e5637a;
+}
+.tv-rows {
+  position: absolute;
+  top: 120px;
+  left: 0;
+  right: 0;
+  bottom: 24px;
+  overflow: hidden;
+}
+.tv-row {
+  position: relative;
+  height: 96px;
+  border-bottom: 2px solid #1c1f26;
+}
+.tv-ch {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 212px;
+  height: 92px;
+  background: #1c1f26;
+  border-radius: 10px;
+  text-align: center;
+  padding-top: 12px;
+  overflow: hidden;
+  font-size: 22px;
+}
+.tv-ch img {
+  display: block;
+  max-width: 180px;
+  max-height: 44px;
+  margin: 0 auto 4px;
+}
+.tv-ch-num {
+  display: block;
+  color: #9aa3b2;
+  font-size: 20px;
+}
+.tv-progs {
+  position: absolute;
+  left: 220px;
+  right: 0;
+  top: 0;
+  bottom: 0;
+}
+.tv-prog {
+  position: absolute;
+  top: 4px;
+  height: 84px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: #23272f;
+  text-align: left;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.tv-prog.live {
+  background: #2d3f72;
+}
+.tv-prog.past {
+  background: #1a1d23;
+  color: #9aa3b2;
+}
+.tv-prog-title,
+.tv-prog-sub {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tv-prog-title {
+  font-size: 26px;
+}
+.tv-prog-sub {
+  font-size: 20px;
+  color: #9aa3b2;
+  margin-top: 4px;
+}
+.tv-prog:focus {
+  outline-offset: -2px;
+}
+.tv-none {
+  position: absolute;
+  top: 30px;
+  left: 16px;
+  color: #9aa3b2;
+  font-size: 22px;
+}
+.tv-details {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+}
+.tv-details-box {
+  width: 1100px;
+  margin: 160px auto 0;
+  padding: 40px 48px;
+  background: #1c1f26;
+  border-radius: 20px;
+}
+.tv-details-box h2 {
+  margin: 0 0 8px;
+  font-size: 44px;
+}
+.tv-details-episode {
+  font-weight: 600;
+}
+.tv-details-meta {
+  color: #9aa3b2;
+  margin: 8px 0 16px;
+  font-size: 24px;
+}
+.tv-details-text {
+  line-height: 1.4;
+}

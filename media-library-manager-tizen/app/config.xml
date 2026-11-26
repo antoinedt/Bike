@@ -15,10 +15,15 @@
     <content src="index.html"/>
     <feature name="http://tizen.org/feature/screen.size.all"/>
     <tizen:profile name="tv"/>
+    <access origin="https://auth.fizz.ca" subdomains="false"/>
+    <access origin="https://a2.vmedia.ca" subdomains="false"/>
+    <access origin="https://images.cdn.vmedia.ca" subdomains="false"/>
     <!-- content.read: tizen.content.find() to list video/audio the TV has already indexed.
          externalstorage/mediastorage: walking a USB drive's folders directly when the index
-         doesn't have it. No internet privilege: this build is local browse + play only. -->
+         doesn't have it. internet + the access origins below: only for the TV tab (the Fizz
+         TV guide); the rest of the app stays local. -->
     <tizen:privilege name="http://tizen.org/privilege/content.read"/>
+    <tizen:privilege name="http://tizen.org/privilege/internet"/>
     <tizen:privilege name="http://tizen.org/privilege/externalstorage"/>
     <tizen:privilege name="http://tizen.org/privilege/mediastorage"/>
     <!-- tvinputdevice: the remote's play/pause/stop/FF/rewind keys are only delivered to the

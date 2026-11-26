@@ -3,7 +3,7 @@
 The third version of Media Library Manager, alongside the desktop app (`media-library-manager/`)
 and the Android / Google TV app (`media-library-manager-android/`). This one is deliberately small:
 **browse and play the video and audio on a USB drive plugged into the TV** (or the TV's own
-storage). That's it.
+storage), plus the Fizz TV guide (TV tab).
 
 What it doesn't have, compared to the other two:
 
@@ -27,6 +27,21 @@ What it doesn't have, compared to the other two:
 Which files actually play is up to the TV's built-in player. Modern Samsung TVs handle MP4/MKV
 with H.264/H.265 and common audio fine; old formats (some AVI/WMV) may not. If a file can't play,
 the player says so.
+
+## TV tab (Fizz TV guide)
+
+The **TV** tab shows the Fizz TV guide for the channels in your plan (the Fizz app's
+"Guide → My plan"), for yesterday through the next 6 days. Guide only: no live playback.
+
+- The first time, choose **Sign in with a code**: the TV shows a code; on your phone or computer
+  go to **auth.fizz.ca/activate**, enter it and sign in. The TV remembers the login (Return /
+  restarts don't sign you out; only **Sign out** or Fizz rejecting the saved login does).
+- **Down** goes into the guide at what's on now. **Up/Down** moves between channels,
+  **Left/Right** between shows (the guide scrolls with you), **OK** shows a show's details,
+  **Return** closes them / goes back to the tabs.
+
+This is the only part of the app that uses the internet (to auth.fizz.ca, a2.vmedia.ca and
+images.cdn.vmedia.ca, listed in `config.xml`).
 
 ## Installing on your Samsung TV
 

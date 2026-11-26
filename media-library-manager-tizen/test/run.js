@@ -312,6 +312,72 @@ const focusedId = (page) => page.evaluate(() => document.activeElement && (docum
     await page.close();
   }
 
+  // 8. TV tab: sign in with a code, then the Fizz "My plan" guide, against a fake Fizz server.
+  //    --disable-web-security stands in for the TV's <access origin> rules in config.xml.
+  {
+    const { startFakeFizz } = await import(pathToFileURL(path.join(__dirname, "..", "..", "media-library-manager", "test", "fakeFizz.mjs")).href);
+    const fake = await startFakeFizz();
+    const tvBrowser = await chromium.launch({ args: ["--disable-web-security", "--allow-file-access-from-files"] });
+    const context = await tvBrowser.newContext({ viewport: { width: 1920, height: 1080 } });
+    const page = await context.newPage();
+    const errors = [];
+    page.on("pageerror", (e) => errors.push(e.message));
+    await page.addInitScript(mockTizen(videos, audios));
+    await page.addInitScript((cfg) => { window.FIZZ_CONFIG_OVERRIDE = cfg; }, fake.config);
+    await page.goto(APP);
+    await page.waitForSelector(".card");
+    await pressRemote(page, 38); // Up to the tabs
+    await pressRemote(page, 39);
+    await pressRemote(page, 39);
+    check((await focusedId(page)) === "tab-tv", "TV tab reachable with the remote");
+    await page.keyboard.press("Enter");
+    check(await page.isVisible("#tv-signin") && !(await page.isVisible("#grid")), "TV tab asks to sign in (only when opened)");
+    await pressRemote(page, 40);
+    check((await focusedId(page)) === "tv-signin-button", "Down from the tabs reaches the sign-in button");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => document.getElementById("tv-code-value").textContent === "ABCD-EFGH", null, { timeout: 10000 });
+    check(true, "sign-in code shown");
+    await page.screenshot({ path: path.join(OUT, "tv-signin.png") });
+    await page.waitForSelector(".tv-prog", { timeout: 15000 });
+    check(true, "guide shown once the code is approved");
+    check((await page.$$(".tv-row")).length === 2, "My plan channels listed (hidden channel left out)");
+    const active = () => page.evaluate(() => { const e = document.activeElement; return { cls: e.className, ch: e.getAttribute("data-channel"), key: e.getAttribute("data-key"), text: e.textContent }; });
+    await pressRemote(page, 40);
+    let a = await active();
+    check(a.ch === "10" && a.cls.indexOf("live") >= 0, "Down enters the guide on what's on now (first channel)");
+    await pressRemote(page, 39);
+    const b = await active();
+    check(b.ch === "10" && b.key !== a.key, "Right moves to the next show on the same channel");
+    await pressRemote(page, 40);
+    a = await active();
+    check(a.ch === "20", "Down moves to the next channel");
+    await page.screenshot({ path: path.join(OUT, "tv-guide.png") });
+    await page.keyboard.press("Enter");
+    check(await page.isVisible("#tv-details") && (await page.textContent(".tv-details-title")).indexOf("News at") === 0, "OK opens the show's details");
+    await pressRemote(page, 10009);
+    check(!(await page.isVisible("#tv-details")) && (await active()).ch === "20", "Return closes details, focus back on the show");
+    const firstTick = await page.textContent(".tv-tick");
+    for (let i = 0; i < 8; i++) await pressRemote(page, 39);
+    check((await page.textContent(".tv-tick")) !== firstTick && (await active()).ch === "20", "moving right past the window moves the guide later");
+    await pressRemote(page, 10009);
+    check((await focusedId(page)) === "tab-tv", "Return from the guide goes back to the tabs");
+    await pressRemote(page, 10009);
+    check(await page.evaluate(() => window.__exited), "Return on the tabs closes the app");
+    const loginsBefore = fake.state.logins.length;
+    await page.reload();
+    await page.waitForSelector(".card");
+    await page.click("#tab-tv");
+    await page.waitForSelector(".tv-prog", { timeout: 15000 });
+    check(!(await page.isVisible("#tv-signin")) && fake.state.logins.length === loginsBefore, "login saved: guide shows after restart without signing in again");
+    fake.expireSessions();
+    await page.click(".tv-action"); // Refresh
+    await page.waitForFunction(() => document.querySelectorAll(".tv-prog").length > 0 && document.getElementById("tv-status").textContent === "", null, { timeout: 15000 });
+    check(fake.state.logins.length === loginsBefore + 1, "expired session renewed once while loading the guide");
+    check(errors.length === 0, "no page errors in the TV tab" + (errors.length ? ": " + errors.join(" | ") : ""));
+    await tvBrowser.close();
+    await fake.close();
+  }
+
   await browser.close();
   console.log(failures.length ? "\n" + failures.length + " FAILURE(S)" : "\nALL PASSED");
   process.exit(failures.length ? 1 : 0);
