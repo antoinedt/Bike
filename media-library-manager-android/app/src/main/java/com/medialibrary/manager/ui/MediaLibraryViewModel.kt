@@ -247,7 +247,8 @@ class MediaLibraryViewModel : ViewModel() {
      * scan's items (which never carry that data themselves) would silently lose everything
      * "Fetch artwork & info" had already found, on every rescan and every app restart.
      */
-    fun scanLocal() {
+    /** [announce]: say how many items were found (when you pressed Scan in Settings). */
+    fun scanLocal(announce: Boolean = false) {
         viewModelScope.launch {
             _isScanningLocal.value = true
             val folders = _settings.value.localFolders
@@ -260,6 +261,7 @@ class MediaLibraryViewModel : ViewModel() {
             }.onSuccess { fresh ->
                 val cache = itemCache.load()
                 _localItems.value = itemCache.mergeWithCache(fresh, cache)
+                if (announce) showMessage("Found ${fresh.size} item${if (fresh.size == 1) "" else "s"}. They're in the Library.")
             }.onFailure { _errorMessage.value = it.message }
             _isScanningLocal.value = false
         }
@@ -368,13 +370,14 @@ class MediaLibraryViewModel : ViewModel() {
     fun removeLocalFolder(id: String) = viewModelScope.launch { settingsRepo.removeLocalFolder(id) }
 
     /** Merges in previously-fetched artwork/title/year from the on-device cache — see scanLocal(). */
-    fun scanNetwork() {
+    fun scanNetwork(announce: Boolean = false) {
         viewModelScope.launch {
             _isScanningNetwork.value = true
             runCatching { _settings.value.networkShares.flatMap { share -> smbBrowser.scan(share) } }
                 .onSuccess { fresh ->
                     val cache = itemCache.load()
                     _networkItems.value = itemCache.mergeWithCache(fresh, cache)
+                    if (announce) showMessage("Found ${fresh.size} item${if (fresh.size == 1) "" else "s"}. They're in the Library.")
                 }
                 .onFailure { _errorMessage.value = it.message }
             _isScanningNetwork.value = false

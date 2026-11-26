@@ -1,6 +1,6 @@
 import { IconButton } from "../components/Icon.js";
 import { useEffect, useState } from "react";
-import type { AppSettings, LocalFolder, NetworkShare, SiteProfile } from "../../shared/types.js";
+import type { AppSettings, LocalFolder, MediaItem, NetworkShare, SiteProfile } from "../../shared/types.js";
 
 const EMPTY_SHARE = { label: "", host: "", share: "", subPath: "", domain: "", username: "", password: "" };
 const EMPTY_PROFILE = {
@@ -114,9 +114,12 @@ function FoldersSection({
           )
         )}
       </ul>
-      <button className="btn" onClick={() => void addFolder()}>
-        Add folder…
-      </button>
+      <div className="form-actions">
+        <button className="btn" onClick={() => void addFolder()}>
+          Add folder…
+        </button>
+        <ScanButton label="Scan folders" disabled={settings.localFolders.length === 0} scan={() => window.api.scanLibrary()} source="local" />
+      </div>
     </section>
   );
 }
@@ -370,6 +373,11 @@ function SharesSection({
           </li>
         ))}
       </ul>
+      {settings.networkShares.length > 0 && (
+        <div className="form-actions">
+          <ScanButton label="Scan shares" scan={() => window.api.scanNetwork()} source="network" />
+        </div>
+      )}
       {testResult && <p className="hint-inline">{testResult}</p>}
       {editingId && <p className="hint-inline">Editing "{form.label || form.host}" — Save changes to apply, or Cancel.</p>}
       <div className="form-grid">
@@ -541,5 +549,35 @@ function ProfilesSection({
         )}
       </div>
     </section>
+  );
+}
+
+/** Scans folders or shares for media (moved here from the Library page), and says how many were found. */
+function ScanButton({ label, scan, source, disabled }: { label: string; scan: () => Promise<MediaItem[]>; source: "local" | "network"; disabled?: boolean }) {
+  const [scanning, setScanning] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  async function run() {
+    setScanning(true);
+    setResult(null);
+    try {
+      const items = await scan();
+      const count = items.filter((i) => i.source.type === source).length;
+      setFailed(false);
+      setResult(`Found ${count} item${count === 1 ? "" : "s"}. They're in the Library.`);
+    } catch (err) {
+      setFailed(true);
+      setResult((err as Error).message);
+    } finally {
+      setScanning(false);
+    }
+  }
+  return (
+    <>
+      <button className="btn btn-primary" onClick={() => void run()} disabled={scanning || disabled}>
+        {scanning ? "Scanning…" : label}
+      </button>
+      {result && <span className={failed ? "error" : "notice"}>{result}</span>}
+    </>
   );
 }

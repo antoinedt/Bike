@@ -19,8 +19,6 @@ export default function LibraryPage({ settings }: { settings: AppSettings }) {
   const [items, setItems] = useState<MediaItem[]>([]);
   const [filter, setFilter] = useState("");
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
-  const [scanningFolders, setScanningFolders] = useState(false);
-  const [scanningShares, setScanningShares] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [stream, setStream] = useState<ActiveStream | null>(null);
   const [downloading, setDownloading] = useState<string | null>(null);
@@ -39,30 +37,6 @@ export default function LibraryPage({ settings }: { settings: AppSettings }) {
       void window.api.closeNetworkStream(stream.token);
     };
   }, [stream]);
-
-  async function scanFolders() {
-    setScanningFolders(true);
-    setError(null);
-    try {
-      setItems(await window.api.scanLibrary());
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setScanningFolders(false);
-    }
-  }
-
-  async function scanShares() {
-    setScanningShares(true);
-    setError(null);
-    try {
-      setItems(await window.api.scanNetwork());
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setScanningShares(false);
-    }
-  }
 
   async function open(item: MediaItem) {
     setError(null);
@@ -115,18 +89,12 @@ export default function LibraryPage({ settings }: { settings: AppSettings }) {
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
           />
-          <button className="btn btn-primary" onClick={() => void scanFolders()} disabled={scanningFolders}>
-            {scanningFolders ? "Scanning…" : "Scan folders"}
-          </button>
-          <button className="btn btn-primary" onClick={() => void scanShares()} disabled={scanningShares}>
-            {scanningShares ? "Scanning…" : "Scan shares"}
-          </button>
         </div>
       </div>
       {settings.localFolders.length === 0 && settings.networkShares.length === 0 && (
         <p className="hint">
-          Nothing configured yet. Add a local folder or an SMB share in <strong>Settings</strong> to
-          start scanning.
+          Nothing configured yet. Add a local folder or an SMB share in <strong>Settings</strong>, then scan it
+          there.
         </p>
       )}
       {error && <p className="error">{error}</p>}

@@ -1,5 +1,10 @@
 package com.medialibrary.manager.ui.screens
 
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Spacer
+
 import com.medialibrary.manager.ui.components.ActionIcon
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
@@ -118,7 +123,25 @@ private fun FoldersSection(
                 )
             }
         }
-        Button(onClick = onPickFolder) { Text("Add folder…") }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Button(onClick = onPickFolder) { Text("Add folder…") }
+            val scanning by viewModel.isScanningLocal.collectAsState()
+            ScanButton("Scan folders", scanning) { viewModel.scanLocal(announce = true) }
+        }
+    }
+}
+
+/** Scans for media (moved here from the Library screen); the Library updates when it's done. */
+@Composable
+private fun ScanButton(label: String, scanning: Boolean, onClick: () -> Unit) {
+    androidx.compose.material3.FilledTonalButton(onClick = onClick, enabled = !scanning) {
+        if (scanning) {
+            androidx.compose.material3.CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+        } else {
+            androidx.compose.material3.Icon(Icons.Filled.Refresh, contentDescription = null)
+        }
+        Spacer(Modifier.width(6.dp))
+        Text(if (scanning) "Scanning…" else label)
     }
 }
 
@@ -167,6 +190,10 @@ private fun SharesSection(shares: List<NetworkShare>, testResult: String?, viewM
                     }
                 }
             )
+        }
+        if (shares.isNotEmpty()) {
+            val scanning by viewModel.isScanningNetwork.collectAsState()
+            ScanButton("Scan shares", scanning) { viewModel.scanNetwork(announce = true) }
         }
         testResult?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
         if (editingId != null) {

@@ -46,8 +46,6 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, isTv: Boolean, onPickImage: 
     val context = LocalContext.current
     val items by viewModel.libraryItems.collectAsState()
     val settings by viewModel.settings.collectAsState()
-    val scanningLocal by viewModel.isScanningLocal.collectAsState()
-    val scanningNetwork by viewModel.isScanningNetwork.collectAsState()
     val fetchingArtwork by viewModel.isFetchingArtwork.collectAsState()
     val scanEvents by viewModel.scanEvents.collectAsState()
     val showScanDialog by viewModel.showScanDialog.collectAsState()
@@ -59,14 +57,6 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, isTv: Boolean, onPickImage: 
     var selectedTags by remember { mutableStateOf(listOf<String>()) }
 
     val filterRequester = remember { FocusRequester() }
-    val scanFoldersRequester = remember { FocusRequester() }
-    val scanSharesRequester = remember { FocusRequester() }
-    // A disabled (scanning) button can't take focus, so point at the first one that can.
-    val firstEnabledScanButton = when {
-        !scanningLocal -> scanFoldersRequester
-        !scanningNetwork -> scanSharesRequester
-        else -> null
-    }
 
     copyingFrom?.let { item ->
         FolderPickerDialog(
@@ -94,7 +84,7 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, isTv: Boolean, onPickImage: 
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = if (isTv) 8.dp else 12.dp)) {
         if (settings.localFolders.isEmpty() && settings.networkShares.isEmpty()) {
             Text(
-                "Nothing configured yet. Add a local folder or an SMB share in Settings to start scanning.",
+                "Nothing configured yet. Add a local folder or an SMB share in Settings, then scan it there.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -158,27 +148,10 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, isTv: Boolean, onPickImage: 
                     onToggleTag = { tag -> selectedTags = if (tag in selectedTags) selectedTags - tag else selectedTags + tag }
                 )
             },
-            scanButtons = {
-                ScanButton("Scan folders", scanningLocal, scanFoldersRequester) { viewModel.scanLocal() }
-                ScanButton("Scan shares", scanningNetwork, scanSharesRequester) { viewModel.scanNetwork() }
-            },
             topBarFirst = filterRequester,
-            bottomBarFirst = firstEnabledScanButton,
             modifier = Modifier.weight(1f)
         )
         if (!isTv) com.medialibrary.manager.ui.components.CastBar(viewModel, Modifier.padding(top = 6.dp))
     }
 }
 
-@Composable
-private fun ScanButton(label: String, scanning: Boolean, focusRequester: FocusRequester, onClick: () -> Unit) {
-    Button(onClick = onClick, enabled = !scanning, modifier = Modifier.focusRequester(focusRequester)) {
-        if (scanning) {
-            CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-        } else {
-            Icon(Icons.Filled.Refresh, contentDescription = null)
-        }
-        Spacer(Modifier.width(4.dp))
-        Text(if (scanning) "Scanning…" else label)
-    }
-}
