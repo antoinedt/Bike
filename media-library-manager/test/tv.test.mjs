@@ -2,7 +2,7 @@
 // PKCE, the saved login surviving restarts and network errors, session renewal, My plan + guide.
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { FizzTvClient, SignInRequiredError } from "../dist-electron/main/tv/fizzTv.js";
+import { FizzTvClient, SignInRequiredError, parseTime } from "../dist-electron/main/tv/fizzTv.js";
 import { startFakeFizz } from "./fakeFizz.mjs";
 
 const fake = await startFakeFizz();
@@ -69,4 +69,22 @@ test("expired session is renewed; network errors keep the login; a rejected refr
   await assert.rejects(client.myPlanChannels(true), SignInRequiredError);
   assert.equal(store.value, null);
   assert.ok(fake.state.logins.every((l) => l.appName === "F-GOOGLE-PLAY-MOBILE"));
+});
+
+test("parallel guide requests after the session expired renew it once and stay signed in", async () => {
+  const store = memoryStore();
+  const client = new FizzTvClient(store, fake.config);
+  await signIn(client);
+  fake.expireSessions();
+  const loginsBefore = fake.state.logins.length;
+  const results = await Promise.all([10, 20, 10, 20, 10, 20].map((id) => client.guide([id], 0, 3600_000)));
+  assert.ok(results.every((r) => r.length === 2));
+  assert.equal(fake.state.logins.length - loginsBefore, 1, "one renewal for all of them");
+  assert.ok(store.value);
+});
+
+test("guide times without a zone are UTC", () => {
+  assert.equal(parseTime("2026-11-26T05:00:00"), Date.UTC(2026, 10, 26, 5));
+  assert.equal(parseTime("2026-11-26T05:00:00-05:00"), Date.UTC(2026, 10, 26, 10));
+  assert.ok(Number.isNaN(parseTime("")));
 });

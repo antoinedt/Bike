@@ -202,7 +202,7 @@ class FizzTvClient(private val store: TvCredentialStore, private val newDeviceId
             val p = items.getJSONObject(i)
             val air = p.optJSONObject("recentAirTime") ?: return@mapNotNull null
             val channelId = air.optIntOrNull("channelID") ?: return@mapNotNull null
-            val start = runCatching { OffsetDateTime.parse(air.getString("startTime")).toInstant().toEpochMilli() }.getOrNull() ?: return@mapNotNull null
+            val start = parseTime(air.optString("startTime")) ?: return@mapNotNull null
             val minutes = p.optInt("length", 0).coerceAtLeast(1)
             val series = p.optString("SeriesName").ifEmpty { null }
             val name = p.optString("name").ifEmpty { p.optString("shortName") }
@@ -231,14 +231,14 @@ class FizzTvClient(private val store: TvCredentialStore, private val newDeviceId
     /** Runs [call] with the saved session, renewing it with the refresh token when the server refuses it. */
     private fun withSession(call: (String) -> String): String {
         val saved = store.load() ?: throw SignInRequiredException()
-        val session = saved.sessionId ?: refresh(saved)
+        val session = saved.sessionId ?: renew("")
         try {
             return call(session)
         } catch (e: HttpException) {
             if (e.code !in listOf(401, 403, 500)) throw e
         }
         // The server says the session is no longer valid (it does that with an HTTP 500): renew it once.
-        val renewed = refresh(store.load() ?: throw SignInRequiredException())
+        val renewed = renew(session)
         return try {
             call(renewed)
         } catch (e: HttpException) {
@@ -247,6 +247,18 @@ class FizzTvClient(private val store: TvCredentialStore, private val newDeviceId
     }
 
     private fun refresh(saved: TvCredentials): String = login(refreshToken = saved.refreshToken, deviceId = saved.deviceId)
+
+    /**
+     * One renewal at a time: the guide loads several requests in parallel, and Fizz replaces the
+     * refresh token on each renewal, so parallel renewals would knock each other out. Whoever comes
+     * second just uses the session the first one got.
+     */
+    @Synchronized
+    private fun renew(failedSession: String): String {
+        val current = store.load() ?: throw SignInRequiredException()
+        if (current.sessionId != null && current.sessionId != failedSession) return current.sessionId
+        return refresh(current)
+    }
 
     /** The platform's own sign-in, with an Okta access token (first time) or the saved refresh token. Returns the session id. */
     private fun login(accessToken: String? = null, refreshToken: String? = null, deviceId: String? = null, oktaRefreshToken: String? = null): String {
@@ -352,6 +364,13 @@ class FizzTvClient(private val store: TvCredentialStore, private val newDeviceId
             return query.split("&").filter { it.contains('=') }.associate {
                 java.net.URLDecoder.decode(it.substringBefore('='), "UTF-8") to java.net.URLDecoder.decode(it.substringAfter('='), "UTF-8")
             }
+        }
+
+        /** ISO time; one without a zone is UTC (the guide is asked for in UTC). */
+        fun parseTime(text: String): Long? {
+            if (text.isEmpty()) return null
+            return runCatching { OffsetDateTime.parse(text).toInstant().toEpochMilli() }.getOrNull()
+                ?: runCatching { java.time.LocalDateTime.parse(text).toInstant(java.time.ZoneOffset.UTC).toEpochMilli() }.getOrNull()
         }
 
         /** A device id like the Fizz app's (Android's 16-hex-digit ANDROID_ID). */

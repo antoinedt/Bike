@@ -1,12 +1,14 @@
 package com.medialibrary.manager.tv
 
 import android.content.Context
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -43,7 +45,11 @@ data class TvGuideState(
  * Fizz app) and the "My plan" guide. Lives as long as the app so switching tabs doesn't reload it.
  */
 class TvGuideController(context: Context) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    // An error that slips through must never crash the app: show it instead.
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + CoroutineExceptionHandler { _, e ->
+        android.util.Log.e("TvGuide", "TV tab error", e)
+        _guide.update { it.copy(loading = false, error = friendly(e as? Exception ?: Exception(e))) }
+    })
     private val store = PrefsCredentialStore(context.applicationContext)
     val client = FizzTvClient(store, store::deviceId)
 
@@ -85,19 +91,31 @@ class TvGuideController(context: Context) {
                 val channels = client.myPlanChannels(forceRefresh = refreshChannels)
                 _guide.update { it.copy(channels = channels, email = client.credentials()?.email) }
                 // A few channels per request, a few requests at a time; rows fill in as they arrive.
+                // A failed request leaves its rows empty and is reported; it never cancels the others.
                 val limit = Semaphore(4)
-                channels.chunked(10).map { chunk ->
-                    async {
-                        limit.withPermit {
-                            val programs = client.guide(chunk.map { it.id }, start, start + DAY_MS)
-                            val byChannel = programs.groupBy { it.channelId }
-                            _guide.update { g ->
-                                if (g.dayStart != start) g else g.copy(programs = g.programs + chunk.associate { c -> c.id to (byChannel[c.id] ?: emptyList()) })
+                val failures = supervisorScope {
+                    channels.chunked(10).map { chunk ->
+                        async {
+                            limit.withPermit {
+                                try {
+                                    val programs = client.guide(chunk.map { it.id }, start, start + DAY_MS)
+                                    val byChannel = programs.groupBy { it.channelId }
+                                    _guide.update { g ->
+                                        if (g.dayStart != start) g else g.copy(programs = g.programs + chunk.associate { c -> c.id to (byChannel[c.id] ?: emptyList()) })
+                                    }
+                                    null
+                                } catch (e: kotlinx.coroutines.CancellationException) {
+                                    throw e
+                                } catch (e: Exception) {
+                                    android.util.Log.w("TvGuide", "Guide request failed", e)
+                                    e
+                                }
                             }
                         }
-                    }
-                }.awaitAll()
-                _guide.update { it.copy(loading = false) }
+                    }.awaitAll().filterNotNull()
+                }
+                failures.firstOrNull { it is SignInRequiredException }?.let { throw it }
+                _guide.update { it.copy(loading = false, error = failures.firstOrNull()?.let { e -> friendly(e) }) }
             } catch (e: SignInRequiredException) {
                 _guide.value = TvGuideState()
                 _signIn.value = TvSignInState(error = e.message)

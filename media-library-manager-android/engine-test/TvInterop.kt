@@ -85,6 +85,15 @@ fun main(args: Array<String>) {
     client.finishBrowserSignIn(conn2.getHeaderField("Location"), pending)
     ok(store.value != null && client.myPlanChannels(forceRefresh = true).size == 2, "browser sign-in works")
 
+    // Session expired while the guide loads several requests at once: renewed once, still signed in.
+    get("$control/expire")
+    val before = JSONObject(get("$control/state")).getJSONArray("logins").length()
+    val threads = (1..6).map { i -> Thread { client.guide(listOf(if (i % 2 == 0) 10 else 20), from, from + 3600_000L) }.apply { start() } }
+    threads.forEach { it.join() }
+    val after = JSONObject(get("$control/state")).getJSONArray("logins").length()
+    ok(after - before == 1 && store.value != null, "parallel requests after expiry renew once and stay signed in")
+    ok(FizzTvClient.parseTime("2026-11-26T05:00:00") == 1795669200000L && FizzTvClient.parseTime("2026-11-26T05:00:00-05:00") == 1795687200000L, "guide times without a zone are UTC")
+
     val logins = JSONObject(get("$control/state")).getJSONArray("logins")
     ok((0 until logins.length()).all { logins.getJSONObject(it).getString("appName") == "F-GOOGLE-PLAY-MOBILE" }, "logins identify as the Fizz phone app")
     println("TV interop: all passed")

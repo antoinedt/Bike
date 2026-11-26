@@ -185,7 +185,7 @@ export class FizzTvClient {
     for (const p of items) {
       const air = p.recentAirTime;
       const channelId = toInt(air?.channelID);
-      const start = air?.startTime ? Date.parse(air.startTime) : NaN;
+      const start = parseTime(air?.startTime);
       if (channelId == null || Number.isNaN(start)) continue;
       const minutes = Math.max(1, toInt(p.length) ?? 0);
       const series: string | null = p.SeriesName || null;
@@ -216,21 +216,45 @@ export class FizzTvClient {
   private async withSession(call: (session: string) => Promise<string>): Promise<string> {
     const saved = this.store.load();
     if (!saved) throw new SignInRequiredError();
-    const session = saved.sessionId ?? (await this.refresh(saved));
+    const session = saved.sessionId ?? (await this.renew(""));
     try {
       return await call(session);
     } catch (e) {
       if (!(e instanceof HttpError) || ![401, 403, 500].includes(e.status)) throw e;
     }
     // The server says the session is no longer valid (it does that with an HTTP 500): renew it once.
-    const current = this.store.load();
-    if (!current) throw new SignInRequiredError();
-    const renewed = await this.refresh(current);
+    const renewed = await this.renew(session);
     try {
       return await call(renewed);
     } catch (e) {
       if (e instanceof HttpError) throw new Error(`The TV service didn't answer (${e.status}). Try again in a moment.`);
       throw e;
+    }
+  }
+
+  private renewing: Promise<string> | null = null;
+
+  /**
+   * One renewal at a time: the guide loads several requests in parallel, and Fizz replaces the
+   * refresh token on each renewal, so parallel renewals would knock each other out. Whoever comes
+   * second just uses the session the first one got.
+   */
+  private async renew(failedSession: string): Promise<string> {
+    while (this.renewing) {
+      try {
+        await this.renewing;
+      } catch {
+        /* the caller that started it reports the error */
+      }
+    }
+    const current = this.store.load();
+    if (!current) throw new SignInRequiredError();
+    if (current.sessionId && current.sessionId !== failedSession) return current.sessionId;
+    this.renewing = this.refresh(current);
+    try {
+      return await this.renewing;
+    } finally {
+      this.renewing = null;
     }
   }
 
@@ -322,6 +346,13 @@ export class FizzTvClient {
     }
     return null;
   }
+}
+
+/** ISO time; one without a zone is UTC (the guide is asked for in UTC). */
+export function parseTime(text: unknown): number {
+  if (typeof text !== "string" || !text) return NaN;
+  const zoned = /(Z|[+-]\d\d:?\d\d)$/i.test(text);
+  return Date.parse(zoned ? text : `${text}Z`);
 }
 
 function toInt(v: unknown): number | null {
