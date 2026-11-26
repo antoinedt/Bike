@@ -22,6 +22,11 @@ defaults:
 jobs:
   build:
     runs-on: windows-latest
+    env:
+      # A free Castlabs EVS account, used to VMP-sign the app so Widevine loads in the installed
+      # build. Absent (e.g. on forks) → signing is skipped and DRM channels won't play.
+      EVS_ACCOUNT_NAME: ${{ secrets.EVS_ACCOUNT_NAME }}
+      EVS_PASSWD: ${{ secrets.EVS_PASSWD }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -48,6 +53,12 @@ jobs:
       # build). npm ci passes but skips them; pull them in explicitly for this Windows runner.
       - name: Install Windows native build binaries (npm optional-dep workaround)
         run: npm install --no-save "@rollup/rollup-win32-x64-msvc@4.62.4" "@esbuild/win32-x64@0.25.12"
+
+      # Needed to VMP-sign the app for Widevine (DRM live TV). Skipped without the EVS account.
+      - name: Install Widevine VMP signing tool
+        if: ${{ env.EVS_ACCOUNT_NAME != '' }}
+        working-directory: ${{ github.workspace }}
+        run: python -m pip install --upgrade castlabs-evs
 
       - name: Typecheck
         run: npm run typecheck

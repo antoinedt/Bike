@@ -11,6 +11,9 @@ electronDownload:
 # are N-API and ship prebuilt binaries for each OS, so there's nothing to recompile for Electron
 # (and recompiling node-datachannel would need CMake + a C++ toolchain).
 npmRebuild: false
+# VMP-sign the packaged app so the Castlabs Widevine CDM loads in the installed app (needs the
+# EVS_ACCOUNT_NAME / EVS_PASSWD secrets in CI; skipped, with a warning, when they're absent).
+afterPack: build/vmp-sign.cjs
 files:
   - dist/**
   - dist-electron/**
