@@ -1,6 +1,9 @@
 package com.medialibrary.manager.tv
 
 import android.content.Context
+import com.medialibrary.manager.cast.CastLiveStream
+import com.medialibrary.manager.cast.CastTarget
+import com.medialibrary.manager.di.ServiceLocator
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -156,6 +159,45 @@ class TvGuideController(context: Context) {
 
     fun closePlayer() {
         _playing.value = null
+    }
+
+    // ---- Casting a channel to a Google TV ----
+
+    private val castManager = ServiceLocator.castManager
+    val castTarget: StateFlow<CastTarget?> = castManager.target
+    val castState = castManager.state
+
+    suspend fun discoverCastTargets(): List<CastTarget> = castManager.discover()
+    fun selectCastTarget(target: CastTarget?) = castManager.selectTarget(target)
+    fun stopCasting() = castManager.stopCasting()
+
+    /** Tunes [channelId] and casts it to the selected Google TV, via Fizz's own Cast receiver. */
+    fun castChannel(channelId: Int, channelName: String) {
+        if (_tuning.value != null) return
+        _tuning.value = channelId
+        scope.launch {
+            try {
+                val stream = client.streamForChannel(channelId)
+                val live = CastLiveStream(
+                    url = stream.url,
+                    // Fizz sends video/mp4 and lets its receiver pick the parser from media_format_id.
+                    contentType = "video/mp4",
+                    mediaFormatId = if (stream.isDash) 2 else 4,
+                    drmToken = stream.drmToken,
+                    drmLicenseUrl = stream.licenseUrl,
+                    drmType = stream.drmType,
+                    drmContentId = stream.drmContentId
+                )
+                castManager.castLive(live, channelName)
+            } catch (e: SignInRequiredException) {
+                _signedIn.value = false
+                _signIn.value = TvSignInState(error = e.message)
+            } catch (e: Exception) {
+                _guide.update { it.copy(error = friendly(e)) }
+            } finally {
+                _tuning.value = null
+            }
+        }
     }
 
     // ---- Sign-in ----

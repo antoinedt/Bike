@@ -67,6 +67,13 @@ FAKE=$!
 for _ in $(seq 1 40); do grep -q ready "$CAST/fake.log" 2>/dev/null && break; sleep 0.25; done
 java -cp "$CACHE/out:$STDLIB:$JSON" CastInteropKt cast 18009 "$CAST/movie.mkv" "$CAST/report.json"
 kill $FAKE 2>/dev/null || true
+
+# Live TV cast: launches Fizz's own receiver (559B0340) with the DRM token/type/content-id metadata.
+node fake-chromecast.mjs 18010 "$CAST/key.pem" "$CAST/cert.pem" "$CAST/report-live.json" > "$CAST/fake-live.log" 2>&1 &
+FAKE_LIVE=$!
+for _ in $(seq 1 40); do grep -q ready "$CAST/fake-live.log" 2>/dev/null && break; sleep 0.25; done
+java -cp "$CACHE/out:$STDLIB:$JSON" CastInteropKt castlive 18010 "$CAST/report-live.json"
+kill $FAKE_LIVE 2>/dev/null || true
 if command -v gmediarender >/dev/null; then
   python3 - "$CAST/tone.wav" <<'PY'
 import math, struct, sys, wave

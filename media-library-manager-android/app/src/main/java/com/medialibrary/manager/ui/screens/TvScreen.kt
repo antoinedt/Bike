@@ -2,7 +2,11 @@ package com.medialibrary.manager.ui.screens
 
 import com.medialibrary.manager.ui.components.ActionIcon
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Cast
+import androidx.compose.material.icons.filled.CastConnected
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material.icons.automirrored.filled.Logout
 
 import android.annotation.SuppressLint
@@ -27,6 +31,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -38,9 +43,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -55,6 +64,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -72,6 +82,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
+import com.medialibrary.manager.cast.CastTarget
 import com.medialibrary.manager.di.ServiceLocator
 import com.medialibrary.manager.tv.BrowserSignIn
 import com.medialibrary.manager.tv.TvChannel
@@ -81,6 +92,7 @@ import com.medialibrary.manager.tv.TvProgram
 import com.medialibrary.manager.ui.theme.AccentBlue
 import com.medialibrary.manager.ui.theme.DangerRed
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.text.DateFormat
 import java.time.Instant
 import java.time.LocalDate
@@ -231,13 +243,24 @@ private fun TvGuide(controller: TvGuideController, isTv: Boolean) {
 
     val playing by controller.playing.collectAsState()
     val tuning by controller.tuning.collectAsState()
+    val castTarget by controller.castTarget.collectAsState()
+    var castPicking by remember { mutableStateOf(false) }
     playing?.let { com.medialibrary.manager.ui.components.TvPlayerOverlay(it.stream, it.channelName, controller::closePlayer) }
     if (tuning != null && playing == null) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
     }
+    if (castPicking) TvCastPicker(controller, castTarget) { castPicking = false }
 
     selected?.let { (program, channel) ->
-        ProgramDialog(program, channel, tuning = tuning == channel.id, onWatch = { controller.watch(channel.id, channel.name); selected = null }, onDismiss = { selected = null })
+        ProgramDialog(
+            program, channel,
+            tuning = tuning == channel.id,
+            castTargetName = castTarget?.name,
+            onWatch = { controller.watch(channel.id, channel.name); selected = null },
+            onCast = { controller.castChannel(channel.id, channel.name); selected = null },
+            onPickCastTarget = { castPicking = true },
+            onDismiss = { selected = null }
+        )
     }
     if (confirmSignOut) {
         AlertDialog(
@@ -262,9 +285,17 @@ private fun TvGuide(controller: TvGuideController, isTv: Boolean) {
                 if (state.dayOffset != 0) controller.selectDay(0)
                 jumpToNow++
             }) { Text("Now") }
+            IconButton(onClick = { castPicking = true }) {
+                Icon(
+                    if (castTarget != null) Icons.Filled.CastConnected else Icons.Filled.Cast,
+                    contentDescription = "Cast",
+                    tint = if (castTarget != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             ActionIcon(Icons.Filled.Refresh, "Refresh", controller::reload)
             ActionIcon(Icons.AutoMirrored.Filled.Logout, "Sign out", { confirmSignOut = true })
         }
+        TvCastBar(controller)
         Row(
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -463,7 +494,16 @@ private fun ProgramCell(
 }
 
 @Composable
-private fun ProgramDialog(program: TvProgram, channel: TvChannel, tuning: Boolean, onWatch: () -> Unit, onDismiss: () -> Unit) {
+private fun ProgramDialog(
+    program: TvProgram,
+    channel: TvChannel,
+    tuning: Boolean,
+    castTargetName: String?,
+    onWatch: () -> Unit,
+    onCast: () -> Unit,
+    onPickCastTarget: () -> Unit,
+    onDismiss: () -> Unit
+) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(program.title) },
@@ -482,10 +522,92 @@ private fun ProgramDialog(program: TvProgram, channel: TvChannel, tuning: Boolea
             }
         },
         confirmButton = {
-            TextButton(onClick = onWatch, enabled = !tuning) { Text(if (tuning) "Opening…" else "Watch ${channel.name}") }
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                // Cast to the chosen TV, or offer to pick one first.
+                TextButton(onClick = if (castTargetName != null) onCast else onPickCastTarget, enabled = !tuning) {
+                    Text(if (castTargetName != null) "Cast to $castTargetName" else "Cast")
+                }
+                TextButton(onClick = onWatch, enabled = !tuning) { Text(if (tuning) "Opening…" else "Watch") }
+            }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } }
     )
+}
+
+/** Pick (or disconnect) the Google TV to cast channels to — same discovery as the Library's Cast. */
+@Composable
+private fun TvCastPicker(controller: TvGuideController, current: CastTarget?, onDismiss: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var targets by remember { mutableStateOf<List<CastTarget>?>(null) }
+    var search by remember { mutableIntStateOf(0) }
+    LaunchedEffect(search) {
+        targets = null
+        targets = runCatching { controller.discoverCastTargets() }.getOrDefault(emptyList())
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Cast a channel to a TV") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                current?.let { Text("Connected to ${it.name}. Open a show and tap Cast.", style = MaterialTheme.typography.bodySmall) }
+                Text("Live channels need a Chromecast or Google TV (not a DLNA TV).", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                when (val list = targets) {
+                    null -> Text("Looking for TVs on your Wi-Fi…")
+                    else -> {
+                        val cast = list.filter { it.kind == "chromecast" }
+                        if (cast.isEmpty()) {
+                            Text("No Google TVs found. Check the TV is on and on the same Wi-Fi as this phone.", style = MaterialTheme.typography.bodySmall)
+                        } else {
+                            LazyColumn(Modifier.heightIn(max = 320.dp)) {
+                                items(cast) { t ->
+                                    ListItem(
+                                        headlineContent = { Text(t.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                        supportingContent = { Text("Google Cast") },
+                                        leadingContent = { Icon(Icons.Filled.Tv, contentDescription = null) },
+                                        modifier = Modifier.clickable { controller.selectCastTarget(t); onDismiss() }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            if (current != null) TextButton(onClick = { controller.selectCastTarget(null); onDismiss() }) { Text("Disconnect") }
+        },
+        dismissButton = {
+            Row {
+                TextButton(onClick = { scope.launch { search++ } }, enabled = targets != null) { Text("Search again") }
+                TextButton(onClick = onDismiss) { Text("Close") }
+            }
+        }
+    )
+}
+
+/** A thin bar shown while a channel is casting, with a Stop button. */
+@Composable
+private fun TvCastBar(controller: TvGuideController) {
+    val state by controller.castState.collectAsState()
+    val s = state ?: return
+    Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
+        Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(s.itemName, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    when (s.state) {
+                        "error" -> s.error ?: "Couldn't cast."
+                        "loading" -> "Starting on ${s.deviceName}…"
+                        "stopped" -> "Finished on ${s.deviceName}"
+                        else -> "Casting on ${s.deviceName}"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (s.state == "error") DangerRed else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            IconButton(onClick = { controller.stopCasting() }) { Icon(Icons.Filled.Stop, contentDescription = "Stop casting") }
+        }
+    }
 }
 
 private fun timeRange(program: TvProgram): String {

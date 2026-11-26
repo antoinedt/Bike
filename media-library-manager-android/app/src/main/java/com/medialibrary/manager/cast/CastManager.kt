@@ -187,23 +187,54 @@ class CastManager(private val context: Context, private val settingsRepo: Settin
                 }
                 player = p
                 com.medialibrary.manager.transfer.TransferService.refresh(context)
-                poll = scope.launch {
-                    while (isActive) {
-                        delay(1000)
-                        val s = p.status() ?: continue
-                        val current = _state.value ?: break
-                        if (s.state == "stopped" && current.state == "loading") continue
-                        _state.value = current.copy(state = s.state, position = s.position, duration = if (s.duration > 0) s.duration else current.duration)
-                        if (s.state == "stopped") {
-                            release()
-                            com.medialibrary.manager.transfer.TransferService.refresh(context)
-                            break
-                        }
-                    }
-                }
+                startPolling(p)
             } catch (e: Exception) {
                 release()
                 _state.value = CastUiState(target.name, title, "error", 0.0, 0.0, e.message ?: "Couldn't start casting.")
+            }
+        }
+    }
+
+    /**
+     * Casts a live Fizz channel to the selected Google TV / Chromecast, via Fizz's own Cast receiver
+     * (it does the Widevine playback). The TV plays the remote stream directly, so there's no local
+     * server. DLNA TVs can't do the DRM, so this needs a Google Cast target.
+     */
+    fun castLive(stream: CastLiveStream, channelName: String) {
+        val target = _target.value ?: return
+        scope.launch {
+            stop(keepTarget = true)
+            _state.value = CastUiState(target.name, channelName, "loading", 0.0, 0.0)
+            if (target.kind != "chromecast") {
+                _state.value = CastUiState(target.name, channelName, "error", 0.0, 0.0, "Live channels can only be cast to a Chromecast or Google TV.")
+                return@launch
+            }
+            try {
+                val p = CastV2Session.connect(target.host, target.port).also { it.loadLive(stream, channelName) }
+                player = p
+                com.medialibrary.manager.transfer.TransferService.refresh(context)
+                startPolling(p)
+            } catch (e: Exception) {
+                release()
+                _state.value = CastUiState(target.name, channelName, "error", 0.0, 0.0, e.message ?: "Couldn't start casting.")
+            }
+        }
+    }
+
+    /** Polls the TV once a second and mirrors its state into [_state]; stops when it reports stopped. */
+    private fun startPolling(p: CastPlayer) {
+        poll = scope.launch {
+            while (isActive) {
+                delay(1000)
+                val s = p.status() ?: continue
+                val current = _state.value ?: break
+                if (s.state == "stopped" && current.state == "loading") continue
+                _state.value = current.copy(state = s.state, position = s.position, duration = if (s.duration > 0) s.duration else current.duration)
+                if (s.state == "stopped") {
+                    release()
+                    com.medialibrary.manager.transfer.TransferService.refresh(context)
+                    break
+                }
             }
         }
     }

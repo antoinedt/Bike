@@ -44,6 +44,30 @@ fun main(args: Array<String>) {
         expect(report.contains("\"rangeStatus\":206") && report.contains("\"range\":\"${movie.copyOfRange(1000000, 1000100).joinToString("") { "%02x".format(it) }}\""), "Range request served")
         expect(report.contains("\"contentType\":\"video/x-matroska\"") && report.contains("heartbeat:PONG") && report.contains("receiver:STOP"), "protocol: $report")
         println("ok   Android Cast client: launch, load, TV streamed the file (+ range), pause, seek, play, stop")
+    } else if (mode == "castlive") {
+        val (port, reportFile) = Pair(args[1].toInt(), File(args[2]))
+        val session = CastV2Session.connect("127.0.0.1", port)
+        // A protected live channel: the Fizz receiver plays the remote stream (nothing is served here).
+        val stream = com.medialibrary.manager.cast.CastLiveStream(
+            url = "https://cdn.example/live/ch.mpd",
+            contentType = "video/mp4",
+            mediaFormatId = 2,
+            drmToken = "tok-abc",
+            drmLicenseUrl = "https://widevine-proxy.drm.technology/proxy",
+            drmType = 1,
+            drmContentId = "cid-xyz"
+        )
+        session.loadLive(stream, "CTV")
+        Thread.sleep(400)
+        expect(session.status()?.state == "playing", "playing after loadLive: ${session.status()}")
+        session.stop()
+        Thread.sleep(500)
+        val report = reportFile.readText()
+        expect(report.contains("\"appId\":\"559B0340\""), "launched Fizz receiver 559B0340: $report")
+        expect(report.contains("\"streamType\":\"LIVE\""), "live stream type: $report")
+        expect(report.contains("\"drm_token\":\"tok-abc\"") && report.contains("\"drm_license_url\":\"https://widevine-proxy.drm.technology/proxy\""), "drm token + licence url: $report")
+        expect(report.contains("\"drm_type\":1") && report.contains("\"contentId\":\"cid-xyz\"") && report.contains("\"channel_name\":\"CTV\""), "drm type/content-id/channel: $report")
+        println("ok   Android Cast live TV: launched Fizz receiver 559B0340 with the DRM token/type/content-id metadata")
     } else {
         val wav = File(args[1])
         val tv = Dlna.discover(3000).firstOrNull { it.name == "Living Room Samsung" } ?: die("DLNA renderer not discovered")

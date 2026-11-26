@@ -44,7 +44,11 @@ data class TvStream(
     /** Widevine licence token, or null when the channel isn't DRM-protected. */
     val drmToken: String?,
     /** The Vualto Widevine licence proxy. */
-    val licenseUrl: String = "https://widevine-proxy.drm.technology/proxy"
+    val licenseUrl: String = "https://widevine-proxy.drm.technology/proxy",
+    /** Drm.Type from the stream response — the receiver/cast target needs it; -1 when unknown. */
+    val drmType: Int = -1,
+    /** Drm.ContentId from the stream response (the Vualto content id), for casting. */
+    val drmContentId: String? = null
 )
 
 data class TvProgram(
@@ -255,7 +259,13 @@ class FizzTvClient(private val store: TvCredentialStore, private val newDeviceId
         stream.optString("Error").takeIf { it.isNotEmpty() }?.let { throw IOException(it) }
         val url = stream.optString("URL").ifEmpty { stream.optString("Playlist") }.ifEmpty { throw IOException("The channel didn't return a stream.") }
         val drm = stream.optJSONObject("Drm")
-        return TvStream(url = url, isDash = stream.optInt("MediaFormatID", 2) != 4, drmToken = drm?.optString("Token")?.ifEmpty { null })
+        return TvStream(
+            url = url,
+            isDash = stream.optInt("MediaFormatID", 2) != 4,
+            drmToken = drm?.optString("Token")?.ifEmpty { null },
+            drmType = drm?.optInt("Type", -1) ?: -1,
+            drmContentId = drm?.optString("ContentId")?.ifEmpty { null }
+        )
     }
 
     // ---- Session handling ----

@@ -31,6 +31,19 @@ import kotlin.concurrent.thread
 /** What the remote-control bar shows. */
 data class CastPlayback(val state: String, val position: Double, val duration: Double)
 
+/** A live Fizz channel to cast: the stream URL and the DRM details the Fizz receiver needs. */
+data class CastLiveStream(
+    val url: String,
+    /** The content type to send in the LOAD (Fizz sends video/mp4; the receiver picks the parser). */
+    val contentType: String,
+    /** 2 = DASH, 4 = HLS. */
+    val mediaFormatId: Int,
+    val drmToken: String?,
+    val drmLicenseUrl: String,
+    val drmType: Int,
+    val drmContentId: String?
+)
+
 interface CastPlayer {
     fun play()
     fun pause()
@@ -43,6 +56,9 @@ interface CastPlayer {
 // ---------------------------------------------------------------- Google Cast (CASTV2)
 
 private const val DEFAULT_MEDIA_RECEIVER = "CC1AD845"
+/** Fizz's own registered Cast receiver: it does the Widevine playback for a live channel on the TV,
+ *  given the stream URL and the DRM token/type/content-id in the media metadata (as the Fizz app does). */
+private const val FIZZ_RECEIVER = "559B0340"
 private const val NS_CONNECTION = "urn:x-cast:com.google.cast.tp.connection"
 private const val NS_HEARTBEAT = "urn:x-cast:com.google.cast.tp.heartbeat"
 private const val NS_RECEIVER = "urn:x-cast:com.google.cast.receiver"
@@ -216,22 +232,49 @@ class CastV2Session private constructor(private val socket: SSLSocket) : CastPla
         }
     }
 
-    /** Starts the Default Media Receiver (or joins it) and plays [url]. */
-    fun load(url: String, contentType: String, title: String) {
-        val status = request(NS_RECEIVER, "receiver-0", JSONObject().put("type", "LAUNCH").put("appId", DEFAULT_MEDIA_RECEIVER))
+    /** Launches [appId] on the TV (or joins it) and connects to its media transport. */
+    private fun launchApp(appId: String) {
+        val status = request(NS_RECEIVER, "receiver-0", JSONObject().put("type", "LAUNCH").put("appId", appId))
         if (status.optString("type") == "LAUNCH_ERROR") error("The TV couldn't start its player.")
         val apps: JSONArray = status.optJSONObject("status")?.optJSONArray("applications") ?: JSONArray()
-        val app = (0 until apps.length()).map { apps.getJSONObject(it) }.firstOrNull { it.optString("appId") == DEFAULT_MEDIA_RECEIVER }
+        val app = (0 until apps.length()).map { apps.getJSONObject(it) }.firstOrNull { it.optString("appId") == appId }
             ?: error("The TV didn't start its player.")
         transportId = app.getString("transportId")
         sessionId = app.optString("sessionId")
         send(NS_CONNECTION, transportId!!, JSONObject().put("type", "CONNECT"))
+    }
+
+    private fun sendLoad(media: JSONObject, failMessage: String) {
+        val reply = request(NS_MEDIA, transportId!!, JSONObject().put("type", "LOAD").put("autoplay", true).put("currentTime", 0).put("media", media))
+        if (reply.optString("type") == "LOAD_FAILED" || reply.optString("type") == "INVALID_REQUEST") error(failMessage)
+    }
+
+    /** Starts the Default Media Receiver (or joins it) and plays [url]. */
+    fun load(url: String, contentType: String, title: String) {
+        launchApp(DEFAULT_MEDIA_RECEIVER)
         val media = JSONObject().put("contentId", url).put("contentType", contentType).put("streamType", "BUFFERED")
             .put("metadata", JSONObject().put("metadataType", 0).put("title", title))
-        val reply = request(NS_MEDIA, transportId!!, JSONObject().put("type", "LOAD").put("autoplay", true).put("currentTime", 0).put("media", media))
-        if (reply.optString("type") == "LOAD_FAILED" || reply.optString("type") == "INVALID_REQUEST") {
-            error("The TV couldn't play this file (it may not support this format).")
+        sendLoad(media, "The TV couldn't play this file (it may not support this format).")
+    }
+
+    /**
+     * Casts a live Fizz channel. Launches Fizz's own receiver (which does the Widevine playback on
+     * the TV) and hands it the stream URL plus the DRM token/type/content-id in the media metadata —
+     * the same keys the Fizz app sends. A protected channel needs this receiver; the Default Media
+     * Receiver can't do the Vualto Widevine licence.
+     */
+    fun loadLive(stream: CastLiveStream, title: String) {
+        launchApp(FIZZ_RECEIVER)
+        val metadata = JSONObject().put("metadataType", 1)
+            .put("title", title).put("key_title", title).put("channel_name", title)
+            .put("content_type", "4").put("media_format_id", stream.mediaFormatId)
+        stream.drmToken?.let { token ->
+            metadata.put("drm_token", token).put("drm_license_url", stream.drmLicenseUrl).put("drm_type", stream.drmType)
+            stream.drmContentId?.let { metadata.put("contentId", it) }
         }
+        val media = JSONObject().put("contentId", stream.url).put("contentUrl", stream.url)
+            .put("contentType", stream.contentType).put("streamType", "LIVE").put("metadata", metadata)
+        sendLoad(media, "The TV couldn't start the channel.")
     }
 
     private fun media(type: String, extra: JSONObject = JSONObject()) {
