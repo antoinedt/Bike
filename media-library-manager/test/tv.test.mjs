@@ -101,3 +101,17 @@ test("a guide bigger than one page (500) is fetched in pages", async () => {
   assert.equal(programs.length, 576);
   assert.equal(fake.state.guideRequests.length - before, 2);
 });
+
+test("live stream request: DASH URL and the Widevine token for a protected channel", async () => {
+  const store = memoryStore();
+  const client = new FizzTvClient(store, fake.config);
+  await signIn(client);
+  const drm = await client.streamForChannel(11);
+  assert.equal(drm.url, "https://cdn.example/live/11/manifest.mpd");
+  assert.equal(drm.isDash, true);
+  assert.equal(drm.drmToken, "drm-token-11");
+  assert.ok(drm.licenseUrl.indexOf("widevine") >= 0);
+  const clear = await client.streamForChannel(20);
+  assert.equal(clear.drmToken, null);
+  assert.deepEqual(fake.state.streamRequests.slice(-2), [11, 20]);
+});

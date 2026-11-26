@@ -98,6 +98,10 @@ fun main(args: Array<String>) {
     val big = client.guide((100 until 112).toList(), 0L, 24 * 3600_000L)
     ok(big.size == 576, "a guide bigger than one page (500) is fetched in pages")
 
+    val drmStream = client.streamForChannel(11)
+    ok(drmStream.url == "https://cdn.example/live/11/manifest.mpd" && drmStream.isDash && drmStream.drmToken == "drm-token-11", "live stream: DASH url + Widevine token")
+    ok(client.streamForChannel(20).drmToken == null, "clear channel has no DRM token")
+
     val logins = JSONObject(get("$control/state")).getJSONArray("logins")
     ok((0 until logins.length()).all { logins.getJSONObject(it).getString("appName") == "F-GOOGLE-PLAY-MOBILE" }, "logins identify as the Fizz phone app")
     println("TV interop: all passed")

@@ -229,7 +229,16 @@ private fun TvGuide(controller: TvGuideController, isTv: Boolean) {
         }
     }
 
-    selected?.let { (program, channel) -> ProgramDialog(program, channel) { selected = null } }
+    val playing by controller.playing.collectAsState()
+    val tuning by controller.tuning.collectAsState()
+    playing?.let { com.medialibrary.manager.ui.components.TvPlayerOverlay(it.stream, it.channelName, controller::closePlayer) }
+    if (tuning != null && playing == null) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+    }
+
+    selected?.let { (program, channel) ->
+        ProgramDialog(program, channel, tuning = tuning == channel.id, onWatch = { controller.watch(channel.id, channel.name); selected = null }, onDismiss = { selected = null })
+    }
     if (confirmSignOut) {
         AlertDialog(
             onDismissRequest = { confirmSignOut = false },
@@ -454,7 +463,7 @@ private fun ProgramCell(
 }
 
 @Composable
-private fun ProgramDialog(program: TvProgram, channel: TvChannel, onDismiss: () -> Unit) {
+private fun ProgramDialog(program: TvProgram, channel: TvChannel, tuning: Boolean, onWatch: () -> Unit, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(program.title) },
@@ -472,7 +481,10 @@ private fun ProgramDialog(program: TvProgram, channel: TvChannel, onDismiss: () 
                 program.description?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }
+        confirmButton = {
+            TextButton(onClick = onWatch, enabled = !tuning) { Text(if (tuning) "Opening…" else "Watch ${channel.name}") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } }
     )
 }
 

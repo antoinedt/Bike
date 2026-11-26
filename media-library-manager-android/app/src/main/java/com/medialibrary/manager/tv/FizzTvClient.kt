@@ -36,6 +36,17 @@ interface TvCredentialStore {
 
 data class TvChannel(val id: Int, val number: Int?, val name: String, val logoUrl: String?)
 
+/** A playable live stream for a channel. */
+data class TvStream(
+    val url: String,
+    /** true = DASH (MediaFormatID 2), false = HLS (4). */
+    val isDash: Boolean,
+    /** Widevine licence token, or null when the channel isn't DRM-protected. */
+    val drmToken: String?,
+    /** The Vualto Widevine licence proxy. */
+    val licenseUrl: String = "https://widevine-proxy.drm.technology/proxy"
+)
+
 data class TvProgram(
     val key: String,
     val channelId: Int,
@@ -232,6 +243,21 @@ class FizzTvClient(private val store: TvCredentialStore, private val newDeviceId
         }.filter { it.end > from && it.start < to }.distinctBy { it.key }.sortedBy { it.start }
     }
 
+    /** A playable live stream for [channelId] (the Fizz app's clientStream request). */
+    fun streamForChannel(channelId: Int): TvStream {
+        val body = withSession { session ->
+            val request = JSONObject()
+                .put("mediaRequest", JSONObject().put("item", JSONObject().put("contentType", "4").put("id", channelId)).put("clientSidePlaylist", false))
+                .put("sessionID", session)
+            http("POST", "${config.apiBase}/api/media/clientStream", json = body(request))
+        }
+        val stream = JSONObject(body)
+        stream.optString("Error").takeIf { it.isNotEmpty() }?.let { throw IOException(it) }
+        val url = stream.optString("URL").ifEmpty { stream.optString("Playlist") }.ifEmpty { throw IOException("The channel didn't return a stream.") }
+        val drm = stream.optJSONObject("Drm")
+        return TvStream(url = url, isDash = stream.optInt("MediaFormatID", 2) != 4, drmToken = drm?.optString("Token")?.ifEmpty { null })
+    }
+
     // ---- Session handling ----
 
     /** Runs [call] with the saved session, renewing it with the refresh token when the server refuses it. */
@@ -308,6 +334,8 @@ class FizzTvClient(private val store: TvCredentialStore, private val newDeviceId
     // ---- HTTP ----
 
     class HttpException(val code: Int, val body: String) : IOException("HTTP $code")
+
+    private fun body(o: JSONObject) = o.toString()
 
     private fun http(method: String, url: String, json: String? = null, headers: Map<String, String> = emptyMap(), formBody: String? = null): String {
         val conn = URL(url).openConnection() as HttpURLConnection

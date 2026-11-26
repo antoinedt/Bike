@@ -40,6 +40,17 @@ export interface TvCredentialStore {
   deviceId(): string;
 }
 
+/** A playable live stream for a channel. */
+export interface TvStream {
+  url: string;
+  /** true = DASH, false = HLS. */
+  isDash: boolean;
+  /** Widevine licence token, or null when not DRM-protected. */
+  drmToken: string | null;
+  /** The Vualto Widevine licence proxy. */
+  licenseUrl: string;
+}
+
 export interface BrowserSignIn {
   url: string;
   state: string;
@@ -218,6 +229,20 @@ export class FizzTvClient {
       programs.push(program);
     }
     return programs.sort((a, b) => a.start - b.start);
+  }
+
+  /** A playable live stream for a channel (the Fizz app's clientStream request). */
+  async streamForChannel(channelId: number): Promise<TvStream> {
+    const body = await this.withSession((session) =>
+      this.http("POST", `${this.config.apiBase}/api/media/clientStream`, {
+        json: { mediaRequest: { item: { contentType: "4", id: channelId }, clientSidePlaylist: false }, sessionID: session }
+      })
+    );
+    const s: Json = JSON.parse(body);
+    if (s.Error) throw new Error(s.Error);
+    const url: string | undefined = s.URL || s.Playlist;
+    if (!url) throw new Error("The channel didn't return a stream.");
+    return { url, isDash: Number(s.MediaFormatID ?? 2) !== 4, drmToken: s.Drm?.Token || null, licenseUrl: "https://widevine-proxy.drm.technology/proxy" };
   }
 
   // ---- Session handling ----

@@ -16,7 +16,8 @@ export async function startFakeFizz() {
     sessionSeq: 0,
     logins: [],
     guideRequests: [],
-    channelRequests: 0
+    channelRequests: 0,
+    streamRequests: []
   };
 
   const json = (res, code, body) => {
@@ -145,7 +146,20 @@ export async function startFakeFizz() {
       }
       return json(res, 200, { items: items.slice((pageNumber - 1) * pageSize, pageNumber * pageSize) });
     }
+    if (p === "/api/media/clientStream" && req.method === "POST") {
+      const r = JSON.parse(body || "{}");
+      if (!state.sessions.has(r.sessionID)) return json(res, 500, { Message: "Session is not valid anymore" });
+      const id = r.mediaRequest && r.mediaRequest.item && r.mediaRequest.item.id;
+      state.streamRequests.push(id);
+      // Odd channel ids: DRM (Widevine token); even: clear.
+      return json(res, 200, {
+        URL: `https://cdn.example/live/${id}/manifest.mpd`,
+        MediaFormatID: 2,
+        Drm: id % 2 === 1 ? { Token: "drm-token-" + id, Type: "2", ContentId: String(id) } : null
+      });
+    }
     json(res, 404, { Message: "not found" });
+
   });
 
   await new Promise((r) => server.listen(0, "127.0.0.1", r));

@@ -340,6 +340,27 @@ var FizzTv = (function () {
     return out;
   }
 
+  /** A playable live stream for a channel (the Fizz app's clientStream request). done(err, stream) */
+  function streamForChannel(channelId, done) {
+    withSession(function (session, cb) {
+      request("POST", config.apiBase + "/api/media/clientStream", {
+        json: { mediaRequest: { item: { contentType: "4", id: channelId }, clientSidePlaylist: false }, sessionID: session }
+      }, cb);
+    }, function (err, text) {
+      if (err) return done(err);
+      var s = parse(text);
+      if (s.Error) return done({ message: s.Error });
+      var url = s.URL || s.Playlist;
+      if (!url) return done({ message: "The channel didn't return a stream." });
+      done(null, {
+        url: url,
+        isDash: Number(s.MediaFormatID === undefined ? 2 : s.MediaFormatID) !== 4,
+        drmToken: (s.Drm && s.Drm.Token) || null,
+        licenseUrl: "https://widevine-proxy.drm.technology/proxy"
+      });
+    });
+  }
+
   function credentials() {
     return load();
   }
@@ -351,6 +372,7 @@ var FizzTv = (function () {
     signOut: signOut,
     channels: channels,
     guide: guide,
+    streamForChannel: streamForChannel,
     parseTime: parseTime
   };
 })();

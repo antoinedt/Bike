@@ -66,6 +66,13 @@ class TvGuideController(context: Context) {
     private var loadJob: Job? = null
     private var pollJob: Job? = null
 
+    data class Playing(val stream: TvStream, val channelName: String)
+    private val _playing = MutableStateFlow<Playing?>(null)
+    val playing: StateFlow<Playing?> = _playing.asStateFlow()
+    private val _tuning = MutableStateFlow<Int?>(null)
+    /** The channel id currently being tuned (stream request in flight), for a spinner. */
+    val tuning: StateFlow<Int?> = _tuning.asStateFlow()
+
     /** Called when the TV tab opens. */
     fun open() {
         val signed = client.isSignedIn()
@@ -126,6 +133,29 @@ class TvGuideController(context: Context) {
                 _guide.update { it.copy(loading = false, error = friendly(e)) }
             }
         }
+    }
+
+    /** Opens a channel live (guide-only tabs never call this). */
+    fun watch(channelId: Int, channelName: String) {
+        if (_tuning.value != null) return
+        _tuning.value = channelId
+        scope.launch {
+            try {
+                val stream = client.streamForChannel(channelId)
+                _playing.value = Playing(stream, channelName)
+            } catch (e: SignInRequiredException) {
+                _signedIn.value = false
+                _signIn.value = TvSignInState(error = e.message)
+            } catch (e: Exception) {
+                _guide.update { it.copy(error = friendly(e)) }
+            } finally {
+                _tuning.value = null
+            }
+        }
+    }
+
+    fun closePlayer() {
+        _playing.value = null
     }
 
     // ---- Sign-in ----
