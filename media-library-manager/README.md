@@ -32,6 +32,11 @@ Built with Electron + React + TypeScript.
 
 ## TV tab (Fizz TV guide)
 
+Live TV: tap a show, then **Watch <channel>**. The channel plays in the app (DASH, with Widevine
+for protected channels). This build of OmniPlay ships a Widevine-enabled Electron (Castlabs); the
+rest of the app is unchanged.
+
+
 The **TV** tab shows the Fizz TV guide for the channels in your plan (the Fizz app's
 "Guide → My plan"): a timeline per channel, today plus yesterday and the next 6 days; click a
 show for its details. Guide only: no live playback.

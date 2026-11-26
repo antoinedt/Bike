@@ -133,4 +133,23 @@ export function registerTvHandlers(): void {
   ipcMain.handle(IPC.tvSignOut, () => client.signOut());
   ipcMain.handle(IPC.tvChannels, (_e, forceRefresh?: boolean) => wrap(() => client.myPlanChannels(!!forceRefresh)));
   ipcMain.handle(IPC.tvGuide, (_e, channelIds: number[], from: number, to: number) => wrap(() => client.guide(channelIds, from, to)));
+  ipcMain.handle(IPC.tvStream, (_e, channelId: number) =>
+    wrap(async () => {
+      const stream = await client.streamForChannel(channelId);
+      const kid = stream.drmToken ? await fetchDefaultKid(stream.url) : null;
+      return { url: stream.url, isDash: stream.isDash, drmToken: stream.drmToken, licenseUrl: stream.licenseUrl, kid };
+    })
+  );
+}
+
+/** Reads the DASH manifest's `default_kid` (what the Vualto licence envelope needs), like the Fizz app. */
+async function fetchDefaultKid(manifestUrl: string): Promise<string | null> {
+  try {
+    const res = await fetch(manifestUrl, { signal: AbortSignal.timeout(15_000) });
+    const text = await res.text();
+    const match = /default_kid="(.*?)"/i.exec(text);
+    return match ? match[1] : null;
+  } catch {
+    return null;
+  }
 }

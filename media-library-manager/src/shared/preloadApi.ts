@@ -16,7 +16,8 @@ import type {
   TvChannel,
   TvProgram,
   TvResult,
-  TvStatus
+  TvStatus,
+  TvStreamInfo
 } from "./types.js";
 
 export interface PreloadApi {
@@ -157,6 +158,8 @@ export interface PreloadApi {
   getTvChannels(forceRefresh?: boolean): Promise<TvResult<TvChannel[]>>;
   /** Guide listings for these channels between from and to (epoch ms). */
   getTvGuide(channelIds: number[], from: number, to: number): Promise<TvResult<TvProgram[]>>;
+  /** A playable live stream for a channel (with its Widevine token + key id). */
+  getTvStream(channelId: number): Promise<TvResult<TvStreamInfo>>;
 }
 
 declare global {

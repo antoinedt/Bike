@@ -261,3 +261,14 @@ export interface TvStatus {
 
 /** TV calls answer with this instead of throwing, so the page can tell "sign in again" from other errors. */
 export type TvResult<T> = { ok: true; value: T } | { ok: false; signInRequired: boolean; error: string };
+
+/** A playable live stream for a channel, for the renderer's TV player. */
+export interface TvStreamInfo {
+  url: string;
+  isDash: boolean;
+  /** Widevine licence token, or null for a clear channel. */
+  drmToken: string | null;
+  licenseUrl: string;
+  /** The content key id (from the DASH manifest), needed by the Vualto licence envelope. */
+  kid: string | null;
+}

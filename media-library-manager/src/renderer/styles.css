@@ -1039,3 +1039,34 @@ body {
   width: 36px;
   height: 36px;
 }
+
+/* ---- Live TV player (TV tab) ---- */
+.tv-player {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: #000;
+}
+.tv-player-video {
+  width: 100%;
+  height: 100%;
+  background: #000;
+}
+.tv-player-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+}
+.tv-player-status {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  transform: translateY(-50%);
+  text-align: center;
+  color: #fff;
+  font-size: 16px;
+}
+.tv-player-error {
+  color: var(--danger);
+}

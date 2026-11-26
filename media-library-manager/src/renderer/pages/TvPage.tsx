@@ -1,6 +1,7 @@
 import { IconButton } from "../components/Icon.js";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { TvChannel, TvProgram, TvStatus } from "../../shared/types.js";
+import TvPlayer from "../components/TvPlayer.js";
 
 const DAY_MS = 24 * 3600_000;
 const HALF_HOUR = 30 * 60_000;
@@ -70,6 +71,7 @@ function Guide({ email, onSignedOut }: { email: string | null; onSignedOut: (mes
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<{ program: TvProgram; channel: TvChannel } | null>(null);
+  const [watching, setWatching] = useState<TvChannel | null>(null);
   const [now, setNow] = useState(Date.now());
   const [jump, setJump] = useState(0);
   const [brokenLogos, setBrokenLogos] = useState<Set<number>>(new Set());
@@ -247,6 +249,7 @@ function Guide({ email, onSignedOut }: { email: string | null; onSignedOut: (mes
           </div>
         </div>
       )}
+      {watching && <TvPlayer channelId={watching.id} channelName={watching.name} onClose={() => setWatching(null)} />}
       {selected && (
         <div className="player-overlay" onClick={() => setSelected(null)}>
           <div className="confirm-dialog tv-details" onClick={(e) => e.stopPropagation()}>
@@ -260,6 +263,9 @@ function Guide({ email, onSignedOut }: { email: string | null; onSignedOut: (mes
             </div>
             {selected.program.description && <p>{selected.program.description}</p>}
             <div className="page-actions" style={{ justifyContent: "flex-end" }}>
+              <button className="btn btn-primary" onClick={() => { setWatching(selected.channel); setSelected(null); }}>
+                Watch {selected.channel.name}
+              </button>
               <button className="btn" onClick={() => setSelected(null)}>
                 Close
               </button>

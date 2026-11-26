@@ -33,6 +33,13 @@ jobs:
           cache: npm
           cache-dependency-path: media-library-manager/package-lock.json
 
+      # The Widevine-enabled Electron (for live TV) is a GitHub dep that npm pins as git+ssh;
+      # fetch it over HTTPS so no SSH key is needed in CI.
+      - name: Use HTTPS for GitHub git deps
+        run: |
+          git config --global url."https://github.com/".insteadOf ssh://git@github.com/
+          git config --global url."https://github.com/".insteadOf git@github.com:
+
       - name: Install dependencies
         run: npm ci
 

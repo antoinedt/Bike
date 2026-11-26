@@ -1,5 +1,5 @@
 import "./appPaths.js";
-import { app, BrowserWindow, shell } from "electron";
+import electronRuntime, { app, BrowserWindow, shell } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { registerIpcHandlers } from "./ipc.js";
@@ -43,14 +43,20 @@ function createWindow(): void {
   });
 }
 
-app.whenReady().then(() => {
-  registerIpcHandlers();
-  createWindow();
+// The Castlabs Electron build ships Widevine (for live TV in the TV tab); wait for its
+// component to be ready. Standard Electron has no `components`, so this is a no-op there.
+const widevine = (electronRuntime as { components?: { whenReady(): Promise<void> } }).components;
 
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+app.whenReady()
+  .then(() => (widevine ? widevine.whenReady().catch(() => undefined) : undefined))
+  .then(() => {
+    registerIpcHandlers();
+    createWindow();
+
+    app.on("activate", () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    });
   });
-});
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();

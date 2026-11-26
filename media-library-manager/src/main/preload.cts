@@ -90,6 +90,7 @@ const api = {
   tvSignOut: () => ipcRenderer.invoke("tv:signOut"),
   getTvChannels: (forceRefresh?: boolean) => ipcRenderer.invoke("tv:channels", forceRefresh),
   getTvGuide: (channelIds: number[], from: number, to: number) => ipcRenderer.invoke("tv:guide", channelIds, from, to),
+  getTvStream: (channelId: number) => ipcRenderer.invoke("tv:stream", channelId),
   onCopyUpdate: (callback: (jobs: unknown) => void) => {
     const listener = (_e: unknown, jobs: unknown) => callback(jobs);
     ipcRenderer.on("copy:update", listener);
