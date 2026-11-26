@@ -274,6 +274,13 @@ edit("ca/vmedia/phones_tablets_ui/settings/SettingsFragment.smali", lambda s: re
     "    invoke-super {p0, p1, p2}, Lca/vmedia/phones_tablets_ui/BaseFragment;->onViewCreated(Landroid/view/View;Landroid/os/Bundle;)V\n\n"
     f"    invoke-static {{p1}}, {TUNE}->addSettings(Landroid/view/View;)V\n"))
 
+# 11. Settings > VibeTV > Video quality: Auto (unchanged), Low, High (<= 720p),
+#     Best (always the highest). Applied where the app builds its player.
+edit("ca/vmedia/di/PlayerModuleKt.smali", lambda s: replace_once(
+    s,
+    "invoke-virtual {p1}, Lcom/google/android/exoplayer2/ExoPlayer$Builder;->build()Lcom/google/android/exoplayer2/ExoPlayer;",
+    f"invoke-static {{p1}}, {TUNE}->buildPlayer(Lcom/google/android/exoplayer2/ExoPlayer$Builder;)Lcom/google/android/exoplayer2/ExoPlayer;"))
+
 # Note: AndroidManifest.xml / resources are intentionally NOT modified.
 # The build decodes with `apktool d -r`, keeping the app's original resources
 # byte-for-byte. v1 rebuilt resources and crashed after login; v2 (original

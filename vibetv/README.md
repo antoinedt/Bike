@@ -104,8 +104,14 @@ token in `MainPreferences` and a session id in `crprefs`.
    player a bigger buffer on live channels, at the cost of being 30 s behind. Applies the next
    time a channel is opened. The setting is added to the Settings screen in code (resources stay
    untouched) and saved in the `vibetv_settings` preferences.
+10. **Option: video quality** (Settings > VibeTV > Video quality): Auto (the app's own
+    behaviour, the default), Low (lowest bitrate, saves data), High (up to 720p, adapts),
+    Best (always the highest available, not limited to the screen size; may buffer on slow
+    connections). Applied where the app builds its player (`PlayerModuleKt`), so it takes effect
+    the next time a channel is opened. Fizz's servers decide which qualities exist; the app sends
+    no device type, and the server only accepts the app names it knows, so it can't pose as a PC.
 
-Retries are logged as `EVENT` lines in the error log.
+Retries and quality choices are logged as `EVENT` lines in the error log.
 
 Not changed:
 
