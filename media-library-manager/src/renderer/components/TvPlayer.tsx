@@ -33,8 +33,9 @@ export default function TvPlayer({ channelId, channelName, onClose }: { channelI
         player = new shaka.Player();
         await player.attach(video);
         player.addEventListener("error", (e: unknown) => {
-          const code = (e as { detail?: { code?: number } }).detail?.code;
-          setError(drmMessage(code));
+          const detail = (e as { detail?: ShakaError }).detail;
+          console.error("TV playback error", detail);
+          setError(describeError(detail));
         });
         if (stream.drmToken) {
           player.configure({ drm: { servers: { "com.widevine.alpha": stream.licenseUrl } } });
@@ -51,7 +52,8 @@ export default function TvPlayer({ channelId, channelName, onClose }: { channelI
         void video.play().catch(() => undefined);
       } catch (e) {
         if (!cancelled) {
-          setError(drmMessage((e as { code?: number }).code));
+          console.error("TV playback error", e);
+          setError(describeError(e as ShakaError));
           setLoading(false);
         }
       }
@@ -88,9 +90,50 @@ export default function TvPlayer({ channelId, channelName, onClose }: { channelI
   );
 }
 
-function drmMessage(code?: number): string {
+interface ShakaError {
+  code?: number;
+  category?: number;
+  data?: unknown[];
+}
+
+/** Digs out the licence server's HTTP status + body from a (possibly nested) Shaka network error. */
+function findHttp(err: ShakaError | undefined, depth = 0): { status?: number; body?: string } | null {
+  if (!err || typeof err !== "object" || depth > 5) return null;
+  // Shaka NETWORK (category 1) / BAD_HTTP_STATUS (code 1001): data = [uri, status, body, headers, type].
+  if (err.category === 1 && err.code === 1001 && Array.isArray(err.data)) {
+    const status = typeof err.data[1] === "number" ? (err.data[1] as number) : undefined;
+    let body: string | undefined;
+    const raw = err.data[2];
+    try {
+      if (raw instanceof ArrayBuffer) body = new TextDecoder().decode(raw);
+      else if (raw instanceof Uint8Array) body = new TextDecoder().decode(raw);
+      else if (typeof raw === "string") body = raw;
+    } catch {
+      /* ignore */
+    }
+    return { status, body: body?.trim().slice(0, 300) || undefined };
+  }
+  if (Array.isArray(err.data)) {
+    for (const d of err.data) {
+      const found = findHttp(d as ShakaError, depth + 1);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+function describeError(detail?: ShakaError): string {
+  const code = detail?.code;
+  const http = findHttp(detail);
+  if (http?.status) {
+    const extra = http.body ? `\n${http.body}` : "";
+    if (http.status === 403) {
+      return `The channel's licence server refused this computer (HTTP 403). This usually means the channel allows only hardware DRM (Widevine L1), which phones and TVs have but a PC doesn't.${extra}`;
+    }
+    return `The channel's licence server returned HTTP ${http.status}.${extra}`;
+  }
   // Shaka error codes 6000–6999 are DRM/EME.
-  if (code && code >= 6000 && code < 7000) return "This computer couldn't get a licence for the channel (Widevine).";
+  if (code && code >= 6000 && code < 7000) return `This computer couldn't get a licence for the channel (Widevine) — Shaka error ${code}.`;
   if (code === 1001 || code === 1002) return "Couldn't load the channel stream.";
-  return "Playback failed.";
+  return code ? `Playback failed (error ${code}).` : "Playback failed.";
 }
