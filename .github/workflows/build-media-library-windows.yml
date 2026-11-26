@@ -43,6 +43,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # npm records only the host platform's optional native binaries in a lockfile, so a lockfile
+      # generated on Linux leaves out Rollup's and esbuild's Windows binaries (Vite needs them to
+      # build). npm ci passes but skips them; pull them in explicitly for this Windows runner.
+      - name: Install Windows native build binaries (npm optional-dep workaround)
+        run: npm install --no-save "@rollup/rollup-win32-x64-msvc@4.62.4" "@esbuild/win32-x64@0.25.12"
+
       - name: Typecheck
         run: npm run typecheck
 

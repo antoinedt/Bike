@@ -2,6 +2,11 @@ appId: com.medialibrarymanager.app
 productName: OmniPlay
 directories:
   output: release
+# We ship the Castlabs "Electron for Content Security" build (Widevine for live TV). Its binary
+# isn't on electron/electron's releases, so point electron-builder's downloader at the Castlabs
+# mirror; the version (33.4.11+wvcus) and asset names match the default v{version} layout.
+electronDownload:
+  mirror: https://github.com/castlabs/electron-releases/releases/download/
 # The torrent client's native modules (utp-native, node-datachannel, bufferutil, utf-8-validate)
 # are N-API and ship prebuilt binaries for each OS, so there's nothing to recompile for Electron
 # (and recompiling node-datachannel would need CMake + a C++ toolchain).
