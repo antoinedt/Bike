@@ -1,5 +1,8 @@
 package com.medialibrary.manager.ui.components
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Download
+
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.MaterialTheme
@@ -47,9 +50,7 @@ fun ResultsList(
                 trailingContent = {
                     val isBusy = downloadingUrl == result.downloadUrl
                     Column(horizontalAlignment = Alignment.End) {
-                        TextButton(onClick = { onDownload(result) }, enabled = !isBusy) {
-                            Text(if (isBusy) "Adding…" else "Download")
-                        }
+                        ActionIcon(Icons.Filled.Download, if (isBusy) "Adding…" else "Download", { onDownload(result) }, enabled = !isBusy)
                         TextButton(onClick = { onOpenInOtherApp(result) }, enabled = !isBusy) {
                             Text("Other app", style = MaterialTheme.typography.labelSmall)
                         }

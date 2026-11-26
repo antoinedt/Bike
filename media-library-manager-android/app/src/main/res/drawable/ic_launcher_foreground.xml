@@ -1,19 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- OmniPlay: a globe with a play button (same artwork as the Windows / Samsung icon). -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp"
-    android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
-    <!-- Folder outline, centred in the 72dp safe zone -->
-    <path
-        android:strokeColor="#5B8CFF"
-        android:strokeWidth="4"
-        android:strokeLineJoin="round"
-        android:strokeLineCap="round"
-        android:fillColor="#00000000"
-        android:pathData="M30,42 L30,72 L78,72 L78,48 L58,48 L52,42 Z" />
-    <!-- Play glyph -->
-    <path
-        android:fillColor="#F4F6F8"
-        android:pathData="M48,50 L48,66 L64,58 Z" />
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <group android:scaleX="0.16471" android:scaleY="0.16471" android:translateX="11.8353" android:translateY="11.8353">
+        <path android:pathData="M86,256 a170,170 0 1,0 340,0 a170,170 0 1,0 -340,0 Z">
+            <aapt:attr name="android:fillColor">
+                <gradient android:type="radial" android:centerX="196" android:centerY="166" android:gradientRadius="300">
+                    <item android:offset="0" android:color="#FF7FA6FF"/>
+                    <item android:offset="0.6" android:color="#FF4A74F0"/>
+                    <item android:offset="1" android:color="#FF2A4BC0"/>
+                </gradient>
+            </aapt:attr>
+        </path>
+        <group>
+            <clip-path android:pathData="M86,256 a170,170 0 1,0 340,0 a170,170 0 1,0 -340,0 Z"/>
+            <path android:strokeColor="#47FFFFFF" android:strokeWidth="7" android:fillColor="#00000000"
+                android:pathData="M196,256 a60,170 0 1,0 120,0 a60,170 0 1,0 -120,0 Z M136,256 a120,170 0 1,0 240,0 a120,170 0 1,0 -240,0 Z M256,80 L256,432 M80,256 L432,256 M96,180 Q256,150 416,180 M96,332 Q256,362 416,332"/>
+        </group>
+        <path android:fillColor="#FFFFFFFF" android:strokeColor="#FFFFFFFF" android:strokeWidth="18" android:strokeLineJoin="round"
+            android:pathData="M222,186 L330,256 L222,326 Z"/>
+    </group>
 </vector>

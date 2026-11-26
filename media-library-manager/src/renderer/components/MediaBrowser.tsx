@@ -1,3 +1,4 @@
+import { IconButton } from "./Icon.js";
 import { useMemo, useState } from "react";
 import type { AppSettings, MediaItem, ScanProgressEvent } from "../../shared/types.js";
 import { folderSegmentsForItem } from "../lib/folderTree.js";
@@ -154,9 +155,7 @@ export default function MediaBrowser({
       {progressDialog}
       {(depth > 0 || sortedFolders.length > 0) && (
         <div className="breadcrumbs">
-          <button className="btn btn-small" onClick={() => setPath([])} disabled={depth === 0}>
-            Root
-          </button>
+          <IconButton icon="home" label="Top folder" className="btn-small" onClick={() => setPath([])} disabled={depth === 0} />
           {path.map((seg, i) => (
             <span key={i}>
               {" / "}

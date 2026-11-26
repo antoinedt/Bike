@@ -1,5 +1,9 @@
 package com.medialibrary.manager.ui.screens
 
+import com.medialibrary.manager.ui.components.ActionIcon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Search
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -79,8 +83,8 @@ fun SearchScreen(viewModel: MediaLibraryViewModel) {
                 singleLine = true,
                 modifier = Modifier.weight(1f)
             )
-            Button(onClick = { viewModel.search(query, selected) }, enabled = !searching && query.isNotBlank()) {
-                Text(if (searching) "Searching…" else "Search")
+            androidx.compose.material3.FilledIconButton(onClick = { viewModel.search(query, selected) }, enabled = !searching && query.isNotBlank()) {
+                androidx.compose.material3.Icon(Icons.Filled.Search, contentDescription = if (searching) "Searching…" else "Search")
             }
         }
         Spacer(Modifier.height(12.dp))

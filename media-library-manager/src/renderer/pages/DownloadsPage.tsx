@@ -1,3 +1,4 @@
+import { IconButton } from "../components/Icon.js";
 import { useEffect, useState } from "react";
 import type { CopyJob, TorrentStatus } from "../../shared/types.js";
 import { formatDuration, formatSize } from "../lib/format.js";
@@ -85,9 +86,7 @@ export default function DownloadsPage({ onOpenSettings, remoteEnabled }: { onOpe
           value={source}
           onChange={(e) => setSource(e.target.value)}
         />
-        <button className="btn btn-primary" type="submit" disabled={adding || !source.trim()}>
-          {adding ? "Adding…" : "Download"}
-        </button>
+        <IconButton icon="download" label={adding ? "Adding…" : "Download"} className="btn-primary" type="submit" disabled={adding || !source.trim()} />
         <button className="btn" type="button" onClick={() => void run(() => window.api.addTorrentFile())}>
           Open .torrent file…
         </button>
@@ -152,21 +151,18 @@ export default function DownloadsPage({ onOpenSettings, remoteEnabled }: { onOpe
               </div>
               <div className="download-actions">
                 {(t.state === "downloading" || t.state === "metadata") && (
-                  <button className="btn btn-small" onClick={() => void run(async () => setTorrents(await window.api.pauseTorrent(t.id)))}>
-                    Pause
-                  </button>
+                  <IconButton icon="pause" label="Pause" className="btn-small" onClick={() => void run(async () => setTorrents(await window.api.pauseTorrent(t.id)))} />
                 )}
                 {(t.state === "paused" || t.state === "error") && (
-                  <button className="btn btn-small" onClick={() => void run(async () => setTorrents(await window.api.resumeTorrent(t.id)))}>
-                    {t.state === "error" ? "Retry" : "Resume"}
-                  </button>
+                  <IconButton
+                    icon={t.state === "error" ? "refresh" : "play"}
+                    label={t.state === "error" ? "Retry" : "Resume"}
+                    className="btn-small"
+                    onClick={() => void run(async () => setTorrents(await window.api.resumeTorrent(t.id)))}
+                  />
                 )}
-                <button className="btn btn-small" onClick={() => void run(() => window.api.openTorrentFolder(t.id))}>
-                  Show in folder
-                </button>
-                <button className="btn btn-small btn-danger" onClick={() => setRemoving(t)}>
-                  Remove
-                </button>
+                <IconButton icon="folderOpen" label="Show in folder" className="btn-small" onClick={() => void run(() => window.api.openTorrentFolder(t.id))} />
+                <IconButton icon="delete" label="Remove" className="btn-small btn-danger" onClick={() => setRemoving(t)} />
               </div>
             </li>
           ))}
@@ -212,9 +208,7 @@ export default function DownloadsPage({ onOpenSettings, remoteEnabled }: { onOpe
                 </div>
                 {(c.state === "queued" || c.state === "running") && (
                   <div className="download-actions">
-                    <button className="btn btn-small" onClick={() => void window.api.cancelCopy(c.id)}>
-                      Cancel
-                    </button>
+                    <IconButton icon="close" label="Cancel copy" className="btn-small" onClick={() => void window.api.cancelCopy(c.id)} />
                   </div>
                 )}
               </li>

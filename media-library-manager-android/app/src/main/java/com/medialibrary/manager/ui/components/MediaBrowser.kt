@@ -1,5 +1,8 @@
 package com.medialibrary.manager.ui.components
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Home
+
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -159,7 +162,7 @@ fun MediaBrowser(
     @Composable
     fun RowScope.Crumbs() {
         if (hasActiveFilter || depth == 0) return
-        TextButton(onClick = { path = emptyList() }) { Text("Root") }
+        ActionIcon(Icons.Filled.Home, "Top folder", { path = emptyList() })
         path.forEachIndexed { index, segment ->
             Text("/", modifier = Modifier.align(Alignment.CenterVertically))
             TextButton(onClick = { path = path.take(index + 1) }, enabled = index != depth - 1) {

@@ -1,3 +1,4 @@
+import { IconButton } from "../components/Icon.js";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { TvChannel, TvProgram, TvStatus } from "../../shared/types.js";
 
@@ -160,19 +161,17 @@ function Guide({ email, onSignedOut }: { email: string | null; onSignedOut: (mes
           >
             Now
           </button>
-          <button className="btn btn-small" onClick={() => void load(day, true)}>
-            Refresh
-          </button>
-          <button
-            className="btn btn-small"
+          <IconButton icon="refresh" label="Refresh" className="btn-small" onClick={() => void load(day, true)} />
+          <IconButton
+            icon="logout"
+            label="Sign out"
+            className="btn-small"
             onClick={() => {
               if (window.confirm("Sign out of Fizz? You'll need to sign in again to see the guide.")) {
                 void window.api.tvSignOut().then(() => onSignedOut(null));
               }
             }}
-          >
-            Sign out
-          </button>
+          />
         </div>
       </div>
       <div className="tv-days">

@@ -1,5 +1,13 @@
 package com.medialibrary.manager.ui.screens
 
+import com.medialibrary.manager.ui.components.ActionIcon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Delete
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -104,10 +112,10 @@ fun DownloadsScreen(viewModel: MediaLibraryViewModel, onOpenTorrentFile: (onPick
                         singleLine = true,
                         modifier = Modifier.weight(1f)
                     )
-                    Button(
+                    androidx.compose.material3.FilledIconButton(
                         enabled = !adding && source.isNotBlank(),
                         onClick = { scope.launch { if (viewModel.addTorrent(source.trim())) source = "" } }
-                    ) { Text(if (adding) "Adding…" else "Download") }
+                    ) { androidx.compose.material3.Icon(Icons.Filled.Download, contentDescription = if (adding) "Adding…" else "Download") }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = { onOpenTorrentFile { bytes -> scope.launch { viewModel.addTorrent(bytes) } } }) {
@@ -224,12 +232,12 @@ private fun TorrentRow(
             }
             Text(meta.joinToString(" · "), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                if (running) TextButton(onClick = onPause) { Text("Pause") }
+                if (running) ActionIcon(Icons.Filled.Pause, "Pause", onPause)
                 if (t.state == TorrentState.PAUSED || t.state == TorrentState.ERROR) {
-                    TextButton(onClick = onResume) { Text(if (t.state == TorrentState.ERROR) "Retry" else "Resume") }
+                    if (t.state == TorrentState.ERROR) ActionIcon(Icons.Filled.Refresh, "Retry", onResume) else ActionIcon(Icons.Filled.PlayArrow, "Resume", onResume)
                 }
-                if (saveFailed) TextButton(onClick = onRetrySave) { Text("Retry saving") }
-                if (saving == null) TextButton(onClick = onRemove) { Text("Remove", color = MaterialTheme.colorScheme.error) }
+                if (saveFailed) ActionIcon(Icons.Filled.Refresh, "Retry saving", onRetrySave)
+                if (saving == null) ActionIcon(Icons.Filled.Delete, "Remove", onRemove, tint = MaterialTheme.colorScheme.error)
             }
         }
     }

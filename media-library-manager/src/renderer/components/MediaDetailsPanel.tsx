@@ -1,3 +1,4 @@
+import { IconButton } from "./Icon.js";
 import { useState } from "react";
 import type { MediaItem } from "../../shared/types.js";
 import { KIND_ICON, formatDuration, formatSize } from "../lib/format.js";
@@ -100,9 +101,7 @@ export default function MediaDetailsPanel({
       <div className="details-panel" onClick={(e) => e.stopPropagation()}>
         <div className="details-header">
           <span className="player-title">{item.title || item.name}</span>
-          <button className="btn btn-small" onClick={onClose}>
-            Close
-          </button>
+          <IconButton icon="close" label="Close" className="btn-small" onClick={onClose} />
         </div>
         <div className="details-body">
           {(editing ? artworkUrl : item.artworkUrl) ? (
@@ -204,27 +203,15 @@ export default function MediaDetailsPanel({
             </>
           ) : (
             <>
-              <button className="btn btn-primary" onClick={onOpen}>
-                {item.source.type === "network" ? "Play" : "Open"}
-              </button>
-              {onDownload && item.source.type === "network" && (
-                <button className="btn" onClick={onDownload}>
-                  Download…
-                </button>
-              )}
-              {onCast && item.kind !== "other" && (
-                <button className="btn" onClick={onCast} title="Play on a Google TV / Chromecast or a Samsung (DLNA) TV">
-                  Cast…
-                </button>
-              )}
+              <IconButton icon="play" label={item.source.type === "network" ? "Play" : "Open"} className="btn-primary" onClick={onOpen} />
+              {onDownload && item.source.type === "network" && <IconButton icon="download" label="Download to this computer" onClick={onDownload} />}
+              {onCast && item.kind !== "other" && <IconButton icon="cast" label="Cast to a TV" onClick={onCast} />}
               {onCopy && (
                 <button className="btn" onClick={onCopy} title="Copy to a folder on this computer or a network share">
                   Copy to…
                 </button>
               )}
-              <button className="btn" onClick={startEdit}>
-                Edit…
-              </button>
+              <IconButton icon="edit" label="Edit info and artwork" onClick={startEdit} />
             </>
           )}
         </div>

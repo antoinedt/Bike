@@ -1,3 +1,4 @@
+import { IconButton } from "./Icon.js";
 import { useEffect, useState } from "react";
 import type { CastState } from "../../shared/types.js";
 
@@ -38,15 +39,15 @@ export default function CastBar() {
       </div>
       {state.state !== "error" && state.state !== "stopped" && (
         <>
-          <button className="btn btn-small" disabled={busy} onClick={() => void window.api.castControl("seek", Math.max(0, state.position - 30))}>
-            −30s
-          </button>
-          <button className="btn btn-small btn-primary" disabled={state.state === "loading"} onClick={() => void window.api.castControl(state.state === "paused" ? "play" : "pause")}>
-            {state.state === "paused" ? "▶ Play" : "❚❚ Pause"}
-          </button>
-          <button className="btn btn-small" disabled={busy} onClick={() => void window.api.castControl("seek", state.position + 30)}>
-            +30s
-          </button>
+          <IconButton icon="replay" badge="30" label="Back 30 seconds" className="btn-small" disabled={busy} onClick={() => void window.api.castControl("seek", Math.max(0, state.position - 30))} />
+          <IconButton
+            icon={state.state === "paused" ? "play" : "pause"}
+            label={state.state === "paused" ? "Play" : "Pause"}
+            className="btn-small btn-primary"
+            disabled={state.state === "loading"}
+            onClick={() => void window.api.castControl(state.state === "paused" ? "play" : "pause")}
+          />
+          <IconButton icon="forward" badge="30" label="Forward 30 seconds" className="btn-small" disabled={busy} onClick={() => void window.api.castControl("seek", state.position + 30)} />
           <span className="cast-time">{clock(position)}</span>
           <input
             className="cast-seek"
@@ -64,9 +65,12 @@ export default function CastBar() {
           <span className="cast-time">{state.duration ? clock(state.duration) : "--:--"}</span>
         </>
       )}
-      <button className="btn btn-small btn-danger" onClick={() => void window.api.stopCasting()}>
-        {state.state === "error" || state.state === "stopped" ? "Close" : "Stop"}
-      </button>
+      <IconButton
+        icon={state.state === "error" || state.state === "stopped" ? "close" : "stop"}
+        label={state.state === "error" || state.state === "stopped" ? "Close" : "Stop"}
+        className="btn-small btn-danger"
+        onClick={() => void window.api.stopCasting()}
+      />
     </div>
   );
 }

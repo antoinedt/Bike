@@ -1,5 +1,10 @@
 package com.medialibrary.manager.ui.screens
 
+import com.medialibrary.manager.ui.components.ActionIcon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.automirrored.filled.Logout
+
 import android.annotation.SuppressLint
 import android.graphics.Bitmap
 import android.webkit.WebResourceRequest
@@ -248,8 +253,8 @@ private fun TvGuide(controller: TvGuideController, isTv: Boolean) {
                 if (state.dayOffset != 0) controller.selectDay(0)
                 jumpToNow++
             }) { Text("Now") }
-            TextButton(onClick = controller::reload) { Text("Refresh") }
-            TextButton(onClick = { confirmSignOut = true }) { Text("Sign out") }
+            ActionIcon(Icons.Filled.Refresh, "Refresh", controller::reload)
+            ActionIcon(Icons.AutoMirrored.Filled.Logout, "Sign out", { confirmSignOut = true })
         }
         Row(
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 4.dp),

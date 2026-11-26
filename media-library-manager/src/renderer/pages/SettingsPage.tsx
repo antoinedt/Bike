@@ -1,3 +1,4 @@
+import { IconButton } from "../components/Icon.js";
 import { useEffect, useState } from "react";
 import type { AppSettings, LocalFolder, NetworkShare, SiteProfile } from "../../shared/types.js";
 
@@ -107,12 +108,8 @@ function FoldersSection({
             <li key={f.id}>
               <span className="settings-item-label">{f.label}</span>
               <span className="settings-item-sub">{f.path}</span>
-              <button className="btn btn-small" onClick={() => startEdit(f)}>
-                Edit
-              </button>
-              <button className="btn btn-small btn-danger" onClick={() => void remove(f.id)}>
-                Remove
-              </button>
+              <IconButton icon="edit" label="Edit" className="btn-small" onClick={() => startEdit(f)} />
+              <IconButton icon="delete" label="Remove" className="btn-small btn-danger" onClick={() => void remove(f.id)} />
             </li>
           )
         )}
@@ -368,12 +365,8 @@ function SharesSection({
             <button className="btn btn-small" onClick={() => void test(s)}>
               Test
             </button>
-            <button className="btn btn-small" onClick={() => edit(s)}>
-              Edit
-            </button>
-            <button className="btn btn-small btn-danger" onClick={() => void remove(s.id)}>
-              Remove
-            </button>
+            <IconButton icon="edit" label="Edit" className="btn-small" onClick={() => edit(s)} />
+            <IconButton icon="delete" label="Remove" className="btn-small btn-danger" onClick={() => void remove(s.id)} />
           </li>
         ))}
       </ul>
@@ -473,12 +466,8 @@ function ProfilesSection({
               {p.useHeadlessBrowser && <span className="hint-inline"> · JS-rendered</span>}
             </span>
             <span className="settings-item-sub">{p.searchUrlTemplate}</span>
-            <button className="btn btn-small" onClick={() => edit(p)}>
-              Edit
-            </button>
-            <button className="btn btn-small btn-danger" onClick={() => void remove(p.id)}>
-              Remove
-            </button>
+            <IconButton icon="edit" label="Edit" className="btn-small" onClick={() => edit(p)} />
+            <IconButton icon="delete" label="Remove" className="btn-small btn-danger" onClick={() => void remove(p.id)} />
           </li>
         ))}
       </ul>

@@ -1,4 +1,4 @@
-# Media Library Manager — Android
+# OmniPlay — Android (formerly Media Library Manager)
 
 The Android counterpart to the `media-library-manager/` desktop app: the same three sources
 (local device, local network SMB, configurable site search with in-app torrent downloads), adapted to

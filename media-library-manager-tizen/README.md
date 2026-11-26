@@ -1,4 +1,4 @@
-# Media Library Manager — Samsung TV (Tizen)
+# OmniPlay — Samsung TV (Tizen) (formerly Media Library Manager)
 
 The third version of Media Library Manager, alongside the desktop app (`media-library-manager/`)
 and the Android / Google TV app (`media-library-manager-android/`). This one is deliberately small:

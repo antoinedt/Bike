@@ -1,4 +1,4 @@
-# Media Library Manager
+# OmniPlay (formerly Media Library Manager)
 
 A cross-platform (Windows/macOS/Linux) desktop app for managing a media library from three
 sources:

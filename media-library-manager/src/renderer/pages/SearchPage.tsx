@@ -1,3 +1,4 @@
+import { IconButton } from "../components/Icon.js";
 import { useState } from "react";
 import type { AppSettings, SearchResultItem } from "../../shared/types.js";
 import ResultsTable from "../components/ResultsTable.js";
@@ -103,9 +104,7 @@ export default function SearchPage({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
-            <button className="btn btn-primary" type="submit" disabled={searching}>
-              {searching ? "Searching…" : "Search"}
-            </button>
+            <IconButton icon="search" label={searching ? "Searching…" : "Search"} className="btn-primary" type="submit" disabled={searching} />
           </form>
 
           {error && <p className="error">{error}</p>}

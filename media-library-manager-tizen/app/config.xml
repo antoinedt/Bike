@@ -10,7 +10,7 @@
     <tizen:application id="MLMTizenAp.MediaLibraryManager"
                         package="MLMTizenAp"
                         required_version="3.0"/>
-    <name>Media Library Manager</name>
+    <name>OmniPlay</name>
     <icon src="icon.png"/>
     <content src="index.html"/>
     <feature name="http://tizen.org/feature/screen.size.all"/>

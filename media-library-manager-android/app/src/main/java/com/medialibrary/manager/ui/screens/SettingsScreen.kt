@@ -1,5 +1,10 @@
 package com.medialibrary.manager.ui.screens
 
+import com.medialibrary.manager.ui.components.ActionIcon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Delete
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -106,8 +111,8 @@ private fun FoldersSection(
                     headlineContent = { Text(folder.label) },
                     trailingContent = {
                         Row {
-                            TextButton(onClick = { editingId = folder.id; label = folder.label }) { Text("Edit") }
-                            TextButton(onClick = { viewModel.removeLocalFolder(folder.id) }) { Text("Remove") }
+                            ActionIcon(Icons.Filled.Edit, "Edit", { editingId = folder.id; label = folder.label })
+                            ActionIcon(Icons.Filled.Delete, "Remove", { viewModel.removeLocalFolder(folder.id) }, tint = MaterialTheme.colorScheme.error)
                         }
                     }
                 )
@@ -154,11 +159,11 @@ private fun SharesSection(shares: List<NetworkShare>, testResult: String?, viewM
                 trailingContent = {
                     Row {
                         TextButton(onClick = { viewModel.testShare(s) }) { Text("Test") }
-                        TextButton(onClick = { startEdit(s) }) { Text("Edit") }
-                        TextButton(onClick = {
+                        ActionIcon(Icons.Filled.Edit, "Edit", { startEdit(s) })
+                        ActionIcon(Icons.Filled.Delete, "Remove", {
                             if (s.id == editingId) { editingId = null; clearForm() }
                             viewModel.removeShare(s.id)
-                        }) { Text("Remove") }
+                        }, tint = MaterialTheme.colorScheme.error)
                     }
                 }
             )
@@ -349,11 +354,11 @@ private fun ProfilesSection(profiles: List<SiteProfile>, viewModel: MediaLibrary
                 supportingContent = { Text(p.searchUrlTemplate) },
                 trailingContent = {
                     Row {
-                        TextButton(onClick = { startEdit(p) }) { Text("Edit") }
-                        TextButton(onClick = {
+                        ActionIcon(Icons.Filled.Edit, "Edit", { startEdit(p) })
+                        ActionIcon(Icons.Filled.Delete, "Remove", {
                             if (p.id == editingId) { editingId = null; clearForm() }
                             viewModel.removeSiteProfile(p.id)
-                        }) { Text("Remove") }
+                        }, tint = MaterialTheme.colorScheme.error)
                     }
                 }
             )

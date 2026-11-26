@@ -1,5 +1,5 @@
 appId: com.medialibrarymanager.app
-productName: Media Library Manager
+productName: OmniPlay
 directories:
   output: release
 # The torrent client's native modules (utp-native, node-datachannel, bufferutil, utf-8-validate)

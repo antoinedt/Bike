@@ -143,7 +143,7 @@ object Notifications {
     fun ongoing(context: Context, text: String): Notification =
         NotificationCompat.Builder(context, CHANNEL_ONGOING)
             .setSmallIcon(R.drawable.ic_stat_transfer)
-            .setContentTitle("Media Library Manager")
+            .setContentTitle("OmniPlay")
             .setContentText(text.substringBefore('\n'))
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setOngoing(true)
