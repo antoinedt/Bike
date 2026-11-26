@@ -258,7 +258,9 @@ export class FizzTvClient {
     }
     const settings: Json[] = response.appSettings?.settings ?? [];
     const kv = (key: string) => settings.find((s) => s?.key === key)?.value as string | undefined;
-    const errorCode = kv("errorCode");
+    // Every reply carries a status; "OK" (with "You have successfully logged in…") is success.
+    const status = kv("errorCode");
+    const errorCode = status && status.toUpperCase() !== "OK" ? status : undefined;
     if (errorCode) {
       if (opts.refreshToken && /REFRESH_TOKEN/i.test(errorCode)) {
         // Only a refresh token the server really rejects signs you out.

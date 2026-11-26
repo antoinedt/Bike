@@ -39,7 +39,7 @@ export async function startFakeFizz() {
     return {
       clientCredentials: { sessionID: session, Email: "viewer@example.com", StbMacAddress: device },
       RefreshToken: rt,
-      appSettings: { appName: "F-GOOGLE-PLAY-MOBILE", siteID: 176, settings: [] }
+      appSettings: { appName: "F-GOOGLE-PLAY-MOBILE", siteID: 176, settings: [{ key: "errorCode", value: "OK" }, { key: "errorMessage", value: "You have successfully logged into IVS Media IPTV System" }] }
     };
   };
 

@@ -266,7 +266,8 @@ class FizzTvClient(private val store: TvCredentialStore, private val newDeviceId
             throw IOException("Couldn't sign in to the TV service (${e.code}).")
         }
         val settings = response.optJSONObject("appSettings")?.optJSONArray("settings")
-        val errorCode = keyValue(settings, "errorCode")
+        // Every reply carries a status; "OK" (with "You have successfully logged in…") is success.
+        val errorCode = keyValue(settings, "errorCode")?.takeUnless { it.equals("OK", ignoreCase = true) }
         if (errorCode != null) {
             val message = keyValue(settings, "errorMessage") ?: errorCode
             if (refreshToken != null && errorCode.contains("REFRESH_TOKEN", ignoreCase = true)) {
