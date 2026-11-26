@@ -738,3 +738,64 @@ body {
   font-size: 12px;
   color: var(--text-dim);
 }
+
+.app-content {
+  padding-bottom: 96px;
+}
+
+.cast-bar {
+  position: fixed;
+  left: 216px;
+  right: 16px;
+  bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--bg-alt);
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  padding: 10px 14px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  z-index: 150;
+}
+
+.cast-error {
+  border-color: var(--danger);
+}
+
+.cast-info {
+  min-width: 0;
+  flex: 0 1 260px;
+}
+
+.cast-title {
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cast-sub {
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cast-error .cast-sub {
+  color: var(--danger);
+  white-space: normal;
+}
+
+.cast-seek {
+  flex: 1;
+  min-width: 80px;
+  accent-color: var(--accent);
+}
+
+.cast-time {
+  font-size: 12px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}

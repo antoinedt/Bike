@@ -9,6 +9,7 @@ export default function MediaGrid({
   onOpen,
   onDownload,
   onCopy,
+  onCast,
   onItemUpdated
 }: {
   items: MediaItem[];
@@ -16,6 +17,7 @@ export default function MediaGrid({
   onOpen: (item: MediaItem) => void;
   onDownload?: (item: MediaItem) => void;
   onCopy?: (item: MediaItem) => void;
+  onCast?: (item: MediaItem) => void;
   onItemUpdated: (item: MediaItem) => void;
 }) {
   const [selected, setSelected] = useState<MediaItem | null>(null);
@@ -63,6 +65,14 @@ export default function MediaGrid({
             onCopy
               ? () => {
                   onCopy(selected);
+                  setSelected(null);
+                }
+              : undefined
+          }
+          onCast={
+            onCast
+              ? () => {
+                  onCast(selected);
                   setSelected(null);
                 }
               : undefined

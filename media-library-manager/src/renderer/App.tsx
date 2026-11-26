@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { AppSettings } from "../shared/types.js";
+import CastBar from "./components/CastBar.js";
 import Sidebar from "./components/Sidebar.js";
 import DownloadsPage from "./pages/DownloadsPage.js";
 import LibraryPage from "./pages/LibraryPage.js";
@@ -47,6 +48,7 @@ export default function App() {
           <SettingsPage settings={settings} refreshSettings={refreshSettings} />
         )}
       </main>
+      <CastBar />
       {toast && (
         <div className="toast" onClick={() => setToast(null)}>
           {toast}

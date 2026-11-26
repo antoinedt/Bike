@@ -11,21 +11,24 @@
     "build": "tsc -p tsconfig.electron.json && vite build",
     "typecheck": "tsc -p tsconfig.electron.json --noEmit && tsc -p tsconfig.json --noEmit",
     "dist": "npm run build && electron-builder",
-    "test": "tsc -p tsconfig.electron.json && node --openssl-legacy-provider --test --test-force-exit --test-reporter=spec test/torrentManager.test.mjs test/copyManager.test.mjs test/remoteQueue.test.mjs test/ntlmv2.test.mjs"
+    "test": "tsc -p tsconfig.electron.json && node --openssl-legacy-provider --test --test-force-exit --test-reporter=spec test/torrentManager.test.mjs test/copyManager.test.mjs test/remoteQueue.test.mjs test/ntlmv2.test.mjs test/cast.test.mjs"
   },
   "dependencies": {
     "cheerio": "^1.0.0",
     "electron-store": "^10.0.0",
     "lowdb": "^7.0.1",
+    "multicast-dns": "7.2.5",
     "parse-torrent": "11.0.19",
     "smb2": "^0.2.11",
     "webtorrent": "2.8.5"
   },
   "devDependencies": {
+    "@types/multicast-dns": "^7.2.4",
     "@types/node": "^22.10.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
+    "castv2": "0.1.10",
     "concurrently": "^9.1.0",
     "cross-env": "^7.0.3",
     "electron": "^33.2.1",

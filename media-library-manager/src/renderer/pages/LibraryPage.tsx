@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { AppSettings, MediaItem } from "../../shared/types.js";
 import FilterBar from "../components/FilterBar.js";
+import CastDialog from "../components/CastDialog.js";
 import CopyDialog from "../components/CopyDialog.js";
 import MediaBrowser from "../components/MediaBrowser.js";
 import StreamPlayer from "../components/StreamPlayer.js";
@@ -13,6 +14,7 @@ interface ActiveStream {
 
 export default function LibraryPage({ settings }: { settings: AppSettings }) {
   const [copying, setCopying] = useState<MediaItem | null>(null);
+  const [casting, setCasting] = useState<MediaItem | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [items, setItems] = useState<MediaItem[]>([]);
   const [filter, setFilter] = useState("");
@@ -147,9 +149,11 @@ export default function LibraryPage({ settings }: { settings: AppSettings }) {
         onOpen={(item) => void open(item)}
         onDownload={(item) => void download(item)}
         onCopy={setCopying}
+        onCast={setCasting}
         onItemUpdated={handleItemUpdated}
         onItemsChanged={setItems}
       />
+      {casting && <CastDialog item={casting} onClose={() => setCasting(null)} />}
       {copying && (
         <CopyDialog
           item={copying}

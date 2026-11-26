@@ -8,6 +8,7 @@ export default function MediaDetailsPanel({
   onOpen,
   onDownload,
   onCopy,
+  onCast,
   onClose,
   onItemUpdated
 }: {
@@ -16,6 +17,7 @@ export default function MediaDetailsPanel({
   onOpen: () => void;
   onDownload?: () => void;
   onCopy?: () => void;
+  onCast?: () => void;
   onClose: () => void;
   onItemUpdated: (item: MediaItem) => void;
 }) {
@@ -208,6 +210,11 @@ export default function MediaDetailsPanel({
               {onDownload && item.source.type === "network" && (
                 <button className="btn" onClick={onDownload}>
                   Download…
+                </button>
+              )}
+              {onCast && item.kind !== "other" && (
+                <button className="btn" onClick={onCast} title="Play on a Google TV / Chromecast or a Samsung (DLNA) TV">
+                  Cast…
                 </button>
               )}
               {onCopy && (

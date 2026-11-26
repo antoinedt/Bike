@@ -1,5 +1,7 @@
 import type {
   AppSettings,
+  CastState,
+  CastTarget,
   CopyJob,
   CopyTarget,
   DownloadProgressEvent,
@@ -133,6 +135,15 @@ export interface PreloadApi {
   sendToDevice(deviceId: string, source: string, title?: string): Promise<string>;
   /** "Started X on TV" / "Started X sent from Phone" messages. Returns an unsubscribe function. */
   onRemoteEvent(callback: (message: string) => void): () => void;
+  /** Google TV / Chromecast and DLNA TVs (e.g. Samsung) on the network; takes ~3 s. */
+  discoverCastTargets(): Promise<CastTarget[]>;
+  /** Plays a library item on a TV; the TV streams it from this app. */
+  castItem(targetId: string, item: MediaItem): Promise<void>;
+  castControl(action: "play" | "pause" | "seek", value?: number): Promise<void>;
+  stopCasting(): Promise<void>;
+  getCastState(): Promise<CastState | null>;
+  /** Live casting state (null when nothing is cast). Returns an unsubscribe function. */
+  onCastState(callback: (state: CastState | null) => void): () => void;
 }
 
 declare global {

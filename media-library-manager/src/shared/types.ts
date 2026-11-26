@@ -211,3 +211,25 @@ export interface CopyJob {
   savedAs?: string;
   error?: string;
 }
+
+/** A TV the app can cast to. */
+export interface CastTarget {
+  id: string;
+  name: string;
+  /** Google TV / Chromecast (Google Cast) or a DLNA renderer such as a Samsung TV. */
+  kind: "chromecast" | "dlna";
+  host: string;
+  port?: number;
+  controlUrl?: string;
+}
+
+export interface CastState {
+  deviceName: string;
+  deviceKind: "chromecast" | "dlna";
+  itemName: string;
+  state: "loading" | "playing" | "paused" | "buffering" | "stopped" | "error";
+  /** Seconds. */
+  position: number;
+  duration: number;
+  error?: string;
+}

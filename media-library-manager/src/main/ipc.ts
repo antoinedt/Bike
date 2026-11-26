@@ -24,6 +24,7 @@ import { searchSites } from "./search/siteSearch.js";
 import { handOffDownload } from "./torrent/handoff.js";
 import { registerCopyHandlers } from "./transfer/copyIpc.js";
 import { registerRemoteHandlers } from "./remote/remoteIpc.js";
+import { registerCastHandlers } from "./cast/castIpc.js";
 import { registerTorrentHandlers } from "./torrent/torrentIpc.js";
 import { applyManualEdit, applyMetadata, clearMetadata, getAllItems, replaceItemsForSource } from "./db.js";
 import { readSidecar, scanMetadataForLibrary, writeSidecar } from "./metadata/metadataScanner.js";
@@ -35,6 +36,7 @@ export function registerIpcHandlers(): void {
   registerTorrentHandlers();
   registerCopyHandlers();
   registerRemoteHandlers();
+  registerCastHandlers();
 
   ipcMain.handle(IPC.folderPick, async () => {
     const result = await dialog.showOpenDialog({ properties: ["openDirectory"] });

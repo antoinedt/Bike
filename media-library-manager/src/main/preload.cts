@@ -75,6 +75,16 @@ const api = {
     ipcRenderer.on("remote:event", listener);
     return () => ipcRenderer.removeListener("remote:event", listener);
   },
+  discoverCastTargets: () => ipcRenderer.invoke("cast:discover"),
+  castItem: (targetId: string, item: unknown) => ipcRenderer.invoke("cast:start", targetId, item),
+  castControl: (action: string, value?: number) => ipcRenderer.invoke("cast:control", action, value),
+  stopCasting: () => ipcRenderer.invoke("cast:stop"),
+  getCastState: () => ipcRenderer.invoke("cast:getState"),
+  onCastState: (callback: (state: unknown) => void) => {
+    const listener = (_e: unknown, state: unknown) => callback(state);
+    ipcRenderer.on("cast:state", listener);
+    return () => ipcRenderer.removeListener("cast:state", listener);
+  },
   onCopyUpdate: (callback: (jobs: unknown) => void) => {
     const listener = (_e: unknown, jobs: unknown) => callback(jobs);
     ipcRenderer.on("copy:update", listener);

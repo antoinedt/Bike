@@ -52,5 +52,11 @@ export const IPC = {
   remoteUpdateSettings: "remote:updateSettings",
   remoteDevices: "remote:devices",
   remoteSend: "remote:send",
-  remoteEvent: "remote:event"
+  remoteEvent: "remote:event",
+  castDiscover: "cast:discover",
+  castStart: "cast:start",
+  castControl: "cast:control",
+  castStop: "cast:stop",
+  castGetState: "cast:getState",
+  castState: "cast:state"
 } as const;
