@@ -12,7 +12,11 @@ import type {
   ScanProgressEvent,
   SearchResultItem,
   SiteProfile,
-  TorrentStatus
+  TorrentStatus,
+  TvChannel,
+  TvProgram,
+  TvResult,
+  TvStatus
 } from "./types.js";
 
 export interface PreloadApi {
@@ -144,6 +148,15 @@ export interface PreloadApi {
   getCastState(): Promise<CastState | null>;
   /** Live casting state (null when nothing is cast). Returns an unsubscribe function. */
   onCastState(callback: (state: CastState | null) => void): () => void;
+  /** TV tab: whether a Fizz sign-in is saved. */
+  getTvStatus(): Promise<TvStatus>;
+  /** Opens Fizz's sign-in page in a window; resolves once signed in (or with the error / cancel). */
+  tvSignIn(): Promise<TvResult<TvStatus>>;
+  tvSignOut(): Promise<void>;
+  /** The channels in your Fizz plan. */
+  getTvChannels(forceRefresh?: boolean): Promise<TvResult<TvChannel[]>>;
+  /** Guide listings for these channels between from and to (epoch ms). */
+  getTvGuide(channelIds: number[], from: number, to: number): Promise<TvResult<TvProgram[]>>;
 }
 
 declare global {

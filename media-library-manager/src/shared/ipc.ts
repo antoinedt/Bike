@@ -58,5 +58,10 @@ export const IPC = {
   castControl: "cast:control",
   castStop: "cast:stop",
   castGetState: "cast:getState",
-  castState: "cast:state"
+  castState: "cast:state",
+  tvStatus: "tv:status",
+  tvSignIn: "tv:signIn",
+  tvSignOut: "tv:signOut",
+  tvChannels: "tv:channels",
+  tvGuide: "tv:guide"
 } as const;

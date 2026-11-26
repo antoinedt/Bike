@@ -799,3 +799,210 @@ body {
   color: var(--text-dim);
   font-variant-numeric: tabular-nums;
 }
+
+/* ---- TV tab (Fizz "My plan" guide) ---- */
+.tv-signin {
+  max-width: 460px;
+  margin: 80px auto;
+  text-align: center;
+}
+.tv-signin p {
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+.tv-page {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 48px - 96px);
+  min-height: 400px;
+}
+.tv-email {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+.tv-days {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.tv-day {
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 14px;
+  padding: 4px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.tv-day.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+.tv-loading {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-left: 6px;
+}
+.tv-grid {
+  flex: 1;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  position: relative;
+}
+.tv-grid-inner {
+  position: relative;
+}
+.tv-row {
+  display: flex;
+  height: 58px;
+  border-bottom: 1px solid var(--border);
+}
+.tv-header {
+  height: 28px;
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--bg);
+}
+.tv-channel {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  flex-shrink: 0;
+  background: var(--bg-alt);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 4px 6px;
+  overflow: hidden;
+}
+.tv-corner {
+  z-index: 4;
+}
+.tv-channel img {
+  max-width: 100%;
+  max-height: 26px;
+  object-fit: contain;
+}
+.tv-channel-name {
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.tv-channel-number {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.tv-timeline {
+  position: relative;
+  flex-shrink: 0;
+}
+.tv-tick {
+  position: absolute;
+  top: 6px;
+  padding-left: 6px;
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  border-left: 1px solid var(--border);
+}
+.tv-program {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  text-align: left;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  cursor: pointer;
+  overflow: hidden;
+  font: inherit;
+}
+.tv-program:hover,
+.tv-program:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+.tv-program.live {
+  background: rgba(91, 140, 255, 0.28);
+}
+.tv-program.past {
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-dim);
+}
+.tv-program-title,
+.tv-program-sub {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.tv-program-title {
+  font-size: 13px;
+}
+.tv-program.live .tv-program-title {
+  font-weight: 600;
+}
+.tv-program-sub {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.tv-placeholder {
+  position: absolute;
+  inset: 2px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.03);
+}
+.tv-none {
+  position: sticky;
+  left: 120px;
+  display: inline-block;
+  padding: 18px 12px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.tv-now {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--danger);
+  z-index: 1;
+  pointer-events: none;
+}
+.tv-details {
+  max-width: 520px;
+}
+.tv-details-image {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 6px;
+  margin-bottom: 8px;
+}
+.tv-details h2 {
+  margin: 4px 0;
+}
+.tv-details-episode {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.tv-details-meta {
+  font-size: 13px;
+  color: var(--text-dim);
+}

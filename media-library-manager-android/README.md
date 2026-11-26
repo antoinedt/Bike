@@ -106,6 +106,18 @@ app/src/main/java/com/medialibrary/manager/
 - Tests: `engine-test/run.sh` runs the torrent engine against a local WebTorrent seeder on a
   desktop JVM, plus the casting clients (a castv2-based fake Chromecast; gmediarender for DLNA) (magnet, .torrent file and link, pause/resume, restart, remove, bad input).
 
+## TV tab (Fizz TV guide)
+
+The **TV** tab shows the Fizz TV guide for the channels in your plan (the Fizz app's
+"Guide → My plan"), with yesterday and the next 6 days; tap a show for its details. Guide only:
+no live playback.
+
+You're asked to sign in only when you open the tab: on a phone, Fizz's sign-in page opens in the
+app; on a TV, it shows a code to enter at auth.fizz.ca/activate from your phone (or sign in on the
+TV itself). The login is saved like the Fizz app does: a network error never wipes it, an expired
+session is renewed automatically, and you only sign in again if Fizz rejects the saved login (or
+you press **Sign out**). Unofficial, for your own account.
+
 ## Legal / scope note
 
 Same as the desktop app: the app includes a BitTorrent client (libtorrent) but no tracker or

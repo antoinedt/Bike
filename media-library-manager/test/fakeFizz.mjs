@@ -115,13 +115,14 @@ export async function startFakeFizz() {
       const ids = (url.searchParams.get("ChannelIds") ?? "").split(",").map(Number);
       const from = Number(url.searchParams.get("StartDate"));
       state.guideRequests.push({ ids, from, to: Number(url.searchParams.get("EndDate")) });
+      const to = Number(url.searchParams.get("EndDate"));
       const items = [];
       for (const ch of ids) {
-        for (let i = 0; i < 3; i++) {
+        for (let i = 0; i < Math.min(48, Math.ceil((to - from) / (30 * 60000))); i++) {
           const start = new Date(from + i * 30 * 60000).toISOString();
           items.push({
             id: ch * 100 + i,
-            name: `Episode ${i + 1}`,
+            name: ch === 10 ? `Episode ${i + 1}` : `News at ${new Date(from + i * 30 * 60000).getUTCHours()}h`,
             SeriesName: ch === 10 ? "Morning Show" : null,
             SeasonNumber: ch === 10 ? 2 : null,
             episodeNum: ch === 10 ? i + 1 : null,

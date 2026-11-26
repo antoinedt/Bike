@@ -233,3 +233,31 @@ export interface CastState {
   duration: number;
   error?: string;
 }
+
+/** TV tab (Fizz TV "My plan" guide). */
+export interface TvChannel {
+  id: number;
+  number: number | null;
+  name: string;
+  logoUrl: string | null;
+}
+
+export interface TvProgram {
+  key: string;
+  channelId: number;
+  title: string;
+  episode: string | null;
+  description: string | null;
+  /** Epoch milliseconds. */
+  start: number;
+  end: number;
+  imageUrl: string | null;
+}
+
+export interface TvStatus {
+  signedIn: boolean;
+  email: string | null;
+}
+
+/** TV calls answer with this instead of throwing, so the page can tell "sign in again" from other errors. */
+export type TvResult<T> = { ok: true; value: T } | { ok: false; signInRequired: boolean; error: string };

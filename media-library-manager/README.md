@@ -30,6 +30,17 @@ sources:
 
 Built with Electron + React + TypeScript.
 
+## TV tab (Fizz TV guide)
+
+The **TV** tab shows the Fizz TV guide for the channels in your plan (the Fizz app's
+"Guide → My plan"): a timeline per channel, today plus yesterday and the next 6 days; click a
+show for its details. Guide only: no live playback.
+
+You're asked to sign in only when you open the tab, in a small window with Fizz's own sign-in
+page. The login is saved like the Fizz app does (encrypted with Windows' key store): a network
+error never wipes it, an expired session is renewed automatically, and you only sign in again if
+Fizz rejects the saved login (or you press **Sign out**). Unofficial, for your own account.
+
 ## Legal / scope note
 
 The app includes a BitTorrent client ([WebTorrent](https://webtorrent.io/)) but no tracker or

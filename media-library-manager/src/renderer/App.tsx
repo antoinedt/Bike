@@ -6,8 +6,9 @@ import DownloadsPage from "./pages/DownloadsPage.js";
 import LibraryPage from "./pages/LibraryPage.js";
 import SearchPage from "./pages/SearchPage.js";
 import SettingsPage from "./pages/SettingsPage.js";
+import TvPage from "./pages/TvPage.js";
 
-export type Tab = "library" | "search" | "downloads" | "settings";
+export type Tab = "library" | "search" | "tv" | "downloads" | "settings";
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("library");
@@ -42,6 +43,8 @@ export default function App() {
           <LibraryPage settings={settings} />
         ) : tab === "search" ? (
           <SearchPage settings={settings} onOpenDownloads={() => setTab("downloads")} />
+        ) : tab === "tv" ? (
+          <TvPage />
         ) : tab === "downloads" ? (
           <DownloadsPage onOpenSettings={() => setTab("settings")} remoteEnabled={!!settings.remoteShareId} />
         ) : (

@@ -49,7 +49,7 @@ fun main(args: Array<String>) {
 
     // Guide.
     val from = 1_800_000_000_000L
-    val programs = client.guide(channels.map { it.id }, from, from + 2 * 3600_000L)
+    val programs = client.guide(channels.map { it.id }, from, from + 90 * 60_000L)
     ok(programs.size == 6, "guide returns programs for both channels")
     val first = programs.first { it.channelId == 10 }
     ok(first.title == "Morning Show" && first.episode == "S2 E1 · Episode 1" && first.end - first.start == 30 * 60_000L, "program title, episode and length")

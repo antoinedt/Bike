@@ -85,6 +85,11 @@ const api = {
     ipcRenderer.on("cast:state", listener);
     return () => ipcRenderer.removeListener("cast:state", listener);
   },
+  getTvStatus: () => ipcRenderer.invoke("tv:status"),
+  tvSignIn: () => ipcRenderer.invoke("tv:signIn"),
+  tvSignOut: () => ipcRenderer.invoke("tv:signOut"),
+  getTvChannels: (forceRefresh?: boolean) => ipcRenderer.invoke("tv:channels", forceRefresh),
+  getTvGuide: (channelIds: number[], from: number, to: number) => ipcRenderer.invoke("tv:guide", channelIds, from, to),
   onCopyUpdate: (callback: (jobs: unknown) => void) => {
     const listener = (_e: unknown, jobs: unknown) => callback(jobs);
     ipcRenderer.on("copy:update", listener);
