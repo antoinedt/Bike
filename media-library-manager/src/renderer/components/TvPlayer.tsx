@@ -35,7 +35,7 @@ export default function TvPlayer({ channelId, channelName, onClose }: { channelI
         player.addEventListener("error", (e: unknown) => {
           const detail = (e as { detail?: ShakaError }).detail;
           console.error("TV playback error", detail);
-          setError(describeError(detail));
+          void explainError(detail).then((msg) => setError(msg));
         });
         if (stream.drmToken) {
           player.configure({ drm: { servers: { "com.widevine.alpha": stream.licenseUrl } } });
@@ -53,7 +53,7 @@ export default function TvPlayer({ channelId, channelName, onClose }: { channelI
       } catch (e) {
         if (!cancelled) {
           console.error("TV playback error", e);
-          setError(describeError(e as ShakaError));
+          setError(await explainError(e as ShakaError));
           setLoading(false);
         }
       }
@@ -120,6 +120,27 @@ function findHttp(err: ShakaError | undefined, depth = 0): { status?: number; bo
     }
   }
   return null;
+}
+
+/**
+ * Adds, for a DRM/EME failure, whether this build actually has a working Widevine CDM. If Widevine
+ * isn't available at all, the Castlabs component didn't load (nothing to do with the channel); if it
+ * is available, the channel is refusing this computer's software DRM (likely a hardware-DRM channel).
+ */
+async function explainError(detail?: ShakaError): Promise<string> {
+  const base = describeError(detail);
+  const code = detail?.code;
+  if (!(code && code >= 6000 && code < 7000)) return base;
+  try {
+    const support = await shaka.Player.probeSupport();
+    const wv = (support?.drm as Record<string, unknown> | undefined)?.["com.widevine.alpha"];
+    if (!wv) return `${base}\nWidevine isn't available in this app on this PC (the Castlabs DRM component didn't load). It isn't the channel — no protected channel can play until that's fixed.`;
+    const robustness = (wv as { videoRobustnessLevels?: string[] }).videoRobustnessLevels;
+    const hw = Array.isArray(robustness) && robustness.some((r) => /HW/i.test(r));
+    return `${base}\nWidevine IS available here (software/L3${hw ? " + some hardware levels" : ""}), so the channel is refusing this computer's DRM — it likely needs hardware DRM a PC can't provide. Cast it to a Google TV instead.`;
+  } catch {
+    return base;
+  }
 }
 
 function describeError(detail?: ShakaError): string {
