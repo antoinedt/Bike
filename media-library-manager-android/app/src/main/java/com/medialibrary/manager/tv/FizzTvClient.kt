@@ -108,7 +108,7 @@ class FizzTvClient(private val store: TvCredentialStore, private val newDeviceId
             "code_verifier" to pending.verifier
         )
         val accessToken = token.optString("access_token").ifEmpty { throw IOException(oktaError(token) ?: "Sign-in failed.") }
-        login(accessToken = accessToken)
+        login(accessToken = accessToken, oktaRefreshToken = token.optString("refresh_token").ifEmpty { null })
     }
 
     // ---- Sign-in with a code shown on screen (for the TV) ----
@@ -137,7 +137,7 @@ class FizzTvClient(private val store: TvCredentialStore, private val newDeviceId
         )
         val accessToken = r.optString("access_token")
         if (accessToken.isNotEmpty()) {
-            login(accessToken = accessToken)
+            login(accessToken = accessToken, oktaRefreshToken = r.optString("refresh_token").ifEmpty { null })
             return true
         }
         return when (r.optString("error")) {
@@ -249,7 +249,7 @@ class FizzTvClient(private val store: TvCredentialStore, private val newDeviceId
     private fun refresh(saved: TvCredentials): String = login(refreshToken = saved.refreshToken, deviceId = saved.deviceId)
 
     /** The platform's own sign-in, with an Okta access token (first time) or the saved refresh token. Returns the session id. */
-    private fun login(accessToken: String? = null, refreshToken: String? = null, deviceId: String? = null): String {
+    private fun login(accessToken: String? = null, refreshToken: String? = null, deviceId: String? = null, oktaRefreshToken: String? = null): String {
         val device = deviceId ?: store.load()?.deviceId ?: newDeviceId()
         val body = JSONObject()
             .put(
@@ -279,8 +279,9 @@ class FizzTvClient(private val store: TvCredentialStore, private val newDeviceId
         }
         val creds = response.optJSONObject("clientCredentials") ?: JSONObject()
         val session = creds.optString("sessionID").ifEmpty { throw IOException("The TV service didn't start a session.") }
+        // Like the Fizz app: the first sign-in keeps Okta's own refresh token; renewals may hand back a new one.
         val newRefresh = response.optString("RefreshToken").ifEmpty { creds.optString("RefreshToken") }.ifEmpty { null }
-            ?: refreshToken ?: throw IOException("The TV service didn't return a saved login.")
+            ?: refreshToken ?: oktaRefreshToken ?: throw IOException("The TV service didn't return a saved login.")
         val email = creds.optString("Email").ifEmpty { creds.optString("UserLogin") }.ifEmpty { null } ?: store.load()?.email
         store.save(TvCredentials(newRefresh, session, email, device))
         return session

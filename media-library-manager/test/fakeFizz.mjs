@@ -30,15 +30,20 @@ export async function startFakeFizz() {
       req.on("end", () => resolve(data));
     });
 
-  const issueLogin = (device) => {
-    const session = `s${++state.sessionSeq}`;
-    state.sessions.add(session);
+  const newRefreshToken = () => {
     const rt = `rt${++state.tokenSeq}`;
     state.refreshTokens.clear(); // refresh tokens rotate: only the newest works
     state.refreshTokens.add(rt);
+    return rt;
+  };
+  // Like the real service: a login with Okta's access token returns no RefreshToken (the app keeps
+  // the one Okta gave it); a login with a refresh token hands back a new one.
+  const issueLogin = (device, withRefresh) => {
+    const session = `s${++state.sessionSeq}`;
+    state.sessions.add(session);
     return {
       clientCredentials: { sessionID: session, Email: "viewer@example.com", StbMacAddress: device },
-      RefreshToken: rt,
+      ...(withRefresh ? { RefreshToken: newRefreshToken() } : {}),
       appSettings: { appName: "F-GOOGLE-PLAY-MOBILE", siteID: 176, settings: [{ key: "errorCode", value: "OK" }, { key: "errorMessage", value: "You have successfully logged into IVS Media IPTV System" }] }
     };
   };
@@ -74,14 +79,14 @@ export async function startFakeFizz() {
       if (grant === "urn:ietf:params:oauth:grant-type:device_code") {
         if (param("device_code") !== "dev-1") return json(res, 400, { error: "invalid_grant" });
         if (state.pendingPolls-- > 0) return json(res, 400, { error: "authorization_pending", error_description: "waiting" });
-        return json(res, 200, { access_token: "okta-access-device", token_type: "Bearer" });
+        return json(res, 200, { access_token: "okta-access-device", refresh_token: newRefreshToken(), token_type: "Bearer" });
       }
       if (grant === "authorization_code") {
         const challenge = state.challenges.get(param("code"));
         const expected = crypto.createHash("sha256").update(param("code_verifier") ?? "").digest("base64url");
         if (!challenge || challenge !== expected) return json(res, 400, { error: "invalid_grant", error_description: "PKCE check failed" });
         state.challenges.delete(param("code"));
-        return json(res, 200, { access_token: "okta-access-browser", token_type: "Bearer" });
+        return json(res, 200, { access_token: "okta-access-browser", refresh_token: newRefreshToken(), token_type: "Bearer" });
       }
       return json(res, 400, { error: "unsupported_grant_type" });
     }
@@ -89,8 +94,8 @@ export async function startFakeFizz() {
       const r = JSON.parse(body || "{}");
       const device = r?.cc?.clientCredentials?.StbMacAddress;
       state.logins.push({ access: r.AccessToken ?? null, refresh: r.RefreshToken ?? null, device, appName: r?.cc?.appSettings?.appName });
-      if (r.AccessToken && r.AccessToken.startsWith("okta-access-")) return json(res, 200, issueLogin(device));
-      if (r.RefreshToken && state.refreshTokens.has(r.RefreshToken)) return json(res, 200, issueLogin(device));
+      if (r.AccessToken && r.AccessToken.startsWith("okta-access-")) return json(res, 200, issueLogin(device, false));
+      if (r.RefreshToken && state.refreshTokens.has(r.RefreshToken)) return json(res, 200, issueLogin(device, true));
       return json(res, 200, {
         appSettings: { settings: [{ key: "errorCode", value: "INVALID_REFRESH_TOKEN" }, { key: "errorMessage", value: "Refresh token is inactive or invalid" }] },
         clientCredentials: { StbMacAddress: device }

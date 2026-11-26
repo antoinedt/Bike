@@ -129,7 +129,7 @@ export class FizzTvClient {
     });
     const accessToken = token.access_token as string | undefined;
     if (!accessToken) throw new Error(token.error_description || token.error || "Sign-in failed.");
-    await this.login({ accessToken });
+    await this.login({ accessToken, oktaRefreshToken: token.refresh_token });
   }
 
   signOut(): void {
@@ -239,7 +239,7 @@ export class FizzTvClient {
   }
 
   /** The platform's own sign-in, with an Okta access token (first time) or the saved refresh token. Returns the session id. */
-  private async login(opts: { accessToken?: string; refreshToken?: string; deviceId?: string }): Promise<string> {
+  private async login(opts: { accessToken?: string; refreshToken?: string; deviceId?: string; oktaRefreshToken?: string }): Promise<string> {
     const device = opts.deviceId ?? this.store.load()?.deviceId ?? this.store.deviceId();
     const body: Json = {
       cc: {
@@ -272,7 +272,8 @@ export class FizzTvClient {
     const creds: Json = response.clientCredentials ?? {};
     const session: string | undefined = creds.sessionID;
     if (!session) throw new Error("The TV service didn't start a session.");
-    const refreshToken: string | undefined = response.RefreshToken || creds.RefreshToken || opts.refreshToken;
+    // Like the Fizz app: the first sign-in keeps Okta's own refresh token; renewals may hand back a new one.
+    const refreshToken: string | undefined = response.RefreshToken || creds.RefreshToken || opts.refreshToken || opts.oktaRefreshToken;
     if (!refreshToken) throw new Error("The TV service didn't return a saved login.");
     const email: string | null = creds.Email || creds.UserLogin || this.store.load()?.email || null;
     this.store.save({ refreshToken, sessionId: session, email, deviceId: device });
