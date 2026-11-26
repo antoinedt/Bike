@@ -1,7 +1,7 @@
 import type { CastState, CastTarget, LocalFolder, MediaItem, NetworkShare } from "../../shared/types.js";
 import { relPathFromMediaPath } from "../network/smbClient.js";
 import { discoverCast } from "./castDiscovery.js";
-import { CastSession, type CastMediaStatus } from "./castv2.js";
+import { CastSession, type CastLiveStream, type CastMediaStatus } from "./castv2.js";
 import { DlnaRenderer, discoverDlna } from "./dlna.js";
 import { publish, unpublish, type MediaSource } from "./mediaServer.js";
 
@@ -78,6 +78,35 @@ export class CastController {
     } catch (err) {
       await this.stop(false);
       this.set({ deviceName: target.name, deviceKind: target.kind, itemName: title, state: "error", position: 0, duration: 0, error: (err as Error).message });
+    }
+  }
+
+  /**
+   * Casts a live Fizz channel to a Google TV / Chromecast, via Fizz's own Cast receiver (it does the
+   * Widevine playback). The TV plays the remote stream directly, so there's no local media server.
+   * A DLNA TV can't do the DRM, so this needs a Google Cast target.
+   */
+  async startLive(targetId: string, stream: CastLiveStream, channelName: string): Promise<void> {
+    const target = this.devices.get(targetId);
+    if (!target) throw new Error("That TV isn't available any more. Search again.");
+    await this.stop(false);
+    this.set({ deviceName: target.name, deviceKind: target.kind, itemName: channelName, state: "loading", position: 0, duration: 0 });
+    if (target.kind !== "chromecast") {
+      this.set({ deviceName: target.name, deviceKind: target.kind, itemName: channelName, state: "error", position: 0, duration: 0, error: "Live channels can only be cast to a Chromecast or Google TV." });
+      return;
+    }
+    try {
+      const session = await CastSession.connect(target.host, target.port);
+      this.session = session;
+      session.on("status", (s: CastMediaStatus) => this.fromCast(s));
+      session.on("close", () => {
+        if (this.session === session) void this.stop(true);
+      });
+      await session.loadLive(stream, channelName);
+      this.poll = setInterval(() => session.refresh(), 1000);
+    } catch (err) {
+      await this.stop(false);
+      this.set({ deviceName: target.name, deviceKind: target.kind, itemName: channelName, state: "error", position: 0, duration: 0, error: (err as Error).message });
     }
   }
 

@@ -49,6 +49,10 @@ export interface TvStream {
   drmToken: string | null;
   /** The Vualto Widevine licence proxy. */
   licenseUrl: string;
+  /** Drm.Type from the stream response (the cast receiver needs it); -1 when unknown. */
+  drmType: number;
+  /** Drm.ContentId from the stream response (the Vualto content id), for casting. */
+  drmContentId: string | null;
 }
 
 export interface BrowserSignIn {
@@ -242,7 +246,14 @@ export class FizzTvClient {
     if (s.Error) throw new Error(s.Error);
     const url: string | undefined = s.URL || s.Playlist;
     if (!url) throw new Error("The channel didn't return a stream.");
-    return { url, isDash: Number(s.MediaFormatID ?? 2) !== 4, drmToken: s.Drm?.Token || null, licenseUrl: "https://widevine-proxy.drm.technology/proxy" };
+    return {
+      url,
+      isDash: Number(s.MediaFormatID ?? 2) !== 4,
+      drmToken: s.Drm?.Token || null,
+      licenseUrl: "https://widevine-proxy.drm.technology/proxy",
+      drmType: s.Drm?.Type ?? -1,
+      drmContentId: s.Drm?.ContentId || null
+    };
   }
 
   // ---- Session handling ----

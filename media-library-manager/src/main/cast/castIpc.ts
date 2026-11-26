@@ -9,8 +9,16 @@ function broadcast(channel: string, payload?: unknown): void {
   for (const win of BrowserWindow.getAllWindows()) win.webContents.send(channel, payload);
 }
 
+let controllerInstance: CastController | null = null;
+
+/** The shared cast controller (the TV tab reuses it to cast a live channel). */
+export function getCastController(): CastController {
+  if (!controllerInstance) controllerInstance = new CastController(getSettings, (state) => broadcast(IPC.castState, state));
+  return controllerInstance;
+}
+
 export function registerCastHandlers(): void {
-  const controller = new CastController(getSettings, (state) => broadcast(IPC.castState, state));
+  const controller = getCastController();
   ipcMain.handle(IPC.castDiscover, () => controller.discover());
   ipcMain.handle(IPC.castStart, (_e, targetId: string, item: MediaItem) => controller.start(targetId, item));
   ipcMain.handle(IPC.castControl, (_e, action: "play" | "pause" | "seek", value?: number) => controller.control(action, value));

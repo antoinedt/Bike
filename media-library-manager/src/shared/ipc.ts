@@ -64,5 +64,6 @@ export const IPC = {
   tvSignOut: "tv:signOut",
   tvChannels: "tv:channels",
   tvGuide: "tv:guide",
-  tvStream: "tv:stream"
+  tvStream: "tv:stream",
+  tvCastLive: "tv:castLive"
 } as const;

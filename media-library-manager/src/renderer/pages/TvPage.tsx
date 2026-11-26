@@ -2,6 +2,7 @@ import { IconButton } from "../components/Icon.js";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { TvChannel, TvProgram, TvStatus } from "../../shared/types.js";
 import TvPlayer from "../components/TvPlayer.js";
+import CastChannelDialog from "../components/CastChannelDialog.js";
 
 const DAY_MS = 24 * 3600_000;
 const HALF_HOUR = 30 * 60_000;
@@ -72,6 +73,7 @@ function Guide({ email, onSignedOut }: { email: string | null; onSignedOut: (mes
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<{ program: TvProgram; channel: TvChannel } | null>(null);
   const [watching, setWatching] = useState<TvChannel | null>(null);
+  const [casting, setCasting] = useState<TvChannel | null>(null);
   const [now, setNow] = useState(Date.now());
   const [jump, setJump] = useState(0);
   const [brokenLogos, setBrokenLogos] = useState<Set<number>>(new Set());
@@ -250,6 +252,7 @@ function Guide({ email, onSignedOut }: { email: string | null; onSignedOut: (mes
         </div>
       )}
       {watching && <TvPlayer channelId={watching.id} channelName={watching.name} onClose={() => setWatching(null)} />}
+      {casting && <CastChannelDialog channelId={casting.id} channelName={casting.name} onClose={() => setCasting(null)} />}
       {selected && (
         <div className="player-overlay" onClick={() => setSelected(null)}>
           <div className="confirm-dialog tv-details" onClick={(e) => e.stopPropagation()}>
@@ -265,6 +268,9 @@ function Guide({ email, onSignedOut }: { email: string | null; onSignedOut: (mes
             <div className="page-actions" style={{ justifyContent: "flex-end" }}>
               <button className="btn btn-primary" onClick={() => { setWatching(selected.channel); setSelected(null); }}>
                 Watch {selected.channel.name}
+              </button>
+              <button className="btn" onClick={() => { setCasting(selected.channel); setSelected(null); }}>
+                Cast
               </button>
               <button className="btn" onClick={() => setSelected(null)}>
                 Close

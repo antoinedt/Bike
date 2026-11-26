@@ -160,6 +160,8 @@ export interface PreloadApi {
   getTvGuide(channelIds: number[], from: number, to: number): Promise<TvResult<TvProgram[]>>;
   /** A playable live stream for a channel (with its Widevine token + key id). */
   getTvStream(channelId: number): Promise<TvResult<TvStreamInfo>>;
+  /** Casts a live channel to a Google TV (reuses the cast target picked with discoverCastTargets). */
+  castChannel(targetId: string, channelId: number, channelName: string): Promise<TvResult<boolean>>;
 }
 
 declare global {

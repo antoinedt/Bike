@@ -6,6 +6,9 @@ import tls from "node:tls";
 // 8009, each preceded by a 4-byte big-endian length. The payloads are JSON.
 
 const DEFAULT_MEDIA_RECEIVER = "CC1AD845";
+// Fizz's own registered Cast receiver: it does the Widevine playback for a live channel on the TV,
+// given the stream URL and the DRM token/type/content-id in the media metadata (as the Fizz app does).
+const FIZZ_RECEIVER = "559B0340";
 const NS_CONNECTION = "urn:x-cast:com.google.cast.tp.connection";
 const NS_HEARTBEAT = "urn:x-cast:com.google.cast.tp.heartbeat";
 const NS_RECEIVER = "urn:x-cast:com.google.cast.receiver";
@@ -88,6 +91,19 @@ export interface CastMediaStatus {
   currentTime: number;
   duration?: number;
   idleReason?: string;
+}
+
+/** A live Fizz channel to cast: the stream URL and the DRM details the Fizz receiver needs. */
+export interface CastLiveStream {
+  url: string;
+  /** The content type sent in the LOAD (Fizz sends video/mp4; the receiver picks the parser). */
+  contentType: string;
+  /** 2 = DASH, 4 = HLS. */
+  mediaFormatId: number;
+  drmToken: string | null;
+  drmLicenseUrl: string;
+  drmType: number;
+  drmContentId: string | null;
 }
 
 /** One connection to a Cast device. Emits "status" (CastMediaStatus) and "close". */
@@ -183,25 +199,57 @@ export class CastSession extends EventEmitter {
     }
   }
 
-  /** Starts the Default Media Receiver (or joins it if it's already running) and plays `url`. */
-  async load(url: string, contentType: string, title: string): Promise<void> {
-    const status = await this.request(NS_RECEIVER, "receiver-0", { type: "LAUNCH", appId: DEFAULT_MEDIA_RECEIVER });
+  /** Launches `appId` on the TV (or joins it if it's already running) and connects to its transport. */
+  private async launchApp(appId: string): Promise<void> {
+    const status = await this.request(NS_RECEIVER, "receiver-0", { type: "LAUNCH", appId });
     if (status.type === "LAUNCH_ERROR") throw new Error(`The TV couldn't start its player (${status.reason ?? "unknown reason"}).`);
     const apps = ((status.status as { applications?: Array<Record<string, string>> })?.applications ?? []);
-    const app = apps.find((a) => a.appId === DEFAULT_MEDIA_RECEIVER);
+    const app = apps.find((a) => a.appId === appId);
     if (!app) throw new Error("The TV didn't start its player.");
     this.transportId = app.transportId;
     this.sessionId = app.sessionId;
     this.send(NS_CONNECTION, this.transportId, { type: "CONNECT" });
-    const reply = await this.request(NS_MEDIA, this.transportId, {
-      type: "LOAD",
-      autoplay: true,
-      currentTime: 0,
-      media: { contentId: url, contentType, streamType: "BUFFERED", metadata: { metadataType: 0, title } }
-    });
-    if (reply.type === "LOAD_FAILED" || reply.type === "INVALID_REQUEST") {
-      throw new Error("The TV couldn't play this file (it may not support this format).");
+  }
+
+  private async sendLoad(media: Record<string, unknown>, failMessage: string): Promise<void> {
+    const reply = await this.request(NS_MEDIA, this.transportId as string, { type: "LOAD", autoplay: true, currentTime: 0, media });
+    if (reply.type === "LOAD_FAILED" || reply.type === "INVALID_REQUEST") throw new Error(failMessage);
+  }
+
+  /** Starts the Default Media Receiver (or joins it if it's already running) and plays `url`. */
+  async load(url: string, contentType: string, title: string): Promise<void> {
+    await this.launchApp(DEFAULT_MEDIA_RECEIVER);
+    await this.sendLoad(
+      { contentId: url, contentType, streamType: "BUFFERED", metadata: { metadataType: 0, title } },
+      "The TV couldn't play this file (it may not support this format)."
+    );
+  }
+
+  /**
+   * Casts a live Fizz channel: launches Fizz's own receiver (which does the Widevine playback on the
+   * TV) and hands it the stream URL plus the DRM token/type/content-id in the media metadata — the
+   * same keys the Fizz app sends. The Default Media Receiver can't do the Vualto Widevine licence.
+   */
+  async loadLive(stream: CastLiveStream, title: string): Promise<void> {
+    await this.launchApp(FIZZ_RECEIVER);
+    const metadata: Record<string, unknown> = {
+      metadataType: 1,
+      title,
+      key_title: title,
+      channel_name: title,
+      content_type: "4",
+      media_format_id: stream.mediaFormatId
+    };
+    if (stream.drmToken) {
+      metadata.drm_token = stream.drmToken;
+      metadata.drm_license_url = stream.drmLicenseUrl;
+      metadata.drm_type = stream.drmType;
+      if (stream.drmContentId) metadata.contentId = stream.drmContentId;
     }
+    await this.sendLoad(
+      { contentId: stream.url, contentUrl: stream.url, contentType: stream.contentType, streamType: "LIVE", metadata },
+      "The TV couldn't start the channel."
+    );
   }
 
   private media(type: string, extra: Record<string, unknown> = {}): void {
