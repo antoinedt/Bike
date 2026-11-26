@@ -35,6 +35,7 @@ object ServiceLocator {
     val castManager: com.medialibrary.manager.cast.CastManager by lazy {
         com.medialibrary.manager.cast.CastManager(appContext, settingsRepository)
     }
+    val tvGuide: com.medialibrary.manager.tv.TvGuideController by lazy { com.medialibrary.manager.tv.TvGuideController(appContext) }
     val remoteManager: com.medialibrary.manager.remote.RemoteManager by lazy {
         com.medialibrary.manager.remote.RemoteManager(appContext, settingsRepository, transferManager)
     }

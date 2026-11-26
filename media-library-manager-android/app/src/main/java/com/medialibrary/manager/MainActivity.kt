@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -52,6 +53,7 @@ import com.medialibrary.manager.ui.screens.DownloadsScreen
 import com.medialibrary.manager.ui.screens.LibraryScreen
 import com.medialibrary.manager.ui.screens.SearchScreen
 import com.medialibrary.manager.ui.screens.SettingsScreen
+import com.medialibrary.manager.ui.screens.TvScreen
 import com.medialibrary.manager.ui.theme.MediaLibraryTheme
 
 private data class BottomTab(val route: String, val label: String, val icon: ImageVector)
@@ -59,6 +61,7 @@ private data class BottomTab(val route: String, val label: String, val icon: Ima
 private val TABS = listOf(
     BottomTab("library", "Library", Icons.Filled.VideoLibrary),
     BottomTab("search", "Search", Icons.Filled.Search),
+    BottomTab("tv", "TV", Icons.Filled.Tv),
     BottomTab("downloads", "Downloads", Icons.Filled.Download),
     BottomTab("settings", "Settings", Icons.Filled.Settings)
 )
@@ -259,6 +262,7 @@ private fun MediaLibraryApp(
             ) {
                 composable("library") { LibraryScreen(viewModel, isTv, onPickImage) }
                 if (!isTv) composable("search") { SearchScreen(viewModel) }
+                composable("tv") { TvScreen(isTv) }
                 composable("downloads") { DownloadsScreen(viewModel, onOpenTorrentFile) }
                 composable("settings") { SettingsScreen(viewModel, onPickFolder, onChangeFolder, showSearchSites = !isTv) }
             }

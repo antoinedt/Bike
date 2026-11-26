@@ -30,7 +30,8 @@ java -cp "$COMPILER_CP" org.jetbrains.kotlin.cli.jvm.K2JVMCompiler -no-stdlib -n
   -classpath "$STDLIB:$LT_JAR:$JSON" -d "$CACHE/out" \
   ../app/src/main/java/com/medialibrary/manager/torrent/TorrentEngine.kt EngineTest.kt \
   ../app/src/main/java/com/medialibrary/manager/remote/RemoteQueue.kt RemoteInterop.kt \
-  ../app/src/main/java/com/medialibrary/manager/cast/CastProtocols.kt ../app/src/main/java/com/medialibrary/manager/cast/MediaHttpServer.kt CastInterop.kt
+  ../app/src/main/java/com/medialibrary/manager/cast/CastProtocols.kt ../app/src/main/java/com/medialibrary/manager/cast/MediaHttpServer.kt CastInterop.kt \
+  ../app/src/main/java/com/medialibrary/manager/tv/FizzTvClient.kt TvInterop.kt
 
 WORK="$(mktemp -d)"
 trap 'kill $SEEDER 2>/dev/null || true; rm -rf "$WORK"' EXIT
@@ -48,6 +49,13 @@ node remote-interop.mjs "$BOX" send
 $KT_RUN receive
 node remote-interop.mjs "$BOX" receive
 $KT_RUN replies
+
+echo "--- TV tab: Fizz sign-in and guide (fake Fizz server)"
+node ../../media-library-manager/test/fakeFizz.mjs serve > "$WORK/fizz.json" &
+FIZZ=$!
+for _ in $(seq 1 40); do [ -s "$WORK/fizz.json" ] && break; sleep 0.25; done
+java -cp "$CACHE/out:$STDLIB:$JSON" TvInteropKt "$(cat "$WORK/fizz.json")"
+kill $FIZZ 2>/dev/null || true
 
 echo "--- Casting: Google Cast (fake TV on castv2) and DLNA (gmediarender, if installed)"
 CAST="$WORK/cast"
