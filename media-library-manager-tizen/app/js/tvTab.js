@@ -25,6 +25,7 @@ var TvTab = (function () {
   var timeline = document.getElementById("tv-timeline");
   var rowsEl = document.getElementById("tv-rows");
   var details = document.getElementById("tv-details");
+  var watchButton = details.querySelector(".tv-details-watch");
 
   var channels = [];
   var programs = {}; // channelId -> [program]
@@ -35,6 +36,7 @@ var TvTab = (function () {
   var pollTimer = null;
   var pendingCode = null;
   var detailsReturnFocus = null;
+  var detailsChannel = null; // the channel whose details are open (for "Watch")
 
   function startOfDay(offset) {
     var d = new Date();
@@ -424,6 +426,7 @@ var TvTab = (function () {
     detailsReturnFocus = document.activeElement;
     var ch = null;
     for (var i = 0; i < channels.length; i++) if (channels[i].id === channelId) ch = channels[i];
+    detailsChannel = ch;
     details.querySelector(".tv-details-title").textContent = prog.title;
     details.querySelector(".tv-details-episode").textContent = prog.episode || "";
     var d = new Date(prog.start);
@@ -431,8 +434,9 @@ var TvTab = (function () {
       (ch ? (ch.number !== null ? ch.number + " · " : "") + ch.name + " · " : "") +
       DAY_NAMES[d.getDay()] + " " + d.getDate() + " · " + clock(prog.start) + " – " + clock(prog.end);
     details.querySelector(".tv-details-text").textContent = prog.description || "";
+    watchButton.textContent = ch ? "Watch " + ch.name : "Watch";
     details.classList.remove("hidden");
-    details.querySelector("button").focus();
+    watchButton.focus();
   }
 
   function closeDetails() {
@@ -440,12 +444,49 @@ var TvTab = (function () {
     if (detailsReturnFocus) detailsReturnFocus.focus();
   }
 
+  /** Tune the channel whose details are open and play it live, full-screen. */
+  function watchChannel() {
+    var ch = detailsChannel;
+    if (!ch) return;
+    var name = ch.name;
+    watchButton.textContent = "Opening " + name + "…";
+    FizzTv.streamForChannel(ch.id, function (err, stream) {
+      watchButton.textContent = "Watch " + name;
+      if (err) { setGuideStatus(err.message || "Couldn't open the channel."); return; }
+      closeDetails();
+      TvPlayer.openStream(stream, name, function () {
+        var first = firstFocusable();
+        if (first) first.focus();
+      });
+    });
+  }
+
   // ---- Remote ----
 
   /** Handles a key while the TV tab is showing. Returns true if it used it. */
   function handleKey(code, keys, header) {
+    if (TvPlayer.isOpen()) {
+      // Live playback is full-screen: Return/OK closes it, everything else is swallowed.
+      if (code === keys.BACK || code === keys.ENTER) { TvPlayer.close(); return true; }
+      return true;
+    }
     if (!details.classList.contains("hidden")) {
-      if (code === keys.BACK || code === keys.ENTER) { closeDetails(); return true; }
+      if (code === keys.BACK) { closeDetails(); return true; }
+      if (code === keys.ENTER) {
+        var focused = document.activeElement;
+        if (focused && details.contains(focused) && typeof focused.click === "function") focused.click();
+        else closeDetails();
+        return true;
+      }
+      if (code === keys.LEFT || code === keys.RIGHT || code === keys.UP || code === keys.DOWN) {
+        // Move between the Watch and Close buttons only — never to the guide behind the box.
+        var btns = details.querySelectorAll("button");
+        var cur = document.activeElement, idx = 0;
+        for (var bi = 0; bi < btns.length; bi++) if (btns[bi] === cur) idx = bi;
+        var nextIdx = (code === keys.LEFT || code === keys.UP) ? idx - 1 : idx + 1;
+        if (nextIdx >= 0 && nextIdx < btns.length) btns[nextIdx].focus();
+        return true;
+      }
       return true; // keep focus inside the details box
     }
     var el = document.activeElement;
@@ -500,7 +541,9 @@ var TvTab = (function () {
   }
 
   signInButton.addEventListener("click", startSignIn);
-  details.querySelector("button").addEventListener("click", closeDetails);
+  watchButton.addEventListener("click", watchChannel);
+  // The last button in the box is "Close" (the first is now "Watch").
+  (function (btns) { btns[btns.length - 1].addEventListener("click", closeDetails); })(details.querySelectorAll("button"));
 
   return { show: show, hide: hide, isActive: isActive, handleKey: handleKey, firstFocusable: firstFocusable };
 })();

@@ -18,6 +18,11 @@
     <access origin="https://auth.fizz.ca" subdomains="false"/>
     <access origin="https://a2.vmedia.ca" subdomains="false"/>
     <access origin="https://images.cdn.vmedia.ca" subdomains="false"/>
+    <!-- Live TV playback: the Widevine licence proxy, and the stream's CDN. The CDN host comes
+         back from clientStream at play time and can change, so it isn't a fixed origin; allow
+         https anywhere for the manifest/segments (only the TV tab fetches video at all). -->
+    <access origin="https://widevine-proxy.drm.technology" subdomains="false"/>
+    <access origin="*" subdomains="true"/>
     <!-- content.read: tizen.content.find() to list video/audio the TV has already indexed.
          externalstorage/mediastorage: walking a USB drive's folders directly when the index
          doesn't have it. internet + the access origins below: only for the TV tab (the Fizz

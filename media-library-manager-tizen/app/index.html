@@ -47,8 +47,13 @@
           <div class="tv-details-episode"></div>
           <div class="tv-details-meta"></div>
           <p class="tv-details-text"></p>
+          <button class="tv-details-watch tv-button">Watch</button>
           <button class="tv-button">Close</button>
         </div>
+      </div>
+      <div id="tv-player" class="tv-player hidden">
+        <video id="tv-player-video" class="tv-player-video"></video>
+        <div id="tv-player-status" class="tv-player-status"></div>
       </div>
     </div>
   </div>
@@ -63,7 +68,9 @@
   </div>
 
   <script src="js/titleGuess.js"></script>
+  <script src="vendor/shaka-player.compiled.js"></script>
   <script src="js/fizzTv.js"></script>
+  <script src="js/tvPlayer.js"></script>
   <script src="js/tvTab.js"></script>
   <script src="js/app.js"></script>
 </body>
