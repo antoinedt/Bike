@@ -116,10 +116,12 @@ fetched, same as any `<img src>`.
 
 ## Known limitations (first version)
 
-- Network shares use the `smb2` npm package, which signs in with **NTLMv1** only. Many current
-  servers refuse that by default (Samba 4.5+ `ntlm auth = ntlmv2-only`, Synology DSM 7, Windows 11
-  24H2), in which case browsing, streaming and copying to/from that share fail with a logon error.
-  The Android app (jcifs-ng) uses NTLMv2 and isn't affected.
+- Network shares use the `smb2` npm package (SMB 2.0.2), patched at startup (`network/smb2Fixes.ts`)
+  to sign in with **NTLMv2** (it only did NTLMv1, which current Samba, Synology DSM 7 and Windows 11
+  refuse) and to handle a busy server's `STATUS_PENDING` replies. Reads keep 16 requests in flight,
+  so streaming over a VPN like ZeroTier isn't capped at 64 KB per round trip (measured against
+  Samba 4.19 at 30 ms: 16 → 144 Mbit/s). No SMB signing/encryption: shares that require them won't
+  open.
 - A share's host can include a port (`nas.local:1445`) for servers not on 445.
 
 - `webtorrent` is pinned to 2.8.5: 3.x needs Node 22, and Electron 33 ships Node 20. Its

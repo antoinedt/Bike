@@ -2,7 +2,7 @@ import { createReadStream, createWriteStream, promises as fs } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { CopyJob, CopyTarget, LocalFolder, MediaItem, NetworkShare } from "../../shared/types.js";
-import { closeRawFile, openRawFile, readRawRange } from "../network/smbRawClient.js";
+import { closeRawFile, openRawFile, readRawStream } from "../network/smbRawClient.js";
 import { relPathFromMediaPath } from "../network/smbClient.js";
 import {
   connectShare,
@@ -204,16 +204,7 @@ export class CopyManager {
     const shareId = item.source.shareId;
     const share = this.share(shareId);
     const handle = await openRawFile(share, relPathFromMediaPath(share, item.path));
-    async function* read(): AsyncGenerator<Buffer> {
-      let pos = 0;
-      while (pos < handle.size) {
-        const data = await readRawRange(handle, pos, Math.min(CHUNK, handle.size - pos));
-        if (data.length === 0) break;
-        pos += data.length;
-        yield data;
-      }
-    }
-    return { size: handle.size, chunks: read(), close: () => closeRawFile(handle) };
+    return { size: handle.size, chunks: readRawStream(handle, 0, handle.size - 1), close: () => closeRawFile(handle) };
   }
 
   private async write(

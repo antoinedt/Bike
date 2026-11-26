@@ -1,7 +1,7 @@
 import http from "node:http";
 import { randomUUID } from "node:crypto";
 import type { NetworkShare } from "../../shared/types.js";
-import { closeRawFile, openRawFile, readRawRange, type RawFileHandle } from "./smbRawClient.js";
+import { closeRawFile, openRawFile, readRawStream, type RawFileHandle } from "./smbRawClient.js";
 
 const MIME_BY_EXTENSION: Record<string, string> = {
   mp4: "video/mp4",
@@ -24,8 +24,6 @@ const MIME_BY_EXTENSION: Record<string, string> = {
   opus: "audio/opus"
 };
 
-/** Chunk size for the HTTP → SMB relay loop; independent of (and larger than) the SMB2 wire chunking. */
-const RELAY_CHUNK = 1024 * 1024;
 
 interface StreamEntry {
   share: NetworkShare;
@@ -112,15 +110,12 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       return;
     }
 
-    let pos = start;
-    while (pos <= end) {
-      const chunkEnd = Math.min(pos + RELAY_CHUNK - 1, end);
-      const data = await readRawRange(handle, pos, chunkEnd - pos + 1);
-      if (data.length === 0) break;
+    // Parallel reads (see readRawStream); stops early if the player closes the connection.
+    for await (const data of readRawStream(handle, start, end)) {
+      if (res.destroyed) break;
       if (!res.write(data)) {
         await new Promise((resolve) => res.once("drain", resolve));
       }
-      pos += data.length;
     }
     res.end();
   } catch (err) {

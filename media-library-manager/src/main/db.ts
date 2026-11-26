@@ -1,6 +1,29 @@
+import { app } from "electron";
+import { copyFileSync, existsSync } from "node:fs";
+import path from "node:path";
 import { JSONFilePreset } from "lowdb/node";
 import type { Low } from "lowdb";
 import type { MediaItem, MediaMetadata } from "../shared/types.js";
+
+const DB_NAME = "media-library.db.json";
+
+/**
+ * The library cache lives in the app's data folder (%APPDATA%\media-library-manager on Windows).
+ * Older versions saved it relative to wherever the app was started from — usually the install
+ * folder, which an update can wipe — so a copy found there is carried over once.
+ */
+function dbPath(): string {
+  const target = path.join(app.getPath("userData"), DB_NAME);
+  const legacy = path.resolve(DB_NAME);
+  if (!existsSync(target) && legacy !== target && existsSync(legacy)) {
+    try {
+      copyFileSync(legacy, target);
+    } catch {
+      // start fresh; a rescan rebuilds it
+    }
+  }
+  return target;
+}
 
 interface DbSchema {
   items: MediaItem[];
@@ -10,7 +33,7 @@ let dbPromise: Promise<Low<DbSchema>> | null = null;
 
 function getDb(): Promise<Low<DbSchema>> {
   if (!dbPromise) {
-    dbPromise = JSONFilePreset<DbSchema>("media-library.db.json", { items: [] });
+    dbPromise = JSONFilePreset<DbSchema>(dbPath(), { items: [] });
   }
   return dbPromise;
 }

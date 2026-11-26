@@ -2,6 +2,10 @@ import { createWriteStream } from "node:fs";
 import { createRequire } from "node:module";
 import SMB2 from "smb2";
 import type { NetworkShare } from "../../shared/types.js";
+import { applySmb2Fixes } from "./smb2Fixes.js";
+
+// Every SMB connection in the app goes through the smb2 package: NTLMv2 sign-in, STATUS_PENDING handling.
+applySmb2Fixes();
 
 /**
  * The public smb2 API only offers whole-file readFile/writeFile, which is useless for
@@ -87,24 +91,50 @@ export async function openRawFile(share: NetworkShare, relPath: string): Promise
   return { client, fileId: file.FileId, size: fileSizeFromEndOfFile(file.EndofFile) };
 }
 
-/** Reads an arbitrary byte range, transparently split into SMB2-sized READ requests. */
+/**
+ * READ requests kept in flight at once. One at a time, speed is capped at 64 KB per network round
+ * trip (~17 Mbit/s at 30 ms, e.g. over ZeroTier); 16 in flight keeps ~1 MB on the way.
+ */
+const READS_IN_FLIGHT = 16;
+
+function readChunk(handle: RawFileHandle, pos: number, length: number): Promise<Buffer> {
+  return requestRaw<Buffer>(handle.client, "read", {
+    FileId: handle.fileId,
+    Length: length,
+    Offset: new BigInt64(8, pos).toBuffer()
+  });
+}
+
+/**
+ * Reads bytes `start`..`end` (inclusive) in order, with up to READS_IN_FLIGHT READ requests
+ * outstanding, yielding each 64 KB piece as soon as it (and everything before it) has arrived.
+ */
+export async function* readRawStream(handle: RawFileHandle, start: number, end: number): AsyncGenerator<Buffer> {
+  const last = Math.min(end, handle.size - 1);
+  let next = start;
+  const pending: Promise<Buffer>[] = [];
+  const fill = () => {
+    while (pending.length < READS_IN_FLIGHT && next <= last) {
+      const length = Math.min(MAX_SMB_READ_CHUNK, last - next + 1);
+      const p = readChunk(handle, next, length);
+      p.catch(() => undefined); // surfaced when awaited below
+      pending.push(p);
+      next += length;
+    }
+  };
+  fill();
+  while (pending.length > 0) {
+    const data = await pending.shift()!;
+    if (data.length === 0) break;
+    fill();
+    yield data;
+  }
+}
+
+/** Reads an arbitrary byte range (in parallel pieces, see readRawStream). */
 export async function readRawRange(handle: RawFileHandle, offset: number, length: number): Promise<Buffer> {
   const chunks: Buffer[] = [];
-  let remaining = length;
-  let pos = offset;
-  while (remaining > 0) {
-    const chunkLength = Math.min(remaining, MAX_SMB_READ_CHUNK);
-    const offsetBuffer = new BigInt64(8, pos).toBuffer();
-    const data = await requestRaw<Buffer>(handle.client, "read", {
-      FileId: handle.fileId,
-      Length: chunkLength,
-      Offset: offsetBuffer
-    });
-    if (data.length === 0) break;
-    chunks.push(data);
-    pos += data.length;
-    remaining -= data.length;
-  }
+  for await (const chunk of readRawStream(handle, offset, offset + length - 1)) chunks.push(chunk);
   return Buffer.concat(chunks);
 }
 
@@ -119,10 +149,7 @@ export async function downloadRawFile(
   const out = createWriteStream(destPath);
   try {
     let pos = 0;
-    while (pos < handle.size) {
-      const chunkLength = Math.min(MAX_SMB_READ_CHUNK, handle.size - pos);
-      const data = await readRawRange(handle, pos, chunkLength);
-      if (data.length === 0) break;
+    for await (const data of readRawStream(handle, 0, handle.size - 1)) {
       pos += data.length;
       onProgress?.(pos, handle.size);
       if (!out.write(data)) {

@@ -11,7 +11,7 @@
     "build": "tsc -p tsconfig.electron.json && vite build",
     "typecheck": "tsc -p tsconfig.electron.json --noEmit && tsc -p tsconfig.json --noEmit",
     "dist": "npm run build && electron-builder",
-    "test": "tsc -p tsconfig.electron.json && node --openssl-legacy-provider --test --test-force-exit --test-reporter=spec test/torrentManager.test.mjs test/copyManager.test.mjs test/remoteQueue.test.mjs"
+    "test": "tsc -p tsconfig.electron.json && node --openssl-legacy-provider --test --test-force-exit --test-reporter=spec test/torrentManager.test.mjs test/copyManager.test.mjs test/remoteQueue.test.mjs test/ntlmv2.test.mjs"
   },
   "dependencies": {
     "cheerio": "^1.0.0",
