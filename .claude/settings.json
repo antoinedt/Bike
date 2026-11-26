@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "mcp__Gmail__get_draft",
-      "mcp__Gmail__update_draft"
+      "mcp__Gmail__update_draft",
+      "mcp__Gmail__list_drafts"
     ]
   }
 }
