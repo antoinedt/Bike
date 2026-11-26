@@ -45,7 +45,7 @@ function createWindow(): void {
 
 // The Castlabs Electron build ships Widevine (for live TV in the TV tab); wait for its
 // component to be ready. Standard Electron has no `components`, so this is a no-op there.
-const widevine = (electronRuntime as { components?: { whenReady(): Promise<void> } }).components;
+const widevine = (electronRuntime as unknown as { components?: { whenReady(): Promise<unknown> } }).components;
 
 app.whenReady()
   .then(() => (widevine ? widevine.whenReady().catch(() => undefined) : undefined))
