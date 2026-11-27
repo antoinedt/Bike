@@ -1,7 +1,15 @@
-import { BrowserWindow } from "electron";
+import { BrowserWindow, session } from "electron";
+import { log } from "../log.js";
 
-const USER_AGENT =
-  "Mozilla/5.0 (Media Library Manager; +desktop app) media-library-manager/0.1";
+/**
+ * Looks like plain Chrome: some sites (or the CDN in front of them) refuse or stall an unknown
+ * browser name, and the old "Media Library Manager" identity was exactly that.
+ */
+function browserUserAgent(): string {
+  return session.defaultSession
+    .getUserAgent()
+    .replace(/\s(Electron|media-library-manager|OmniPlay)\/\S+/gi, "");
+}
 
 /**
  * Loads a URL in a hidden BrowserWindow — Electron's own Chromium, so no extra headless-browser
@@ -26,20 +34,36 @@ export async function fetchRenderedHtml(
     }
   });
 
+  // The page's console errors ("Failed to load resource: net::ERR_…", script errors) and failed
+  // frame loads, for the log when results never show up. (Watching requests through
+  // session.webRequest instead stops these pages from loading at all.)
+  const problems: string[] = [];
+  win.webContents.on("console-message", (event) => {
+    const e = event as unknown as { level?: string; message?: string };
+    if (e.level === "error" || e.level === "warning") problems.push(`${e.level}: ${String(e.message).slice(0, 160)}`);
+  });
+  win.webContents.on("did-fail-load", (_e, code, description, failedUrl) => {
+    if (code !== -3) problems.push(`load failed ${description} ${failedUrl.slice(0, 120)}`);
+  });
   try {
-    win.webContents.setUserAgent(USER_AGENT);
+    win.webContents.setUserAgent(browserUserAgent());
 
     // Don't wait for the page's "load" event: busy sites (ads, trackers) may take ages to fire
     // it, or never do, even though the results are on screen within a second or two. Start
     // loading and poll for the results instead.
-    let loadError: Error | null = null;
+    let loadError = null as Error | null;
     win.loadURL(url).catch((err: Error) => {
       // ERR_ABORTED just means the page navigated on its own (redirects); not a failure.
       if (!/ERR_ABORTED/.test(err.message)) loadError = err;
     });
 
     const found = await waitForSelector(win, readySelector, timeoutMs, () => loadError);
-    if (!found && loadError) throw loadError;
+    if (!found) {
+      const failed = problems;
+      log("search", `results never appeared on ${url}${loadError ? ` (page failed: ${loadError.message})` : ""}; ` +
+        (failed.length ? `page errors: ${failed.slice(0, 10).join(" | ")}` : "the page reported no errors"));
+      if (loadError) throw loadError;
+    }
 
     const html = String(await win.webContents.mainFrame.executeJavaScript("document.documentElement.outerHTML"));
     const finalUrl = win.webContents.getURL() || url;

@@ -75,6 +75,10 @@ export async function searchSite(profile: SiteProfile, query: string): Promise<S
       `"${profile.resultItemSelector}" matched ${rows.length} row(s)` +
       (rows.length === 0 ? `; page title: "${$("title").first().text().trim()}"` : "")
   );
+  if (rows.length === 0) {
+    const text = $("body").text().replace(/\s+/g, " ").trim().slice(0, 300);
+    log("search", `${profile.label}: page text: "${text}"; html starts: ${html.slice(0, 600).replace(/\s+/g, " ")}`);
+  }
   const candidates: Candidate[] = [];
 
   for (const row of rows) {
