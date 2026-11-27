@@ -66,6 +66,10 @@ jobs:
       - name: Test (in-app torrent downloads, against a local seeder)
         run: npm test
 
+      # Version shown in Settings: 0.2.<build number>.
+      - name: Set version from build number
+        run: npm version "0.2.${{ github.run_number }}" --no-git-tag-version --allow-same-version
+
       - name: Build installer
         run: |
           npm run build

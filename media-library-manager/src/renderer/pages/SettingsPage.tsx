@@ -23,10 +23,15 @@ export default function SettingsPage({
   settings: AppSettings;
   refreshSettings: () => Promise<void>;
 }) {
+  const [version, setVersion] = useState("");
+  useEffect(() => {
+    void window.api.getAppVersion().then(setVersion);
+  }, []);
   return (
     <div className="page">
       <div className="page-header">
         <h1>Settings</h1>
+        {version && <span className="hint-inline app-version">OmniPlay version {version}</span>}
       </div>
       <FoldersSection settings={settings} refreshSettings={refreshSettings} />
       <SharesSection settings={settings} refreshSettings={refreshSettings} />

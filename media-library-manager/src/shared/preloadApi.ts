@@ -123,6 +123,8 @@ export interface PreloadApi {
   onLibraryChanged(callback: () => void): () => void;
   /** Whether the background library scan is running, and how much it's found. */
   getLibraryScanStatus(): Promise<LibraryScanStatus>;
+  /** The app's version, e.g. "0.2.36" (the last number is the build). */
+  getAppVersion(): Promise<string>;
   /** Live scan status. Returns an unsubscribe function. */
   onLibraryScanStatus(callback: (status: LibraryScanStatus) => void): () => void;
   /** "Copy to…": queues a copy of a library item (local or network) into a folder on this computer or a share. */

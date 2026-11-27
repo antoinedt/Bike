@@ -56,6 +56,7 @@ fun SettingsScreen(
         modifier = Modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
+        item { VersionLine() }
         item { FoldersSection(settings.localFolders, onPickFolder, onChangeFolder, viewModel) }
         item { HorizontalDivider() }
         item { SharesSection(settings.networkShares, shareTestResult, viewModel) }
@@ -459,4 +460,18 @@ private fun ProfilesSection(profiles: List<SiteProfile>, viewModel: MediaLibrary
             }
         }
     }
+}
+
+/** "OmniPlay version 0.2.46" — the last number is the build. */
+@Composable
+private fun VersionLine() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val version = remember {
+        runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "?"
+    }
+    Text(
+        "OmniPlay version $version",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
 }

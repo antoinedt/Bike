@@ -17,8 +17,10 @@ android {
         // treat "install" as a no-op (or balk) instead of actually replacing the running code, so
         // a build could look installed without it taking effect. CI passes -PversionCode=<run
         // number>, strictly increasing per build; local/dev builds fall back to 1.
-        versionCode = (project.findProperty("versionCode") as String?)?.toIntOrNull() ?: 1
-        versionName = "0.2.0"
+        val build = (project.findProperty("versionCode") as String?)?.toIntOrNull() ?: 1
+        versionCode = build
+        // Shown in Settings: 0.2.<build number>, same scheme as the Windows app.
+        versionName = "0.2.$build"
     }
 
     signingConfigs {

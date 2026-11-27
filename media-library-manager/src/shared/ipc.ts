@@ -43,6 +43,7 @@ export const IPC = {
   libraryChanged: "library:changed",
   libraryScanStatus: "library:scanStatus",
   libraryGetScanStatus: "library:getScanStatus",
+  appVersion: "app:version",
   copyStart: "copy:start",
   copyList: "copy:list",
   copyCancel: "copy:cancel",

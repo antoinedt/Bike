@@ -61,6 +61,7 @@ const api = {
     return () => ipcRenderer.removeListener("library:changed", listener);
   },
   getLibraryScanStatus: () => ipcRenderer.invoke("library:getScanStatus"),
+  getAppVersion: () => ipcRenderer.invoke("app:version"),
   onLibraryScanStatus: (callback: (status: unknown) => void) => {
     const listener = (_e: unknown, status: unknown) => callback(status);
     ipcRenderer.on("library:scanStatus", listener);

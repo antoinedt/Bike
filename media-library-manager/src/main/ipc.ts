@@ -1,4 +1,4 @@
-import { BrowserWindow, dialog, ipcMain, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { readFile } from "node:fs/promises";
 import { IPC } from "../shared/ipc.js";
 import type { LocalFolder, MediaItem, NetworkShare, SiteProfile } from "../shared/types.js";
@@ -67,6 +67,7 @@ export function registerIpcHandlers(): void {
     return getAllItems();
   });
   ipcMain.handle(IPC.libraryGetScanStatus, () => libraryScanStatus());
+  ipcMain.handle(IPC.appVersion, () => app.getVersion());
 
   ipcMain.handle(IPC.libraryGetItems, () => getAllItems());
 
