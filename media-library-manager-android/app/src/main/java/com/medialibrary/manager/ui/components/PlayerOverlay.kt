@@ -53,10 +53,9 @@ import androidx.media3.common.MediaItem as ExoMediaItem
  * SmbDataSource) and local video/audio alike: black background, the video letterboxed to fit,
  * system bars hidden, screen kept on, no title. Back closes it.
  *
- * A diagnostics panel (top left) appears while buffering, on an error, and whenever the playback
- * controls are showing: buffer level, real network speed, codecs and the decoders the device
- * picked (or tracks it can't play at all), dropped frames, and the full error — so a file that
- * won't play says why.
+ * Playback info (top left: buffer level, real network speed, codecs and the decoders the device
+ * picked, dropped frames) is off by default; the ⚙ button shown with the controls turns it on, and
+ * the choice is remembered. A playback error is always shown, so a file that won't play says why.
  */
 @OptIn(UnstableApi::class)
 @Composable
@@ -92,6 +91,9 @@ fun PlayerOverlay(
     }
 
     var controlsVisible by remember { mutableStateOf(true) }
+    val prefs = remember { context.getSharedPreferences("player", android.content.Context.MODE_PRIVATE) }
+    var showInfo by remember { mutableStateOf(prefs.getBoolean(SHOW_INFO_KEY, false)) }
+    var settingsOpen by remember { mutableStateOf(false) }
     var snapshot by remember { mutableStateOf<DiagnosticsSnapshot?>(null) }
     LaunchedEffect(player) {
         var previous = SmbStreamStats.snapshot()
@@ -137,8 +139,32 @@ fun PlayerOverlay(
                 }
             )
             val current = snapshot
-            if (current != null && (controlsVisible || current.buffering || current.error != null)) {
-                DiagnosticsPanel(current, Modifier.align(Alignment.TopStart).padding(16.dp))
+            if (current != null && (current.error != null || (showInfo && (controlsVisible || current.buffering)))) {
+                DiagnosticsPanel(current, showInfo, Modifier.align(Alignment.TopStart).padding(16.dp))
+            }
+            if (controlsVisible || settingsOpen) {
+                Box(Modifier.align(Alignment.TopEnd).padding(8.dp)) {
+                    androidx.compose.material3.IconButton(onClick = { settingsOpen = true }) {
+                        androidx.compose.material3.Icon(
+                            androidx.compose.material.icons.Icons.Filled.Settings,
+                            contentDescription = "Player settings",
+                            tint = Color.White
+                        )
+                    }
+                    androidx.compose.material3.DropdownMenu(expanded = settingsOpen, onDismissRequest = { settingsOpen = false }) {
+                        androidx.compose.material3.DropdownMenuItem(
+                            text = { Text("Show playback info") },
+                            leadingIcon = {
+                                androidx.compose.material3.Checkbox(checked = showInfo, onCheckedChange = null)
+                            },
+                            onClick = {
+                                showInfo = !showInfo
+                                prefs.edit().putBoolean(SHOW_INFO_KEY, showInfo).apply()
+                                settingsOpen = false
+                            }
+                        )
+                    }
+                }
             }
         }
     }
@@ -169,8 +195,11 @@ private fun FullScreenDialogWindow() {
     }
 }
 
+private const val SHOW_INFO_KEY = "showPlaybackInfo"
+
+/** The error (always), plus the playback info lines when [showInfo] is on. */
 @Composable
-private fun DiagnosticsPanel(snapshot: DiagnosticsSnapshot, modifier: Modifier) {
+private fun DiagnosticsPanel(snapshot: DiagnosticsSnapshot, showInfo: Boolean, modifier: Modifier) {
     Column(
         modifier
             .widthIn(max = 720.dp)
@@ -181,7 +210,7 @@ private fun DiagnosticsPanel(snapshot: DiagnosticsSnapshot, modifier: Modifier) 
             Text("Playback error", color = Color(0xFFFF8A80), style = MaterialTheme.typography.titleSmall)
             Text(it, color = Color.White, style = MaterialTheme.typography.bodySmall)
         }
-        snapshot.lines.forEach { line ->
+        if (showInfo) snapshot.lines.forEach { line ->
             Text(line, color = Color.White, style = MaterialTheme.typography.bodySmall)
         }
     }
