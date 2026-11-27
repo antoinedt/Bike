@@ -33,6 +33,9 @@ export default function VersionSection() {
     <div className="version-line">
       <span className="hint-inline">OmniPlay version {status.current}</span>
       <span className="hint-inline">{describe(status)}</span>
+      <button className="btn btn-small" onClick={() => void window.api.openLog()}>
+        Open log
+      </button>
       {status.state === "ready" ? (
         <button className="btn btn-small btn-primary" onClick={() => void window.api.installUpdateNow()}>
           Restart to update

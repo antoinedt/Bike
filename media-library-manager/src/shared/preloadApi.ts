@@ -126,6 +126,8 @@ export interface PreloadApi {
   getLibraryScanStatus(): Promise<LibraryScanStatus>;
   /** The app's version, e.g. "0.2.36" (the last number is the build). */
   getAppVersion(): Promise<string>;
+  /** Opens OmniPlay's log file (search, updates…); resolves with its path. */
+  openLog(): Promise<string>;
   getUpdateStatus(): Promise<UpdateStatus>;
   /** Checks GitHub for a newer build and downloads it; resolves with the resulting status. */
   checkForUpdate(): Promise<UpdateStatus>;

@@ -5,6 +5,7 @@ import { rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { IPC } from "../../shared/ipc.js";
 import type { UpdateStatus } from "../../shared/types.js";
+import { log } from "../log.js";
 
 /**
  * Self-update from this repo's GitHub releases. Every Windows CI build is published as
@@ -23,6 +24,9 @@ let installOnQuit = false;
 let checking: Promise<void> | null = null;
 
 function setStatus(next: Partial<UpdateStatus>): void {
+  if (next.state && next.state !== status.state) {
+    log("update", `${next.state}${next.latest ? ` ${next.latest}` : ""}${next.error ? `: ${next.error}` : ""}`);
+  }
   status = { ...status, ...next };
   for (const win of BrowserWindow.getAllWindows()) win.webContents.send(IPC.updateStatus, status);
 }

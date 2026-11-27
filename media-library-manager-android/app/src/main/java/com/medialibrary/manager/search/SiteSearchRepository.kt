@@ -33,9 +33,17 @@ private data class Candidate(val title: String, val downloadUrl: String, val siz
 class SiteSearchRepository(private val headlessFetcher: HeadlessWebViewFetcher) {
 
     suspend fun searchSites(profiles: List<SiteProfile>, query: String): List<SearchResultItem> = coroutineScope {
-        profiles.map { profile -> async { runCatching { searchSite(profile, query) }.getOrDefault(emptyList()) } }
-            .map { it.await() }
-            .flatten()
+        val outcomes = profiles.map { profile -> async { runCatching { searchSite(profile, query) } } }.map { it.await() }
+        outcomes.forEachIndexed { i, r ->
+            r.exceptionOrNull()?.let { android.util.Log.w("OmniPlaySearch", "${profiles[i].label} failed", it) }
+        }
+        // Every site failed: say why instead of a silent "No results".
+        if (outcomes.isNotEmpty() && outcomes.all { it.isFailure }) {
+            val err = outcomes.first().exceptionOrNull()
+            if (err is kotlinx.coroutines.CancellationException) throw err
+            throw IllegalStateException("${profiles.first().label}: ${err?.message ?: err}", err)
+        }
+        outcomes.flatMap { it.getOrDefault(emptyList()) }
     }
 
     suspend fun searchSite(profile: SiteProfile, query: String): List<SearchResultItem> = withContext(Dispatchers.IO) {

@@ -1,6 +1,7 @@
 import * as cheerio from "cheerio";
 import type { SearchResultItem, SiteProfile } from "../../shared/types.js";
 import { fetchRenderedHtml } from "./headlessFetch.js";
+import { log } from "../log.js";
 
 const USER_AGENT =
   "Mozilla/5.0 (Media Library Manager; +desktop app) media-library-manager/0.1";
@@ -62,10 +63,18 @@ interface Candidate {
  */
 export async function searchSite(profile: SiteProfile, query: string): Promise<SearchResultItem[]> {
   const searchUrl = buildUrl(profile.searchUrlTemplate, query);
+  const started = Date.now();
+  log("search", `${profile.label}: fetching ${searchUrl}${profile.useHeadlessBrowser ? " (JavaScript site)" : ""}`);
   const { html, finalUrl } = await fetchHtml(searchUrl, profile.useHeadlessBrowser, profile.resultItemSelector);
   const $ = cheerio.load(html);
 
   const rows = $(profile.resultItemSelector).toArray();
+  log(
+    "search",
+    `${profile.label}: got ${html.length} bytes from ${finalUrl} in ${Date.now() - started} ms; ` +
+      `"${profile.resultItemSelector}" matched ${rows.length} row(s)` +
+      (rows.length === 0 ? `; page title: "${$("title").first().text().trim()}"` : "")
+  );
   const candidates: Candidate[] = [];
 
   for (const row of rows) {
@@ -84,7 +93,20 @@ export async function searchSite(profile: SiteProfile, query: string): Promise<S
     candidates.push({ title, downloadUrl, size, seeders });
   }
 
+  if (rows.length > 0) {
+    const first = $(rows[0]);
+    log(
+      "search",
+      `${profile.label}: ${candidates.length} row(s) had a title and link. First row: ` +
+        `title="${first.find(profile.titleSelector).first().text().trim().slice(0, 80)}" ` +
+        `link="${(first.find(profile.linkSelector).first().attr("href") ?? "").slice(0, 80)}"`
+    );
+  }
+
   const resolved = await resolveDownloadUrls(candidates, profile);
+  if (profile.detailPageLinkSelector) {
+    log("search", `${profile.label}: ${resolved.length} of ${candidates.length} resolved via detail pages`);
+  }
 
   return resolved.map((c) => ({
     title: c.title,
@@ -124,8 +146,9 @@ async function resolveDownloadUrls(candidates: Candidate[], profile: SiteProfile
           profile.useHeadlessBrowser
         );
         resolved[index] = { ...candidate, downloadUrl };
-      } catch {
+      } catch (err) {
         // drop this one, matching the previous "continue" behavior
+        log("search", `${profile.label}: detail page ${candidate.downloadUrl} failed: ${(err as Error).message}`);
       }
     }
   }
@@ -147,6 +170,15 @@ async function resolveFromDetailPage(
 }
 
 export async function searchSites(profiles: SiteProfile[], query: string): Promise<SearchResultItem[]> {
+  log("search", `"${query}" on ${profiles.map((p) => p.label).join(", ") || "no sites"}`);
   const settled = await Promise.allSettled(profiles.map((p) => searchSite(p, query)));
+  settled.forEach((r, i) => {
+    if (r.status === "rejected") log("search", `${profiles[i].label}: FAILED: ${(r.reason as Error)?.message ?? r.reason}`);
+  });
+  // Every site failed: say why instead of showing a silent "No results".
+  if (settled.length > 0 && settled.every((r) => r.status === "rejected")) {
+    const reason = (settled[0] as PromiseRejectedResult).reason as Error;
+    throw new Error(`${profiles[0].label}: ${reason?.message ?? reason}`);
+  }
   return settled.flatMap((r) => (r.status === "fulfilled" ? r.value : []));
 }

@@ -24,41 +24,33 @@ import kotlin.coroutines.resume
 class HeadlessWebViewFetcher(private val context: Context) {
 
     /**
-     * Waits until [readySelector] matches something in the rendered DOM (or gives up after a
-     * bounded number of polls — deliberately not an error: a search with zero real results will
-     * legitimately never match, and that's a valid outcome, not a failure), then returns the
-     * fully-rendered HTML.
+     * Waits until [readySelector] matches something in the rendered DOM (or gives up after
+     * [timeoutMs] — deliberately not an error: a search with zero real results will legitimately
+     * never match, and that's a valid outcome, not a failure), then returns the rendered HTML.
+     * It does NOT wait for the page to finish loading: ad-heavy sites can take 20+ s to do that
+     * (or never do) although their results are on screen within a second or two.
      */
     suspend fun fetchRenderedHtml(url: String, readySelector: String, timeoutMs: Long = 20_000): String? =
-        withTimeoutOrNull(timeoutMs) {
-            withContext(Dispatchers.Main) {
-                val webView = WebView(context).apply {
-                    settings.javaScriptEnabled = true
-                    settings.domStorageEnabled = true
-                }
-                try {
-                    awaitPageLoad(webView, url)
-                    waitForSelector(webView, readySelector)
-                    extractHtml(webView)
-                } finally {
-                    webView.destroy()
-                }
+        withContext(Dispatchers.Main) {
+            val webView = WebView(context).apply {
+                settings.javaScriptEnabled = true
+                settings.domStorageEnabled = true
+                // Keep redirects inside this WebView instead of handing them to a browser app.
+                webViewClient = WebViewClient()
+            }
+            try {
+                webView.loadUrl(url)
+                withTimeoutOrNull(timeoutMs) { waitForSelector(webView, readySelector) }
+                extractHtml(webView)
+            } finally {
+                webView.stopLoading()
+                webView.destroy()
             }
         }
-
-    private suspend fun awaitPageLoad(webView: WebView, url: String) = suspendCancellableCoroutine<Unit> { cont ->
-        webView.webViewClient = object : WebViewClient() {
-            override fun onPageFinished(view: WebView?, finishedUrl: String?) {
-                if (cont.isActive) cont.resume(Unit)
-            }
-        }
-        cont.invokeOnCancellation { webView.stopLoading() }
-        webView.loadUrl(url)
-    }
 
     private suspend fun waitForSelector(webView: WebView, selector: String) {
         val escaped = JSONObject.quote(selector)
-        repeat(50) {
+        while (true) {
             val countText = evaluateJs(webView, "document.querySelectorAll($escaped).length")
             if ((countText.toIntOrNull() ?: 0) > 0) return
             delay(300)

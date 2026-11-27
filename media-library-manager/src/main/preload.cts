@@ -62,6 +62,7 @@ const api = {
   },
   getLibraryScanStatus: () => ipcRenderer.invoke("library:getScanStatus"),
   getAppVersion: () => ipcRenderer.invoke("app:version"),
+  openLog: () => ipcRenderer.invoke("app:openLog"),
   getUpdateStatus: () => ipcRenderer.invoke("update:getStatus"),
   checkForUpdate: () => ipcRenderer.invoke("update:check"),
   installUpdateNow: () => ipcRenderer.invoke("update:installNow"),
