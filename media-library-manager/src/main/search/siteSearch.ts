@@ -40,6 +40,12 @@ async function fetchHtml(
   return useHeadlessBrowser ? fetchRenderedHtml(url, readySelector) : fetchPlainHtml(url);
 }
 
+/** "Uploaded 06-26, Size 2.54 GiB, ULed by x" -> "2.54 GiB"; anything else is kept as is. */
+function sizeFrom(text: string): string {
+  const m = /\b(\d+(?:[.,]\d+)?)\s*([KMGT]i?B)\b/i.exec(text.replace(/\u00a0/g, " "));
+  return m ? `${m[1]} ${m[2]}` : text;
+}
+
 function resolveUrl(maybeRelative: string, baseUrl: string): string {
   if (!maybeRelative) return maybeRelative;
   if (maybeRelative.startsWith("magnet:")) return maybeRelative;
@@ -90,7 +96,7 @@ export async function searchSite(profile: SiteProfile, query: string): Promise<S
     if (!title || !rawLink) continue;
 
     const downloadUrl = resolveUrl(rawLink, finalUrl);
-    const size = profile.sizeSelector ? $row.find(profile.sizeSelector).first().text().trim() : "";
+    const size = profile.sizeSelector ? sizeFrom($row.find(profile.sizeSelector).first().text().trim()) : "";
     const seeders = profile.seedersSelector
       ? $row.find(profile.seedersSelector).first().text().trim()
       : "";

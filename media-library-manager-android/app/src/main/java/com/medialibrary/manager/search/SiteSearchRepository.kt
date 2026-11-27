@@ -25,6 +25,12 @@ private const val DETAIL_PAGE_CONCURRENCY = 4
 
 private data class Candidate(val title: String, val downloadUrl: String, val size: String, val seeders: String)
 
+private val SIZE_IN_TEXT = Regex("""\b(\d+(?:[.,]\d+)?)\s*([KMGT]i?B)\b""", RegexOption.IGNORE_CASE)
+
+/** "Uploaded 06-26, Size 2.54 GiB, ULed by x" -> "2.54 GiB"; anything else is kept as is. */
+private fun sizeFrom(text: String): String =
+    SIZE_IN_TEXT.find(text.replace('\u00a0', ' '))?.let { "${it.groupValues[1]} ${it.groupValues[2]}" } ?: text
+
 /**
  * Runs a search against a user-configured site profile and parses the results with the
  * profile's CSS selectors — a Kotlin/Jsoup port of the desktop app's siteSearch.ts. Only
@@ -74,7 +80,7 @@ class SiteSearchRepository(private val headlessFetcher: HeadlessWebViewFetcher) 
             if (title.isBlank() || downloadUrl.isBlank()) continue
 
             val size = if (profile.sizeSelector.isNotBlank()) {
-                row.select(profile.sizeSelector).firstOrNull()?.text()?.trim().orEmpty()
+                sizeFrom(row.select(profile.sizeSelector).firstOrNull()?.text()?.trim().orEmpty())
             } else ""
             val seeders = if (profile.seedersSelector.isNotBlank()) {
                 row.select(profile.seedersSelector).firstOrNull()?.text()?.trim().orEmpty()
