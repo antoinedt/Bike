@@ -27,10 +27,16 @@ private const val CONCURRENCY = 4
 class SmbShareBrowser {
 
     suspend fun testConnection(share: NetworkShare): Result<Unit> = withContext(Dispatchers.IO) {
-        runCatching {
+        fun attempt() = runCatching {
             SmbFile(SmbContextFactory.rootUrl(share), SmbContextFactory.contextFor(share)).listFiles()
             Unit
         }
+        // One retry: over ZeroTier/VPN links the first connection can fail while the route warms up.
+        val result = attempt().let { first -> if (first.isSuccess) first else attempt() }
+        result.exceptionOrNull()?.let {
+            com.medialibrary.manager.log.AppLog.log("share", "test ${share.label} (${share.host}) failed: ${com.medialibrary.manager.log.AppLog.stackTrace(it).take(1500)}")
+        }
+        result.fold({ Result.success(Unit) }, { Result.failure(Exception(friendlySmbError(share, it), it)) })
     }
 
     /**
@@ -90,5 +96,20 @@ class SmbShareBrowser {
 
         walk(root, "", 0)
         SourceScanResult(complete = true, seenIds = seen)
+    }
+}
+
+/** "Failed to connect: 0.0.0.0<00>/172.28.214.162" (jcifs' label for a server given by IP) -> plain words. */
+fun friendlySmbError(share: NetworkShare, error: Throwable): String {
+    val message = generateSequence(error) { it.cause }.mapNotNull { it.message }.joinToString(" / ")
+    return when {
+        Regex("Failed to connect|ConnectException|timed out|unreachable|No route", RegexOption.IGNORE_CASE).containsMatchIn(message) ->
+            "Can't reach ${share.host}. Check the phone is on the same network (or ZeroTier is on, and no other VPN), " +
+                "the computer is awake, and its firewall allows file sharing on that network."
+        Regex("LOGON_FAILURE|Logon failure|ACCESS_DENIED", RegexOption.IGNORE_CASE).containsMatchIn(message) ->
+            "${share.host} refused the username or password."
+        Regex("BAD_NETWORK_NAME", RegexOption.IGNORE_CASE).containsMatchIn(message) ->
+            "${share.host} has no share called \"${share.share}\"."
+        else -> error.message ?: message
     }
 }

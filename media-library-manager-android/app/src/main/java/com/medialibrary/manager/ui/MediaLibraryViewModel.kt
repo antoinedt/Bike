@@ -383,7 +383,10 @@ class MediaLibraryViewModel : ViewModel() {
                     }
                 }
                 saveLibraryCache()
-                if (announce) showMessage(errors.firstOrNull() ?: "Found $found item${if (found == 1) "" else "s"}. They're in the Library.")
+                // Always say when a share couldn't be read: its old files stay listed, which otherwise looks like success.
+                if (announce || errors.isNotEmpty()) {
+                    showMessage(errors.firstOrNull() ?: "Found $found item${if (found == 1) "" else "s"}. They're in the Library.")
+                }
             } finally {
                 _isScanningLocal.value = false
             }
@@ -522,7 +525,12 @@ class MediaLibraryViewModel : ViewModel() {
                             async {
                                 runCatching { smbBrowser.scan(share, onBatch) }
                                     .onSuccess { result -> prune(_networkItems, result.seenIds) { it.shareId == share.id } }
-                                    .onFailure { e -> synchronized(errors) { errors += "${share.label}: ${e.message ?: "couldn't connect"}" } }
+                                    .onFailure { e ->
+                                        com.medialibrary.manager.log.AppLog.log("share", "scan ${share.label} (${share.host}) failed: ${e.message}")
+                                        synchronized(errors) {
+                                            errors += "${share.label}: ${com.medialibrary.manager.network.friendlySmbError(share, e)} (showing the files found last time)"
+                                        }
+                                    }
                             }
                         }.awaitAll()
                     }
