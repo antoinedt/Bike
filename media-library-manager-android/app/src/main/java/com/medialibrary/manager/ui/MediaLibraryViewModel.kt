@@ -526,7 +526,7 @@ class MediaLibraryViewModel : ViewModel() {
                                 runCatching { smbBrowser.scan(share, onBatch) }
                                     .onSuccess { result -> prune(_networkItems, result.seenIds) { it.shareId == share.id } }
                                     .onFailure { e ->
-                                        com.medialibrary.manager.log.AppLog.log("share", "scan ${share.label} (${share.host}) failed: ${e.message}")
+                                        com.medialibrary.manager.log.AppLog.log("share", "scan ${share.label} (${share.host}) failed: ${com.medialibrary.manager.network.causeChain(e)}")
                                         synchronized(errors) {
                                             errors += "${share.label}: ${com.medialibrary.manager.network.friendlySmbError(share, e)} (showing the files found last time)"
                                         }

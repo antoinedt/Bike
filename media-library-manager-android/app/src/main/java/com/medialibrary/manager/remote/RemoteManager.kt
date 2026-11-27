@@ -56,7 +56,7 @@ class RemoteManager(
             var lastError: String? = null
             while (true) {
                 // Log a failure once (not every 8 s), and when it recovers.
-                val error = runCatching { tick() }.exceptionOrNull()?.let { "${it.javaClass.simpleName}: ${it.message}" }
+                val error = runCatching { tick() }.exceptionOrNull()?.let { com.medialibrary.manager.network.causeChain(it) }
                 if (error != lastError) {
                     com.medialibrary.manager.log.AppLog.log("send-to", if (error != null) "checking the mailbox failed: $error" else "mailbox reachable again")
                     lastError = error

@@ -34,7 +34,7 @@ class SmbShareBrowser {
         // One retry: over ZeroTier/VPN links the first connection can fail while the route warms up.
         val result = attempt().let { first -> if (first.isSuccess) first else attempt() }
         result.exceptionOrNull()?.let {
-            com.medialibrary.manager.log.AppLog.log("share", "test ${share.label} (${share.host}) failed: ${com.medialibrary.manager.log.AppLog.stackTrace(it).take(1500)}")
+            com.medialibrary.manager.log.AppLog.log("share", "test ${share.label} (${share.host}) failed: ${causeChain(it)}")
         }
         result.fold({ Result.success(Unit) }, { Result.failure(Exception(friendlySmbError(share, it), it)) })
     }
@@ -113,3 +113,7 @@ fun friendlySmbError(share: NetworkShare, error: Throwable): String {
         else -> error.message ?: message
     }
 }
+
+/** "SmbException: Failed to connect … ← ConnectException: … ETIMEDOUT" — the root cause is what tells timeout / refused / unreachable apart. */
+fun causeChain(error: Throwable): String =
+    generateSequence(error) { it.cause }.take(6).joinToString(" ← ") { "${it.javaClass.simpleName}: ${it.message}" }
