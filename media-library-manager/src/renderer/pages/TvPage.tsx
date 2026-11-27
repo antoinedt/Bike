@@ -152,7 +152,7 @@ function Guide({ email, onSignedOut }: { email: string | null; onSignedOut: (mes
     <div className="tv-page">
       <div className="page-header">
         <div>
-          <h1>My plan</h1>
+          <h1>Guide</h1>
           {email && <div className="tv-email">{email}</div>}
         </div>
         <div className="page-actions">

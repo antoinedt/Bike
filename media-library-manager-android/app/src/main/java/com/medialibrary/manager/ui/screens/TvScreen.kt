@@ -278,7 +278,7 @@ private fun TvGuide(controller: TvGuideController, isTv: Boolean) {
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("My plan", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text("Guide", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 state.email?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1) }
             }
             TextButton(onClick = {
@@ -459,6 +459,9 @@ private fun ProgramCell(
             .width(width)
             .fillMaxHeight()
             .padding(1.dp)
+            // A long title (or one kept in view while the show scrolls off the left) is cut off at
+            // the edge of its own cell instead of running over the next show.
+            .clipToBounds()
             .background(background, RoundedCornerShape(4.dp))
             .then(if (focused) Modifier.border(2.dp, Color.White, RoundedCornerShape(4.dp)) else Modifier)
             .onFocusChanged {
