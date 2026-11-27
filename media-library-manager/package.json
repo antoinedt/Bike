@@ -31,7 +31,7 @@
     "castv2": "0.1.10",
     "concurrently": "^9.1.0",
     "cross-env": "^7.0.3",
-    "electron": "git+https://github.com/castlabs/electron-releases.git#v33.4.11+wvcus",
+    "electron": "github:castlabs/electron-releases#v45.2.1+wvcus",
     "electron-builder": "^25.1.8",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
