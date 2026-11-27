@@ -51,7 +51,6 @@ import com.medialibrary.manager.model.MediaSourceType
 import com.medialibrary.manager.ui.MediaLibraryViewModel
 import com.medialibrary.manager.ui.components.FolderPickerDialog
 import com.medialibrary.manager.ui.components.MediaBrowser
-import com.medialibrary.manager.ui.components.ScanProgressDialog
 import com.medialibrary.manager.ui.components.TagFilterChips
 
 /**
@@ -65,9 +64,6 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, isTv: Boolean, onPickImage: 
     val context = LocalContext.current
     val items by viewModel.libraryItems.collectAsState()
     val settings by viewModel.settings.collectAsState()
-    val fetchingArtwork by viewModel.isFetchingArtwork.collectAsState()
-    val scanEvents by viewModel.scanEvents.collectAsState()
-    val showScanDialog by viewModel.showScanDialog.collectAsState()
     val copyingItemId by viewModel.copyingItemId.collectAsState()
     val copyProgress by viewModel.copyProgress.collectAsState()
     var copyingFrom by remember { mutableStateOf<MediaItem?>(null) }
@@ -162,15 +158,6 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, isTv: Boolean, onPickImage: 
         )
     }
 
-    if (showScanDialog) {
-        ScanProgressDialog(
-            running = fetchingArtwork,
-            events = scanEvents,
-            onCancel = { viewModel.cancelFetchInfo() },
-            onClose = { viewModel.dismissScanDialog() }
-        )
-    }
-
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = if (isTv) 8.dp else 12.dp)) {
         // The library re-reads its folders and shares in the background (at launch, and after a
         // scan/copy/download) and fills in as it goes.
@@ -210,8 +197,6 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, isTv: Boolean, onPickImage: 
                 viewModel.updateItemMetadata(title, year, tags, artworkUrl, item)
             },
             onClearInfo = { item -> viewModel.clearItemMetadata(item) },
-            onFetchInfo = { itemIds, force -> viewModel.fetchInfo(itemIds, force) },
-            fetchingInfo = fetchingArtwork,
             onPickImage = onPickImage,
             onCopy = { copyingFrom = it },
             copyingItemId = copyingItemId,

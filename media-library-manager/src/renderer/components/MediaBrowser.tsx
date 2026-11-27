@@ -1,8 +1,7 @@
 import { IconButton } from "./Icon.js";
 import { useMemo, useState } from "react";
-import type { AppSettings, MediaItem, ScanProgressEvent } from "../../shared/types.js";
+import type { AppSettings, MediaItem } from "../../shared/types.js";
 import { folderSegmentsForItem } from "../lib/folderTree.js";
-import FetchProgressDialog from "./FetchProgressDialog.js";
 import MediaGrid from "./MediaGrid.js";
 
 /**
@@ -22,8 +21,7 @@ export default function MediaBrowser({
   onDownload,
   onCopy,
   onCast,
-  onItemUpdated,
-  onItemsChanged
+  onItemUpdated
 }: {
   items: MediaItem[];
   settings: AppSettings;
@@ -34,17 +32,8 @@ export default function MediaBrowser({
   onCopy?: (item: MediaItem) => void;
   onCast?: (item: MediaItem) => void;
   onItemUpdated: (item: MediaItem) => void;
-  /** Called with the full, freshly-refreshed item list after a "Fetch artwork & info" run. */
-  onItemsChanged: (items: MediaItem[]) => void;
 }) {
   const [path, setPath] = useState<string[]>([]);
-  const [includeSubfolders, setIncludeSubfolders] = useState(false);
-  const [forceRefetch, setForceRefetch] = useState(false);
-  const [fetchingInfo, setFetchingInfo] = useState(false);
-  const [fetchError, setFetchError] = useState<string | null>(null);
-  const [showProgress, setShowProgress] = useState(false);
-  const [progressOrder, setProgressOrder] = useState<string[]>([]);
-  const [progressById, setProgressById] = useState<Record<string, ScanProgressEvent>>({});
 
   const allTags = useMemo(() => {
     const set = new Set<string>();
@@ -68,66 +57,10 @@ export default function MediaBrowser({
     return true;
   }
 
-  async function fetchInfo(scope: MediaItem[]) {
-    setFetchingInfo(true);
-    setFetchError(null);
-    setProgressOrder([]);
-    setProgressById({});
-    setShowProgress(true);
-    const unsubscribe = window.api.onMetadataScanProgress((event) => {
-      setProgressOrder((prev) => (prev.includes(event.itemId) ? prev : [...prev, event.itemId]));
-      setProgressById((prev) => ({ ...prev, [event.itemId]: event }));
-    });
-    try {
-      const updated = await window.api.scanMetadata(scope.map((i) => i.id), forceRefetch);
-      onItemsChanged(updated);
-    } catch (err) {
-      setFetchError((err as Error).message);
-    } finally {
-      unsubscribe();
-      setFetchingInfo(false);
-    }
-  }
-
-  const fetchButton = (scope: MediaItem[], showSubfolderToggle: boolean) => (
-    <div className="page-actions">
-      {showSubfolderToggle && (
-        <label className="checkbox-label">
-          <input
-            type="checkbox"
-            checked={includeSubfolders}
-            onChange={(e) => setIncludeSubfolders(e.target.checked)}
-          />
-          Include subfolders
-        </label>
-      )}
-      <label className="checkbox-label" title="Re-fetch everything in scope, overriding whatever was found before.">
-        <input type="checkbox" checked={forceRefetch} onChange={(e) => setForceRefetch(e.target.checked)} />
-        Force
-      </label>
-      <button className="btn" onClick={() => void fetchInfo(scope)} disabled={fetchingInfo || scope.length === 0}>
-        {fetchingInfo ? "Fetching artwork & info…" : "Fetch artwork & info"}
-      </button>
-    </div>
-  );
-
-  const progressDialog = showProgress && (
-    <FetchProgressDialog
-      running={fetchingInfo}
-      order={progressOrder}
-      eventsById={progressById}
-      onCancel={() => window.api.cancelMetadataScan()}
-      onClose={() => setShowProgress(false)}
-    />
-  );
-
   if (hasActiveFilter) {
     const matched = withSegments.filter(({ item }) => matches(item)).map((x) => x.item);
     return (
       <div>
-        {progressDialog}
-        {fetchError && <p className="error">{fetchError}</p>}
-        {fetchButton(matched, false)}
         <MediaGrid items={matched} allTags={allTags} onOpen={onOpen} onDownload={onDownload} onCopy={onCopy} onCast={onCast} onItemUpdated={onItemUpdated} />
       </div>
     );
@@ -136,11 +69,9 @@ export default function MediaBrowser({
   const depth = path.length;
   const subfolders = new Set<string>();
   const filesHere: MediaItem[] = [];
-  const filesHereAndBelow: MediaItem[] = [];
   for (const { item, segments } of withSegments) {
     if (segments.length < depth) continue;
     if (!path.every((seg, i) => segments[i] === seg)) continue;
-    filesHereAndBelow.push(item);
     if (segments.length === depth) {
       filesHere.push(item);
     } else {
@@ -148,11 +79,9 @@ export default function MediaBrowser({
     }
   }
   const sortedFolders = Array.from(subfolders).sort((a, b) => a.localeCompare(b));
-  const scope = includeSubfolders ? filesHereAndBelow : filesHere;
 
   return (
     <div>
-      {progressDialog}
       {(depth > 0 || sortedFolders.length > 0) && (
         <div className="breadcrumbs">
           <IconButton icon="home" label="Top folder" className="btn-small" onClick={() => setPath([])} disabled={depth === 0} />
@@ -166,8 +95,6 @@ export default function MediaBrowser({
           ))}
         </div>
       )}
-      {fetchError && <p className="error">{fetchError}</p>}
-      {fetchButton(scope, sortedFolders.length > 0)}
       {sortedFolders.length > 0 && (
         <div className="folder-row">
           {sortedFolders.map((name) => (

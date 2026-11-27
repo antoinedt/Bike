@@ -1115,3 +1115,24 @@ body {
   margin: 0;
   font-size: 16px;
 }
+
+.folder-choice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.folder-choice-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.folder-picker .folder-picker-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-height: 50vh;
+  overflow-y: auto;
+  margin: 8px 0;
+}

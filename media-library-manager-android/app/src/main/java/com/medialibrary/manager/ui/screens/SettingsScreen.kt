@@ -62,6 +62,8 @@ fun SettingsScreen(
         item { HorizontalDivider() }
         item { TmdbSection(settings.tmdbApiKey, viewModel) }
         item { HorizontalDivider() }
+        item { com.medialibrary.manager.ui.components.ArtworkFetchSection(viewModel) }
+        item { HorizontalDivider() }
         item { DownloadsSection(settings, viewModel) }
         item { HorizontalDivider() }
         item { RemoteSection(settings, viewModel) }

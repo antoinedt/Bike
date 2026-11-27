@@ -182,7 +182,6 @@ export default function LibraryPage({ settings, onOpenDownloads }: { settings: A
         onCopy={setCopying}
         onCast={setCasting}
         onItemUpdated={handleItemUpdated}
-        onItemsChanged={setItems}
       />
       {siteSearch && <SiteSearchResults settings={settings} request={siteSearch} onOpenDownloads={onOpenDownloads} />}
       {casting && <CastDialog item={casting} onClose={() => setCasting(null)} />}

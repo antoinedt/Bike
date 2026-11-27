@@ -1,4 +1,4 @@
-import { dialog, ipcMain, shell } from "electron";
+import { BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { readFile } from "node:fs/promises";
 import { IPC } from "../shared/ipc.js";
 import type { LocalFolder, MediaItem, NetworkShare, SiteProfile } from "../shared/types.js";
@@ -87,7 +87,10 @@ export function registerIpcHandlers(): void {
         onProgress: (event) => e.sender.send(IPC.metadataScanProgress, event),
         tmdbApiKey
       });
-      return await applyMetadata(found, force);
+      const updated = await applyMetadata(found, force);
+      // Fetching now runs from Settings, so tell the Library to pick up the new artwork.
+      for (const win of BrowserWindow.getAllWindows()) win.webContents.send(IPC.libraryChanged);
+      return updated;
     } finally {
       if (currentScanAbort === controller) currentScanAbort = null;
     }

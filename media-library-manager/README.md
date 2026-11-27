@@ -125,7 +125,7 @@ it there:
 
 ## Artwork
 
-**Fetch artwork** (Library page) looks up a cover/poster for every video/audio item missing one,
+**Fetch artwork** (Settings → Fetch artwork & info; browse to a folder, or leave it on the whole library) looks up a cover/poster for every video/audio item missing one,
 across the whole library (local and network), via the iTunes Search API (Apple's public, keyless
 catalog search) — no scraping, no API key to configure, no user interaction beyond clicking the
 button. The search term is guessed from the filename (strip scene-release noise like
