@@ -588,6 +588,12 @@ private fun ProgramDialog(
     onPickCastTarget: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    // Watch is the button the remote lands on when the dialog opens.
+    val watchFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        withFrameNanos { }
+        runCatching { watchFocus.requestFocus() }
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(program.title) },
@@ -611,7 +617,9 @@ private fun ProgramDialog(
                 TextButton(onClick = if (castTargetName != null) onCast else onPickCastTarget, enabled = !tuning) {
                     Text(if (castTargetName != null) "Cast to $castTargetName" else "Cast")
                 }
-                TextButton(onClick = onWatch, enabled = !tuning) { Text(if (tuning) "Opening…" else "Watch") }
+                TextButton(onClick = onWatch, enabled = !tuning, modifier = Modifier.focusRequester(watchFocus)) {
+                    Text(if (tuning) "Opening…" else "Watch")
+                }
             }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } }
