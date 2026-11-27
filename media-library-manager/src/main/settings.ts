@@ -11,7 +11,8 @@ const defaults: AppSettings = {
   torrentDownloadFolder: "",
   deviceId: "",
   deviceName: "",
-  remoteShareId: ""
+  remoteShareId: "",
+  remoteLocalFolder: ""
 };
 
 const store = new Store<AppSettings>({
@@ -28,7 +29,8 @@ export function getSettings(): AppSettings {
     torrentDownloadFolder: store.get("torrentDownloadFolder", ""),
     deviceId: deviceId(),
     deviceName: store.get("deviceName", "") || hostname(),
-    remoteShareId: store.get("remoteShareId", "")
+    remoteShareId: store.get("remoteShareId", ""),
+    remoteLocalFolder: store.get("remoteLocalFolder", "")
   };
 }
 
@@ -41,9 +43,11 @@ function deviceId(): string {
   return id;
 }
 
-export function updateRemoteSettings(deviceName: string, remoteShareId: string): void {
+/** One mailbox at a time: a local folder wins over a share. */
+export function updateRemoteSettings(deviceName: string, remoteShareId: string, remoteLocalFolder = ""): void {
   store.set("deviceName", deviceName.trim());
-  store.set("remoteShareId", remoteShareId);
+  store.set("remoteShareId", remoteLocalFolder ? "" : remoteShareId);
+  store.set("remoteLocalFolder", remoteLocalFolder);
 }
 
 export function updateTmdbApiKey(tmdbApiKey: string): void {

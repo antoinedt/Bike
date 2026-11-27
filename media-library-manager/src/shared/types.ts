@@ -117,6 +117,8 @@ export interface AppSettings {
   deviceName: string;
   /** The network share used as the mailbox for "Send to another device"; "" = off. */
   remoteShareId: string;
+  /** Or a folder on this PC (Windows) used as that mailbox — e.g. one it shares with the phone; "" = not used. */
+  remoteLocalFolder: string;
 }
 
 export interface RemoteDeviceInfo {

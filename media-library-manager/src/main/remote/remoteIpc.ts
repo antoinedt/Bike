@@ -6,6 +6,8 @@ import { addTorrentHere } from "../torrent/torrentIpc.js";
 import { resolveSource } from "../torrent/torrentManager.js";
 import { connectShare } from "../transfer/smbWrite.js";
 import { smbMailbox } from "./smbMailbox.js";
+import { localMailbox } from "./localMailbox.js";
+import type { Mailbox } from "./remoteQueue.js";
 import { MAILBOX_ROOT, ONLINE_MS, RemoteQueue, magnetName, type RemoteResult } from "./remoteQueue.js";
 
 const POLL_MS = 8_000;
@@ -22,11 +24,19 @@ function notify(title: string, body: string): void {
 /** Runs `fn` against the configured mailbox share, or returns null when the feature is off. */
 async function withQueue<T>(fn: (queue: RemoteQueue) => Promise<T>): Promise<T | null> {
   const settings = getSettings();
-  const share = settings.networkShares.find((s) => s.id === settings.remoteShareId);
-  if (!share) return null;
-  const client = connectShare(share);
+  let mailbox: Mailbox;
+  let close = () => {};
+  if (settings.remoteLocalFolder) {
+    mailbox = localMailbox(settings.remoteLocalFolder);
+  } else {
+    const share = settings.networkShares.find((s) => s.id === settings.remoteShareId);
+    if (!share) return null;
+    const client = connectShare(share);
+    mailbox = smbMailbox(client, share);
+    close = () => client.close();
+  }
   try {
-    const queue = new RemoteQueue(smbMailbox(client, share), { id: settings.deviceId, name: settings.deviceName, platform: "windows" }, {
+    const queue = new RemoteQueue(mailbox, { id: settings.deviceId, name: settings.deviceName, platform: "windows" }, {
       onJob: async (job) => {
         const source = job.magnet ?? Buffer.from(job.torrent ?? "", "base64");
         const added = await addTorrentHere(source);
@@ -44,7 +54,7 @@ async function withQueue<T>(fn: (queue: RemoteQueue) => Promise<T>): Promise<T |
     });
     return await fn(queue);
   } finally {
-    client.close();
+    close();
   }
 }
 
@@ -71,15 +81,15 @@ export function registerRemoteHandlers(): void {
   setInterval(() => void tick(), POLL_MS);
   setTimeout(() => void tick(), 2_000);
 
-  ipcMain.handle(IPC.remoteUpdateSettings, async (_e, deviceName: string, remoteShareId: string) => {
-    updateRemoteSettings(deviceName, remoteShareId);
+  ipcMain.handle(IPC.remoteUpdateSettings, async (_e, deviceName: string, remoteShareId: string, remoteLocalFolder?: string) => {
+    updateRemoteSettings(deviceName, remoteShareId, remoteLocalFolder ?? "");
     lastHeartbeat = 0;
     await tick();
   });
 
   ipcMain.handle(IPC.remoteDevices, async (): Promise<RemoteDeviceInfo[]> => {
     const devices = await withQueue((queue) => queue.devices());
-    if (devices === null) throw new Error("Pick a network share for “Send to another device” in Settings first.");
+    if (devices === null) throw new Error("Pick a share or folder for “Send to another device” in Settings first.");
     const now = Date.now();
     return devices.map((d) => ({ ...d, online: now - d.lastSeen < ONLINE_MS }));
   });
@@ -92,7 +102,7 @@ export function registerRemoteHandlers(): void {
         ? { magnet: resolved, name: title || magnetName(resolved) || "Download" }
         : { torrent: resolved, name: title || "Download" };
     const sent = await withQueue((queue) => queue.send(deviceId, payload));
-    if (!sent) throw new Error("Pick a network share for “Send to another device” in Settings first.");
+    if (!sent) throw new Error("Pick a share or folder for “Send to another device” in Settings first.");
     return sent.name;
   });
 }

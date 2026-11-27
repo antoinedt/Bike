@@ -84,7 +84,8 @@ const api = {
   listCopyFolders: (target: unknown) => ipcRenderer.invoke("copy:listFolders", target),
   createCopyFolder: (target: unknown, name: string) => ipcRenderer.invoke("copy:createFolder", target, name),
   pickCopyFolder: () => ipcRenderer.invoke("copy:pickFolder"),
-  updateRemoteSettings: (deviceName: string, remoteShareId: string) => ipcRenderer.invoke("remote:updateSettings", deviceName, remoteShareId),
+  updateRemoteSettings: (deviceName: string, remoteShareId: string, remoteLocalFolder?: string) =>
+    ipcRenderer.invoke("remote:updateSettings", deviceName, remoteShareId, remoteLocalFolder ?? ""),
   getRemoteDevices: () => ipcRenderer.invoke("remote:devices"),
   sendToDevice: (deviceId: string, source: string, title?: string) => ipcRenderer.invoke("remote:send", deviceId, source, title),
   onRemoteEvent: (callback: (message: string) => void) => {

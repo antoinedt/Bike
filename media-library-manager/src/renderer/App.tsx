@@ -45,7 +45,7 @@ export default function App() {
         ) : tab === "tv" ? (
           <TvPage />
         ) : tab === "downloads" ? (
-          <DownloadsPage onOpenSettings={() => setTab("settings")} remoteEnabled={!!settings.remoteShareId} />
+          <DownloadsPage onOpenSettings={() => setTab("settings")} remoteEnabled={!!(settings.remoteShareId || settings.remoteLocalFolder)} />
         ) : (
           <SettingsPage settings={settings} refreshSettings={refreshSettings} />
         )}

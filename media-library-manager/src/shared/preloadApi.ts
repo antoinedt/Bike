@@ -151,7 +151,7 @@ export interface PreloadApi {
   /** Live list of copies. Returns an unsubscribe function. */
   onCopyUpdate(callback: (jobs: CopyJob[]) => void): () => void;
   /** "Send to another device": this computer's name and the mailbox share ("" = off). */
-  updateRemoteSettings(deviceName: string, remoteShareId: string): Promise<void>;
+  updateRemoteSettings(deviceName: string, remoteShareId: string, remoteLocalFolder?: string): Promise<void>;
   /** Other devices using the same mailbox share. */
   getRemoteDevices(): Promise<RemoteDeviceInfo[]>;
   /** Starts a download on another device (fetches a .torrent link here first). Returns the name sent. */

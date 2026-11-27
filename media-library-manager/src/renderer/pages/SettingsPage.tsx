@@ -188,14 +188,17 @@ function RemoteSection({
   refreshSettings: () => Promise<void>;
 }) {
   const [name, setName] = useState(settings.deviceName);
-  const [shareId, setShareId] = useState(settings.remoteShareId);
+  const LOCAL = "__local__";
+  const [shareId, setShareId] = useState(settings.remoteLocalFolder ? LOCAL : settings.remoteShareId);
+  const [localFolder, setLocalFolder] = useState(settings.remoteLocalFolder);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function save() {
     setError(null);
     try {
-      await window.api.updateRemoteSettings(name, shareId);
+      if (shareId === LOCAL && !localFolder) throw new Error("Choose the folder first.");
+      await window.api.updateRemoteSettings(name, shareId === LOCAL ? "" : shareId, shareId === LOCAL ? localFolder : "");
       await refreshSettings();
       setSaved(true);
     } catch (err) {
@@ -208,8 +211,9 @@ function RemoteSection({
       <h2>Send to another device</h2>
       <p className="hint">
         Start a download on another computer, phone or TV running this app (“Send to…” on search results and the
-        Downloads page), and receive ones sent here. Devices find each other through a hidden folder on a network share:
-        pick the same share on every device. Downloads sent here start while the app is open.
+        Downloads page), and receive ones sent here. Devices find each other through a hidden folder that they all reach:
+        a network share, or a folder on this PC that it shares on the network (the phone adds that folder as a network
+        share). Downloads sent here start while the app is open.
       </p>
       <div className="form-grid">
         <input
@@ -230,6 +234,7 @@ function RemoteSection({
           }}
         >
           <option value="">Off</option>
+          <option value={LOCAL}>Use a folder on this PC</option>
           {settings.networkShares.map((s) => (
             <option key={s.id} value={s.id}>
               Use share: {s.label}
@@ -237,9 +242,33 @@ function RemoteSection({
           ))}
         </select>
       </div>
-      {settings.networkShares.length === 0 && <p className="hint">Add a network share above first.</p>}
+      {shareId === LOCAL && (
+        <div className="form-row folder-choice">
+          <span className="folder-choice-path">📁 {localFolder || "No folder chosen"}</span>
+          <button
+            className="btn"
+            onClick={async () => {
+              const picked = await window.api.pickFolder();
+              if (picked) {
+                setLocalFolder(picked);
+                setSaved(false);
+              }
+            }}
+          >
+            Choose…
+          </button>
+        </div>
+      )}
+      {shareId === LOCAL && (
+        <p className="hint">
+          Pick the folder you share with the phone — the same folder its network share opens (including any sub-path).
+        </p>
+      )}
       <div className="form-actions">
-        <button className="btn" onClick={() => void save()} disabled={name === settings.deviceName && shareId === settings.remoteShareId}>
+        <button className="btn" onClick={() => void save()} disabled={
+            name === settings.deviceName &&
+            (shareId === LOCAL ? localFolder === settings.remoteLocalFolder : shareId === settings.remoteShareId && !settings.remoteLocalFolder)
+          }>
           Save
         </button>
         {saved && <span className="hint-inline">Saved.</span>}

@@ -128,7 +128,7 @@ export default function SiteSearchResults({
           results={results}
           onDownload={(r) => void download(r, false)}
           onOpenExternally={(r) => void download(r, true)}
-          onSendTo={settings.remoteShareId ? setSendingResult : undefined}
+          onSendTo={settings.remoteShareId || settings.remoteLocalFolder ? setSendingResult : undefined}
           downloadingUrl={downloadingUrl}
         />
       )}
