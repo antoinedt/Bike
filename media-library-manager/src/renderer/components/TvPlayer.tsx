@@ -43,15 +43,18 @@ export default function TvPlayer({ channelId, channelName, onClose }: { channelI
           // installed (hardware Media Foundation, or software), and the report tells us, when it
           // still fails, whether EME has no usable config at all vs. the CDM refusing to run.
           const best = await probeWidevine();
-          const advanced = best.level
+          const cfg = best.config;
+          const advanced = cfg
             ? {
                 "com.widevine.alpha": {
-                  videoRobustness: best.level,
-                  audioRobustness: best.level.startsWith("HW") ? "HW_SECURE_CRYPTO" : best.level || "SW_SECURE_CRYPTO"
+                  videoRobustness: cfg.robustness,
+                  audioRobustness: cfg.robustness.startsWith("HW") ? "HW_SECURE_CRYPTO" : cfg.robustness || "SW_SECURE_CRYPTO",
+                  distinctiveIdentifierRequired: cfg.distinctiveIdentifier === "required",
+                  persistentStateRequired: cfg.persistentState === "required"
                 }
               }
             : undefined;
-          console.log("Widevine EME probe:", best.report, "→ using", best.level || "(default)");
+          console.log("Widevine EME probe:", best.report, "→ using", cfg ? JSON.stringify(cfg) : "(default)");
           player.configure({ drm: { servers: { "com.widevine.alpha": stream.licenseUrl }, ...(advanced ? { advanced } : {}) } });
           player.getNetworkingEngine()?.registerRequestFilter((type: number, request: any) => {
             if (type !== shaka.net.NetworkingEngine.RequestType.LICENSE) return;
@@ -113,31 +116,50 @@ interface ShakaError {
 // The last EME robustness probe, shown in the error so we can see what the CDM accepted.
 let lastWidevineProbe = "(not probed)";
 
+interface WvConfig {
+  robustness: string;
+  distinctiveIdentifier: "required" | "optional";
+  persistentState: "required" | "optional";
+}
+
 /**
- * Asks the Widevine CDM, via EME directly, which robustness levels it accepts (strongest first).
- * Returns the best usable level (null if none) and a short report of what each level did.
+ * Asks the Widevine CDM, via EME directly, which configuration it accepts (strongest first). The
+ * Media Foundation (hardware) CDM on Windows needs distinctiveIdentifier/persistentState "required",
+ * so try those for the hardware levels. Returns the first usable config (null if none) + a report.
  */
-async function probeWidevine(): Promise<{ level: string | null; report: string }> {
-  const levels = ["HW_SECURE_ALL", "HW_SECURE_DECODE", "HW_SECURE_CRYPTO", "SW_SECURE_DECODE", "SW_SECURE_CRYPTO", ""];
+async function probeWidevine(): Promise<{ config: WvConfig | null; report: string }> {
+  const attempts: WvConfig[] = [
+    { robustness: "HW_SECURE_ALL", distinctiveIdentifier: "required", persistentState: "required" },
+    { robustness: "HW_SECURE_DECODE", distinctiveIdentifier: "required", persistentState: "required" },
+    { robustness: "HW_SECURE_CRYPTO", distinctiveIdentifier: "required", persistentState: "required" },
+    { robustness: "HW_SECURE_ALL", distinctiveIdentifier: "required", persistentState: "optional" },
+    { robustness: "SW_SECURE_DECODE", distinctiveIdentifier: "optional", persistentState: "optional" },
+    { robustness: "SW_SECURE_CRYPTO", distinctiveIdentifier: "optional", persistentState: "optional" },
+    { robustness: "", distinctiveIdentifier: "optional", persistentState: "optional" }
+  ];
   const report: string[] = [];
-  let best: string | null = null;
-  for (const robustness of levels) {
+  let best: WvConfig | null = null;
+  for (const a of attempts) {
+    const label = `${a.robustness || "none"}${a.distinctiveIdentifier === "required" ? "+di" : ""}${a.persistentState === "required" ? "+ps" : ""}`;
     try {
       await navigator.requestMediaKeySystemAccess("com.widevine.alpha", [
         {
           initDataTypes: ["cenc"],
-          videoCapabilities: [{ contentType: 'video/mp4; codecs="avc1.4d401f"', robustness }],
-          audioCapabilities: [{ contentType: 'audio/mp4; codecs="mp4a.40.2"', robustness }]
+          distinctiveIdentifier: a.distinctiveIdentifier,
+          persistentState: a.persistentState,
+          sessionTypes: ["temporary"],
+          videoCapabilities: [{ contentType: 'video/mp4; codecs="avc1.4d401f"', robustness: a.robustness }],
+          audioCapabilities: [{ contentType: 'audio/mp4; codecs="mp4a.40.2"', robustness: a.robustness }]
         }
       ]);
-      report.push(`${robustness || "none"}=ok`);
-      if (best === null) best = robustness;
+      report.push(`${label}=ok`);
+      if (best === null) best = a;
     } catch (e) {
-      report.push(`${robustness || "none"}=${(e as Error)?.name ?? "fail"}`);
+      report.push(`${label}=${(e as Error)?.name ?? "fail"}`);
     }
   }
   lastWidevineProbe = report.join(" ");
-  return { level: best, report: lastWidevineProbe };
+  return { config: best, report: lastWidevineProbe };
 }
 
 /** Digs out the licence server's HTTP status + body from a (possibly nested) Shaka network error. */
