@@ -39,6 +39,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
@@ -70,6 +71,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -347,6 +357,48 @@ private fun GuideGrid(state: TvGuideState, isTv: Boolean, now: Long, jumpToNow: 
         scrollX = (target * pxPerMs).coerceIn(0f, maxScroll())
     }
 
+    // Up/Down keep a fixed reference time — the show on the next channel that's on at that time —
+    // instead of whichever cell happens to be geometrically nearest, which drifted earlier or later
+    // with each step. Only Left/Right (or picking a show) move the reference time.
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    val requesters = remember { mutableMapOf<String, FocusRequester>() }
+    var anchor by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    var focusedChannel by remember { mutableIntStateOf(-1) }
+    var verticalMove by remember { mutableStateOf(false) }
+    val rowHeightPx = with(density) { rowHeight.toPx() }
+
+    fun visiblePrograms(channel: TvChannel): List<TvProgram> =
+        state.programs[channel.id].orEmpty().filter { p ->
+            val startPx = max(0L, p.start - dayStart) * pxPerMs
+            val endPx = (p.end - dayStart).coerceAtMost(TvGuideController.DAY_MS) * pxPerMs
+            endPx > startPx
+        }
+
+    /** Focus the show at the reference time on the channel [delta] rows away; false = let the key through. */
+    fun moveVertically(delta: Int): Boolean {
+        if (focusedChannel < 0) return false
+        var to = focusedChannel + delta
+        while (to in state.channels.indices && visiblePrograms(state.channels[to]).isEmpty()) to += delta
+        if (to !in state.channels.indices) return delta > 0 // Up from the top row may leave the grid; Down stops at the bottom.
+        val channel = state.channels[to]
+        val programs = visiblePrograms(channel)
+        val target = programs.firstOrNull { anchor >= it.start && anchor < it.end }
+            ?: programs.minByOrNull { kotlin.math.abs((it.start + it.end) / 2 - anchor) }
+            ?: return true
+        verticalMove = true
+        scope.launch {
+            val visible = listState.layoutInfo.visibleItemsInfo
+            val first = visible.firstOrNull()?.index ?: 0
+            val last = visible.lastOrNull()?.index ?: 0
+            if (to <= first) listState.scrollToItem(to)
+            else if (to >= last) listState.scrollToItem(max(0, to - max(1, visible.size - 2)))
+            withFrameNanos { }
+            requesters[programKey(channel, target)]?.let { runCatching { it.requestFocus() } }
+        }
+        return true
+    }
+
     val ensureVisible: (Float, Float) -> Unit = { startPx, endPx ->
         val margin = with(density) { 24.dp.toPx() }
         if (startPx < scrollX + margin) {
@@ -376,8 +428,21 @@ private fun GuideGrid(state: TvGuideState, isTv: Boolean, now: Long, jumpToNow: 
                 NowLine(state, now, pxPerMs) { scrollX }
             }
         }
-        LazyColumn(Modifier.fillMaxSize()) {
-            items(state.channels, key = { it.id }) { channel ->
+        LazyColumn(
+            state = listState,
+            modifier = Modifier
+                .fillMaxSize()
+                .onFocusChanged { if (!it.hasFocus) focusedChannel = -1 }
+                .onPreviewKeyEvent { event ->
+                    if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                    when (event.key) {
+                        Key.DirectionUp -> moveVertically(-1)
+                        Key.DirectionDown -> moveVertically(1)
+                        else -> false
+                    }
+                }
+        ) {
+            itemsIndexed(state.channels, key = { _, c -> c.id }) { channelIndex, channel ->
                 Row(Modifier.fillMaxWidth().height(rowHeight).padding(vertical = 1.dp)) {
                     ChannelCell(channel, Modifier.width(channelWidth).fillMaxHeight())
                     Box(Modifier.weight(1f).fillMaxHeight().clipToBounds()) {
@@ -397,7 +462,21 @@ private fun GuideGrid(state: TvGuideState, isTv: Boolean, now: Long, jumpToNow: 
                                     width = with(density) { (endPx - startPx).toDp() },
                                     startPx = startPx,
                                     scrollX = { scrollX },
-                                    onFocused = { ensureVisible(startPx, endPx) },
+                                    requester = remember(channel.id, program.start) {
+                                        FocusRequester().also { requesters[programKey(channel, program)] = it }
+                                    },
+                                    onFocused = {
+                                        focusedChannel = channelIndex
+                                        if (verticalMove) {
+                                            // Keep the view where it is; just make sure the show is on screen.
+                                            verticalMove = false
+                                            if (endPx < scrollX || startPx > scrollX + viewport) ensureVisible(startPx, endPx)
+                                        } else {
+                                            // Left/Right (or first focus): this show sets the reference time.
+                                            anchor = if (now in program.start until program.end) now else program.start
+                                            ensureVisible(startPx, endPx)
+                                        }
+                                    },
                                     onClick = { onOpen(program, channel) }
                                 )
                             }
@@ -441,6 +520,7 @@ private fun ProgramCell(
     width: androidx.compose.ui.unit.Dp,
     startPx: Float,
     scrollX: () -> Float,
+    requester: FocusRequester,
     onFocused: () -> Unit,
     onClick: () -> Unit
 ) {
@@ -464,6 +544,7 @@ private fun ProgramCell(
             .clipToBounds()
             .background(background, RoundedCornerShape(4.dp))
             .then(if (focused) Modifier.border(2.dp, Color.White, RoundedCornerShape(4.dp)) else Modifier)
+            .focusRequester(requester)
             .onFocusChanged {
                 focused = it.isFocused
                 if (it.isFocused) onFocused()
@@ -632,3 +713,5 @@ private fun dayLabel(offset: Int): String = when (offset) {
         "${it.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.getDefault())} ${it.dayOfMonth}"
     }
 }
+
+private fun programKey(channel: TvChannel, program: TvProgram) = "${channel.id}|${program.start}"
