@@ -486,6 +486,7 @@ private fun VersionLine() {
         )
         if (status.isNotEmpty()) Text(status, style = MaterialTheme.typography.bodySmall)
         val available = update as? com.medialibrary.manager.update.UpdateState.Available
+        OutlinedButton(onClick = { com.medialibrary.manager.log.AppLog.share(context) }) { Text("Share log") }
         if (available != null) {
             Button(onClick = { com.medialibrary.manager.update.AppUpdater.update(context) }) { Text("Update to ${available.version}") }
         } else {

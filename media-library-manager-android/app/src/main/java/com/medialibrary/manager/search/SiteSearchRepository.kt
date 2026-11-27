@@ -35,7 +35,11 @@ class SiteSearchRepository(private val headlessFetcher: HeadlessWebViewFetcher) 
     suspend fun searchSites(profiles: List<SiteProfile>, query: String): List<SearchResultItem> = coroutineScope {
         val outcomes = profiles.map { profile -> async { runCatching { searchSite(profile, query) } } }.map { it.await() }
         outcomes.forEachIndexed { i, r ->
-            r.exceptionOrNull()?.let { android.util.Log.w("OmniPlaySearch", "${profiles[i].label} failed", it) }
+            r.exceptionOrNull()?.let {
+                if (it !is kotlinx.coroutines.CancellationException) {
+                    com.medialibrary.manager.log.AppLog.log("search", "${profiles[i].label}: FAILED: ${it.message ?: it}")
+                }
+            }
         }
         // Every site failed: say why instead of a silent "No results".
         if (outcomes.isNotEmpty() && outcomes.all { it.isFailure }) {
@@ -49,7 +53,18 @@ class SiteSearchRepository(private val headlessFetcher: HeadlessWebViewFetcher) 
     suspend fun searchSite(profile: SiteProfile, query: String): List<SearchResultItem> = withContext(Dispatchers.IO) {
         val encodedQuery = URLEncoder.encode(query, "UTF-8")
         val searchUrl = profile.searchUrlTemplate.replace("{query}", encodedQuery)
+        val started = System.currentTimeMillis()
+        com.medialibrary.manager.log.AppLog.log(
+            "search", "${profile.label}: fetching $searchUrl${if (profile.useHeadlessBrowser) " (JavaScript site)" else ""}"
+        )
         val doc = fetch(searchUrl, profile.useHeadlessBrowser, profile.resultItemSelector)
+        val rowCount = doc.select(profile.resultItemSelector).size
+        com.medialibrary.manager.log.AppLog.log(
+            "search",
+            "${profile.label}: got the page in ${System.currentTimeMillis() - started} ms; " +
+                "\"${profile.resultItemSelector}\" matched $rowCount row(s)" +
+                (if (rowCount == 0) "; page title: \"${doc.title()}\"" else "")
+        )
 
         val candidates = mutableListOf<Candidate>()
         for (row in doc.select(profile.resultItemSelector)) {
@@ -67,6 +82,11 @@ class SiteSearchRepository(private val headlessFetcher: HeadlessWebViewFetcher) 
             candidates += Candidate(title, downloadUrl, size, seeders)
         }
 
+        com.medialibrary.manager.log.AppLog.log(
+            "search",
+            "${profile.label}: ${candidates.size} row(s) had a title and link" +
+                (candidates.firstOrNull()?.let { "; first: \"${it.title.take(80)}\" ${it.downloadUrl.take(60)}" } ?: "")
+        )
         resolveDownloadUrls(candidates, profile).map {
             SearchResultItem(it.title, it.downloadUrl, it.size, it.seeders, profile.id, profile.label)
         }

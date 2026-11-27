@@ -1,6 +1,10 @@
 package com.medialibrary.manager.search
 
 import android.content.Context
+import android.view.View
+import android.webkit.RenderProcessGoneDetail
+import com.medialibrary.manager.log.AppLog
+import java.io.IOException
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import kotlinx.coroutines.Dispatchers
@@ -32,25 +36,41 @@ class HeadlessWebViewFetcher(private val context: Context) {
      */
     suspend fun fetchRenderedHtml(url: String, readySelector: String, timeoutMs: Long = 20_000): String? =
         withContext(Dispatchers.Main) {
+            var rendererGone = false
             val webView = WebView(context).apply {
                 settings.javaScriptEnabled = true
                 settings.domStorageEnabled = true
-                // Keep redirects inside this WebView instead of handing them to a browser app.
-                webViewClient = WebViewClient()
+                // Keep redirects inside this WebView instead of handing them to a browser app; and
+                // if the page's renderer crashes (heavy ad pages can), report it instead of letting
+                // Android close the whole app, which is what happens when this isn't handled.
+                webViewClient = object : WebViewClient() {
+                    override fun onRenderProcessGone(view: WebView?, detail: RenderProcessGoneDetail?): Boolean {
+                        rendererGone = true
+                        AppLog.log("search", "page renderer ${if (detail?.didCrash() == true) "crashed" else "was killed"} on $url")
+                        return true
+                    }
+                }
+                // An off-screen view still needs a size, or some pages never lay out their results.
+                measure(
+                    View.MeasureSpec.makeMeasureSpec(1080, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(1920, View.MeasureSpec.EXACTLY)
+                )
+                layout(0, 0, 1080, 1920)
             }
             try {
                 webView.loadUrl(url)
-                withTimeoutOrNull(timeoutMs) { waitForSelector(webView, readySelector) }
-                extractHtml(webView)
+                withTimeoutOrNull(timeoutMs) { waitForSelector(webView, readySelector) { rendererGone } }
+                if (rendererGone) throw IOException("The page crashed while loading")
+                withTimeoutOrNull(10_000) { extractHtml(webView) } ?: throw IOException("The page stopped responding")
             } finally {
-                webView.stopLoading()
+                if (!rendererGone) webView.stopLoading()
                 webView.destroy()
             }
         }
 
-    private suspend fun waitForSelector(webView: WebView, selector: String) {
+    private suspend fun waitForSelector(webView: WebView, selector: String, gone: () -> Boolean) {
         val escaped = JSONObject.quote(selector)
-        while (true) {
+        while (!gone()) {
             val countText = evaluateJs(webView, "document.querySelectorAll($escaped).length")
             if ((countText.toIntOrNull() ?: 0) > 0) return
             delay(300)

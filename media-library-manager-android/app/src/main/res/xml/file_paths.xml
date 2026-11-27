@@ -2,4 +2,6 @@
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- TorrentHandoff downloads .torrent files here before sharing them to a torrent app. -->
     <cache-path name="torrents" path="torrents/" />
+    <!-- Settings → Share log. -->
+    <files-path name="logs" path="logs/" />
 </paths>
