@@ -6,6 +6,8 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import androidx.compose.foundation.background
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -146,7 +148,7 @@ fun PlayerOverlay(
                 Box(Modifier.align(Alignment.TopEnd).padding(8.dp)) {
                     androidx.compose.material3.IconButton(onClick = { settingsOpen = true }) {
                         androidx.compose.material3.Icon(
-                            androidx.compose.material.icons.Icons.Filled.Settings,
+                            Icons.Filled.Settings,
                             contentDescription = "Player settings",
                             tint = Color.White
                         )
