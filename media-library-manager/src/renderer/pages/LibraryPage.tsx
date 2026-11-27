@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { AppSettings, MediaItem } from "../../shared/types.js";
+import type { AppSettings, LibraryScanStatus, MediaItem } from "../../shared/types.js";
 import FilterBar from "../components/FilterBar.js";
 import CastDialog from "../components/CastDialog.js";
 import CopyDialog from "../components/CopyDialog.js";
@@ -24,10 +24,37 @@ export default function LibraryPage({ settings }: { settings: AppSettings }) {
   const [downloading, setDownloading] = useState<string | null>(null);
   const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
 
+  const [scan, setScan] = useState<LibraryScanStatus>({ scanning: false, found: 0 });
+
+  // The library refreshes itself in the background (at startup, and after a scan/copy/download),
+  // announcing changes a few times a second while it fills in. Refetches never overlap: a change
+  // that arrives mid-fetch just triggers one more fetch afterwards.
   useEffect(() => {
-    void window.api.getLibraryItems().then(setItems);
-    // A finished download inside a Library folder gets scanned in by the main process.
-    return window.api.onLibraryChanged(() => void window.api.getLibraryItems().then(setItems));
+    let alive = true;
+    let inFlight = false;
+    let again = false;
+    const refresh = async () => {
+      if (inFlight) {
+        again = true;
+        return;
+      }
+      inFlight = true;
+      do {
+        again = false;
+        const latest = await window.api.getLibraryItems();
+        if (alive) setItems(latest);
+      } while (again && alive);
+      inFlight = false;
+    };
+    void refresh();
+    void window.api.getLibraryScanStatus().then((s) => alive && setScan(s));
+    const offChanged = window.api.onLibraryChanged(() => void refresh());
+    const offStatus = window.api.onLibraryScanStatus(setScan);
+    return () => {
+      alive = false;
+      offChanged();
+      offStatus();
+    };
   }, []);
 
   // Closes whichever stream was active whenever a new one starts, and on unmount.
@@ -82,6 +109,12 @@ export default function LibraryPage({ settings }: { settings: AppSettings }) {
     <div className="page">
       <div className="page-header">
         <h1>Library</h1>
+        {scan.scanning && (
+          <span className="scan-status" role="status">
+            <span className="scan-spinner" aria-hidden="true" />
+            Scanning… {scan.found > 0 ? `${scan.found} found` : ""}
+          </span>
+        )}
         <div className="page-actions">
           <input
             className="text-input"
@@ -93,8 +126,8 @@ export default function LibraryPage({ settings }: { settings: AppSettings }) {
       </div>
       {settings.localFolders.length === 0 && settings.networkShares.length === 0 && (
         <p className="hint">
-          Nothing configured yet. Add a local folder or an SMB share in <strong>Settings</strong>, then scan it
-          there.
+          Nothing configured yet. Add a local folder or an SMB share in <strong>Settings</strong> — it's
+          scanned automatically.
         </p>
       )}
       {error && <p className="error">{error}</p>}

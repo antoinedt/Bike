@@ -3,6 +3,7 @@ import electronRuntime, { app, BrowserWindow, shell } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { registerIpcHandlers } from "./ipc.js";
+import { scanLibraryInBackground } from "./library/libraryScan.js";
 import { setWidevineStatus } from "./widevineState.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -109,6 +110,9 @@ app.whenReady()
     void initWidevine();
     registerIpcHandlers();
     createWindow();
+    // Refresh the library in the background: it shows what was there last time straight away
+    // and fills in / drops items as every folder and share is re-read in parallel.
+    scanLibraryInBackground();
 
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();

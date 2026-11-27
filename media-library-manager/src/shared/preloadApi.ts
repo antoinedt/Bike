@@ -5,6 +5,7 @@ import type {
   CopyJob,
   CopyTarget,
   DownloadProgressEvent,
+  LibraryScanStatus,
   LocalFolder,
   MediaItem,
   NetworkShare,
@@ -120,6 +121,10 @@ export interface PreloadApi {
   onTorrentUpdate(callback: (torrents: TorrentStatus[]) => void): () => void;
   /** Fired when a finished download was added to the Library. Returns an unsubscribe function. */
   onLibraryChanged(callback: () => void): () => void;
+  /** Whether the background library scan is running, and how much it's found. */
+  getLibraryScanStatus(): Promise<LibraryScanStatus>;
+  /** Live scan status. Returns an unsubscribe function. */
+  onLibraryScanStatus(callback: (status: LibraryScanStatus) => void): () => void;
   /** "Copy to…": queues a copy of a library item (local or network) into a folder on this computer or a share. */
   copyItem(item: MediaItem, target: CopyTarget): Promise<CopyJob>;
   getCopies(): Promise<CopyJob[]>;

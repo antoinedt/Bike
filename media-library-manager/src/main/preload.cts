@@ -60,6 +60,12 @@ const api = {
     ipcRenderer.on("library:changed", listener);
     return () => ipcRenderer.removeListener("library:changed", listener);
   },
+  getLibraryScanStatus: () => ipcRenderer.invoke("library:getScanStatus"),
+  onLibraryScanStatus: (callback: (status: unknown) => void) => {
+    const listener = (_e: unknown, status: unknown) => callback(status);
+    ipcRenderer.on("library:scanStatus", listener);
+    return () => ipcRenderer.removeListener("library:scanStatus", listener);
+  },
   copyItem: (item: unknown, target: unknown) => ipcRenderer.invoke("copy:start", item, target),
   getCopies: () => ipcRenderer.invoke("copy:list"),
   cancelCopy: (id: string) => ipcRenderer.invoke("copy:cancel", id),

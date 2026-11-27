@@ -41,6 +41,8 @@ export const IPC = {
   torrentOpenFolder: "torrent:openFolder",
   torrentUpdate: "torrent:update",
   libraryChanged: "library:changed",
+  libraryScanStatus: "library:scanStatus",
+  libraryGetScanStatus: "library:getScanStatus",
   copyStart: "copy:start",
   copyList: "copy:list",
   copyCancel: "copy:cancel",

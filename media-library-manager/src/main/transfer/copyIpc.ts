@@ -2,9 +2,7 @@ import { BrowserWindow, dialog, ipcMain } from "electron";
 import path from "node:path";
 import { IPC } from "../../shared/ipc.js";
 import type { CopyTarget, MediaItem } from "../../shared/types.js";
-import { replaceItemsForSource } from "../db.js";
-import { scanLocalFolders } from "../library/scanner.js";
-import { scanNetworkShare } from "../network/smbClient.js";
+import { scanLibrary } from "../library/libraryScan.js";
 import { getSettings } from "../settings.js";
 import { CopyManager } from "./copyManager.js";
 
@@ -19,16 +17,12 @@ function isInside(child: string, parent: string): boolean {
 
 /** The copy landed somewhere the Library covers: rescan that part so it shows up. */
 async function rescanFor(target: CopyTarget): Promise<void> {
-  const { localFolders, networkShares } = getSettings();
+  const { localFolders } = getSettings();
   if (target.kind === "share") {
-    const results = await Promise.all(networkShares.map(scanNetworkShare));
-    await replaceItemsForSource((item) => item.source.type === "network", results.flat());
+    await scanLibrary("network");
   } else if (target.kind === "folder" || localFolders.some((f) => isInside(target.path, f.path))) {
-    await replaceItemsForSource((item) => item.source.type === "local", await scanLocalFolders(localFolders));
-  } else {
-    return;
+    await scanLibrary("local");
   }
-  broadcast(IPC.libraryChanged);
 }
 
 export function registerCopyHandlers(): void {

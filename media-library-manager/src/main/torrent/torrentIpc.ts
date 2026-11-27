@@ -3,8 +3,7 @@ import Store from "electron-store";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { IPC } from "../../shared/ipc.js";
-import { replaceItemsForSource } from "../db.js";
-import { scanLocalFolders } from "../library/scanner.js";
+import { scanLibrary } from "../library/libraryScan.js";
 import { getSettings } from "../settings.js";
 import { TorrentManager, type StoredTorrent } from "./torrentManager.js";
 
@@ -33,9 +32,7 @@ async function onComplete(torrent: StoredTorrent): Promise<void> {
   }
   const { localFolders } = getSettings();
   if (!localFolders.some((folder) => isInside(torrent.savePath, folder.path))) return;
-  const items = await scanLocalFolders(localFolders);
-  await replaceItemsForSource((item) => item.source.type === "local", items);
-  broadcast(IPC.libraryChanged);
+  await scanLibrary("local");
 }
 
 let current: TorrentManager | null = null;

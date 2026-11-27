@@ -223,6 +223,13 @@ export interface CastTarget {
   controlUrl?: string;
 }
 
+/** The background library scan, for the Library page's "Scanning…" indicator. */
+export interface LibraryScanStatus {
+  scanning: boolean;
+  /** Media files found so far by the current (or last) scan. */
+  found: number;
+}
+
 export interface CastState {
   deviceName: string;
   deviceKind: "chromecast" | "dlna";

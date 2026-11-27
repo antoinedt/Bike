@@ -16,8 +16,8 @@ import {
   updateTmdbApiKey,
   updateTorrentDownloadFolder
 } from "./settings.js";
-import { scanLocalFolders } from "./library/scanner.js";
-import { relPathFromMediaPath, scanNetworkShare, testShareConnection } from "./network/smbClient.js";
+import { libraryScanStatus, scanLibrary } from "./library/libraryScan.js";
+import { relPathFromMediaPath, testShareConnection } from "./network/smbClient.js";
 import { downloadRawFile } from "./network/smbRawClient.js";
 import { ensureStreamServer, registerStream, unregisterStream } from "./network/streamServer.js";
 import { searchSites } from "./search/siteSearch.js";
@@ -27,7 +27,7 @@ import { registerRemoteHandlers } from "./remote/remoteIpc.js";
 import { registerCastHandlers } from "./cast/castIpc.js";
 import { registerTvHandlers } from "./tv/tvIpc.js";
 import { registerTorrentHandlers } from "./torrent/torrentIpc.js";
-import { applyManualEdit, applyMetadata, clearMetadata, getAllItems, replaceItemsForSource } from "./db.js";
+import { applyManualEdit, applyMetadata, clearMetadata, getAllItems } from "./db.js";
 import { readSidecar, scanMetadataForLibrary, writeSidecar } from "./metadata/metadataScanner.js";
 
 export function registerIpcHandlers(): void {
@@ -59,12 +59,14 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.siteProfileUpdate, (_e, profile: SiteProfile) => updateSiteProfile(profile));
   ipcMain.handle(IPC.siteProfileRemove, (_e, id: string) => removeSiteProfile(id));
 
+  // Settings' Scan buttons: the same background scan the app runs at startup (joined if it's
+  // already running); the Library fills in as it goes. Resolves once every folder/share is done.
   ipcMain.handle(IPC.libraryScan, async () => {
-    const { localFolders } = getSettings();
-    const items = await scanLocalFolders(localFolders);
-    await replaceItemsForSource((item) => item.source.type === "local", items);
+    const { errors } = await scanLibrary("local");
+    if (errors.length > 0) throw new Error(errors.join(" "));
     return getAllItems();
   });
+  ipcMain.handle(IPC.libraryGetScanStatus, () => libraryScanStatus());
 
   ipcMain.handle(IPC.libraryGetItems, () => getAllItems());
 
@@ -157,10 +159,8 @@ export function registerIpcHandlers(): void {
   });
 
   ipcMain.handle(IPC.networkScan, async () => {
-    const { networkShares } = getSettings();
-    const results = await Promise.all(networkShares.map(scanNetworkShare));
-    const items = results.flat();
-    await replaceItemsForSource((item) => item.source.type === "network", items);
+    const { errors } = await scanLibrary("network");
+    if (errors.length > 0) throw new Error(errors.join(" "));
     return getAllItems();
   });
 

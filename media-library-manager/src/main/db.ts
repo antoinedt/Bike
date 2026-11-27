@@ -39,32 +39,57 @@ function getDb(): Promise<Low<DbSchema>> {
 }
 
 /**
- * Replaces all items belonging to a given source (folder/share id) with a fresh scan result,
- * carrying forward artworkUrl/title/year/durationSeconds for files that are still there (matched
- * by id, which scanners derive from path, so it's stable across rescans) — otherwise every
- * rescan would silently wipe out everything Fetch artwork / Scan metadata had already found.
+ * A freshly scanned item, carrying forward artworkUrl/title/year/durationSeconds/tags from what
+ * the library already had for it (matched by id, which scanners derive from path, so it's stable
+ * across rescans) — otherwise every rescan would wipe out everything Fetch artwork / Scan
+ * metadata / manual edits had already done.
  */
-export async function replaceItemsForSource(
-  matches: (item: MediaItem) => boolean,
-  freshItems: MediaItem[]
-): Promise<void> {
+function carryForward(item: MediaItem, previous: MediaItem): MediaItem {
+  return {
+    ...item,
+    artworkUrl: item.artworkUrl ?? previous.artworkUrl,
+    title: item.title ?? previous.title,
+    year: item.year ?? previous.year,
+    durationSeconds: item.durationSeconds ?? previous.durationSeconds,
+    tags: item.tags ?? previous.tags,
+    infoFetched: item.infoFetched ?? previous.infoFetched
+  };
+}
+
+// A background scan adds items many times a second; the in-memory list is what the app reads,
+// so writing the file is coalesced to at most once a second.
+let writeTimer: NodeJS.Timeout | null = null;
+function scheduleWrite(db: Low<DbSchema>): void {
+  if (writeTimer) return;
+  writeTimer = setTimeout(() => {
+    writeTimer = null;
+    void db.write().catch((err) => console.error("[db] write failed:", err));
+  }, 1000);
+}
+
+/** Adds newly scanned items and refreshes ones already in the library (keeping their fetched info). */
+export async function upsertItems(items: MediaItem[]): Promise<void> {
+  if (items.length === 0) return;
   const db = await getDb();
-  const previousById = new Map(db.data.items.filter(matches).map((item) => [item.id, item]));
-  const merged = freshItems.map((item) => {
-    const previous = previousById.get(item.id);
-    if (!previous) return item;
-    return {
-      ...item,
-      artworkUrl: item.artworkUrl ?? previous.artworkUrl,
-      title: item.title ?? previous.title,
-      year: item.year ?? previous.year,
-      durationSeconds: item.durationSeconds ?? previous.durationSeconds,
-      tags: item.tags ?? previous.tags,
-      infoFetched: item.infoFetched ?? previous.infoFetched
-    };
-  });
-  db.data.items = db.data.items.filter((item) => !matches(item)).concat(merged);
-  await db.write();
+  const indexById = new Map(db.data.items.map((item, i) => [item.id, i]));
+  for (const item of items) {
+    const i = indexById.get(item.id);
+    if (i === undefined) {
+      indexById.set(item.id, db.data.items.length);
+      db.data.items.push(item);
+    } else {
+      db.data.items[i] = carryForward(item, db.data.items[i]);
+    }
+  }
+  scheduleWrite(db);
+}
+
+/** Removes items a finished scan didn't find any more (or whose folder/share was removed). */
+export async function pruneItems(shouldRemove: (item: MediaItem) => boolean): Promise<void> {
+  const db = await getDb();
+  const before = db.data.items.length;
+  db.data.items = db.data.items.filter((item) => !shouldRemove(item));
+  if (db.data.items.length !== before) scheduleWrite(db);
 }
 
 export async function getAllItems(): Promise<MediaItem[]> {
