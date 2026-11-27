@@ -88,22 +88,25 @@ async function initWidevine(): Promise<void> {
     return;
   }
   let lastError: unknown;
-  for (let attempt = 1; attempt <= 3; attempt++) {
+  // The component updater's first cycle is ~60s after start, so keep trying past that.
+  for (let attempt = 1; attempt <= 8; attempt++) {
     try {
       const comps = await widevine.whenReady();
       setWidevineStatus(summarizeWidevine(comps));
       return;
     } catch (e) {
       lastError = e;
-      await new Promise((resolve) => setTimeout(resolve, 2000 * attempt));
+      await new Promise((resolve) => setTimeout(resolve, 15000));
     }
   }
-  setWidevineStatus(`Widevine component failed to install (3 tries): ${errorDetail(lastError)}. Details logged to ${widevineLogPath}`);
+  setWidevineStatus(`Widevine component install never reported ready (~2 min): ${errorDetail(lastError)}. If the hardware CDM is present the channel may still play. Log: ${widevineLogPath}`);
 }
 
 app.whenReady()
-  .then(initWidevine)
   .then(() => {
+    // Install the CDM in the background; the hardware (Media Foundation) Widevine CDM is usually
+    // ready immediately, so don't make the window wait on whenReady() (it can reject for ~60s).
+    void initWidevine();
     registerIpcHandlers();
     createWindow();
 

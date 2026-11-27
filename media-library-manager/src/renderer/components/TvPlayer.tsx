@@ -38,7 +38,29 @@ export default function TvPlayer({ channelId, channelName, onClose }: { channelI
           void explainError(detail).then((msg) => setError(msg));
         });
         if (stream.drmToken) {
-          player.configure({ drm: { servers: { "com.widevine.alpha": stream.licenseUrl } } });
+          // Some Windows PCs only have the hardware (Media Foundation) Widevine CDM, not the
+          // software one. EME won't match Widevine unless we ask for a robustness the CDM offers,
+          // so probe what's available and pick the strongest (prefer hardware). Left unset
+          // otherwise, so nothing changes where the default already worked.
+          let advanced: Record<string, unknown> | undefined;
+          try {
+            const support = await shaka.Player.probeSupport();
+            const wv = (support?.drm as Record<string, { videoRobustnessLevels?: string[] }> | undefined)?.["com.widevine.alpha"];
+            const levels = wv?.videoRobustnessLevels ?? [];
+            const preferred = ["HW_SECURE_ALL", "HW_SECURE_DECODE", "HW_SECURE_CRYPTO", "SW_SECURE_DECODE", "SW_SECURE_CRYPTO"];
+            const videoRobustness = preferred.find((l) => levels.includes(l));
+            if (videoRobustness) {
+              advanced = {
+                "com.widevine.alpha": {
+                  videoRobustness,
+                  audioRobustness: videoRobustness.startsWith("HW") ? "HW_SECURE_CRYPTO" : "SW_SECURE_CRYPTO"
+                }
+              };
+            }
+          } catch {
+            /* fall back to the default config */
+          }
+          player.configure({ drm: { servers: { "com.widevine.alpha": stream.licenseUrl }, ...(advanced ? { advanced } : {}) } });
           player.getNetworkingEngine()?.registerRequestFilter((type: number, request: any) => {
             if (type !== shaka.net.NetworkingEngine.RequestType.LICENSE) return;
             const challenge = Array.from(new Uint8Array(request.body as ArrayBuffer));
