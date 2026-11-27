@@ -36,6 +36,16 @@ object AppLog {
         }
     }
 
+    /** Empties the log (and drops the previous one). */
+    @Synchronized
+    fun clear() {
+        val f = file ?: return
+        runCatching {
+            f.writeText("")
+            File(f.parentFile, "omniplay.log.old").delete()
+        }
+    }
+
     fun stackTrace(error: Throwable): String = StringWriter().also { error.printStackTrace(PrintWriter(it)) }.toString()
 
     /** Opens the share sheet with the log attached (email it, save it to Drive…). */

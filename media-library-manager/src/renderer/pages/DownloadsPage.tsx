@@ -102,7 +102,6 @@ export default function DownloadsPage({ onOpenSettings, remoteEnabled }: { onOpe
           change
         </button>
         . If that folder is one of your Library folders, finished downloads appear in the Library automatically.
-        Downloads stop once complete (no seeding afterwards). Only download content you're allowed to.
       </p>
       {error && <p className="error">{error}</p>}
       {notice && <p className="notice">{notice}</p>}

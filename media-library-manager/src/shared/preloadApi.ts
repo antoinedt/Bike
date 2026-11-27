@@ -128,6 +128,7 @@ export interface PreloadApi {
   getAppVersion(): Promise<string>;
   /** Opens OmniPlay's log file (search, updates…); resolves with its path. */
   openLog(): Promise<string>;
+  clearLog(): Promise<void>;
   getUpdateStatus(): Promise<UpdateStatus>;
   /** Checks GitHub for a newer build and downloads it; resolves with the resulting status. */
   checkForUpdate(): Promise<UpdateStatus>;

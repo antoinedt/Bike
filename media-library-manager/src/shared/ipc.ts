@@ -45,6 +45,7 @@ export const IPC = {
   libraryGetScanStatus: "library:getScanStatus",
   appVersion: "app:version",
   appOpenLog: "app:openLog",
+  appClearLog: "app:clearLog",
   updateStatus: "update:status",
   updateGetStatus: "update:getStatus",
   updateCheck: "update:check",

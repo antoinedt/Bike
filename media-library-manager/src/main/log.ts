@@ -1,5 +1,5 @@
 import { app } from "electron";
-import { appendFileSync, renameSync, statSync } from "node:fs";
+import { appendFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 /** OmniPlay's own log (search, updates…): <userData>/omniplay.log, e.g. %APPDATA%\OmniPlay\omniplay.log. */
@@ -21,5 +21,15 @@ export function log(area: string, message: string): void {
     appendFileSync(file, `${new Date().toISOString()} [${area}] ${message}\n`);
   } catch {
     // never let logging break the app
+  }
+}
+
+/** Empties the log (and drops the previous one). */
+export function clearLog(): void {
+  try {
+    writeFileSync(logPath(), "");
+    rmSync(`${logPath()}.old`, { force: true });
+  } catch {
+    // nothing to clear
   }
 }

@@ -648,7 +648,7 @@ class MediaLibraryViewModel : ViewModel() {
                 return@launch
             }
             val relPath = item.path.removePrefix("smb://${share.id}/")
-            val streamUrl = SmbContextFactory.urlFor(share, relPath)
+            val streamUrl = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { SmbContextFactory.urlFor(share, relPath) }
             val factory = SmbDataSource.Factory(SmbContextFactory.contextFor(share))
             _playback.value = PlaybackRequest(item, streamUrl, factory, isNetwork = true)
         }

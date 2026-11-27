@@ -1,6 +1,7 @@
 import { IconButton } from "../components/Icon.js";
 import { useEffect, useState } from "react";
 import ArtworkFetchSection from "../components/ArtworkFetchSection.js";
+import FormDialog from "../components/FormDialog.js";
 import VersionSection from "../components/VersionSection.js";
 import type { AppSettings, LocalFolder, MediaItem, NetworkShare, SiteProfile } from "../../shared/types.js";
 
@@ -306,8 +307,7 @@ function DownloadsSection({
       <h2>Torrent downloads</h2>
       <p className="hint">
         Where the Downloads page saves files. Pick one of your Library folders (or a folder inside
-        one) and finished downloads show up in the Library by themselves. Downloads stop once
-        complete — nothing is seeded afterwards. Only download content you're allowed to.
+        one) and finished downloads show up in the Library by themselves.
       </p>
       <ul className="settings-list">
         <li>
@@ -339,7 +339,9 @@ function SharesSection({
 }) {
   const [form, setForm] = useState({ ...EMPTY_SHARE });
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
+  const [formTest, setFormTest] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   function set<K extends keyof typeof form>(key: K, value: string) {
@@ -350,11 +352,27 @@ function SharesSection({
     const { id, ...rest } = share;
     setForm(rest);
     setEditingId(id);
+    setFormTest(null);
+    setDialogOpen(true);
+  }
+
+  function add() {
+    setForm({ ...EMPTY_SHARE });
+    setEditingId(null);
+    setFormTest(null);
+    setDialogOpen(true);
   }
 
   function cancelEdit() {
     setForm({ ...EMPTY_SHARE });
     setEditingId(null);
+    setDialogOpen(false);
+  }
+
+  async function testForm() {
+    setFormTest("Testing…");
+    const result = await window.api.testShare({ ...form, id: editingId ?? "new" });
+    setFormTest(result.ok ? "Connection OK" : `Failed: ${result.error}`);
   }
 
   async function save() {
@@ -368,6 +386,7 @@ function SharesSection({
       }
       setForm({ ...EMPTY_SHARE });
       setEditingId(null);
+      setDialogOpen(false);
       await refreshSettings();
     } finally {
       setBusy(false);
@@ -406,13 +425,17 @@ function SharesSection({
           </li>
         ))}
       </ul>
-      {settings.networkShares.length > 0 && (
-        <div className="form-actions">
-          <ScanButton label="Scan shares" scan={() => window.api.scanNetwork()} source="network" />
-        </div>
-      )}
       {testResult && <p className="hint-inline">{testResult}</p>}
-      {editingId && <p className="hint-inline">Editing "{form.label || form.host}" — Save changes to apply, or Cancel.</p>}
+      <div className="form-actions">
+        <button className="btn" onClick={add}>
+          Add share…
+        </button>
+        {settings.networkShares.length > 0 && (
+          <ScanButton label="Scan shares" scan={() => window.api.scanNetwork()} source="network" />
+        )}
+      </div>
+      {dialogOpen && (
+      <FormDialog title={editingId ? `Edit “${form.label || form.host}”` : "Add a network share"} onClose={cancelEdit}>
       <div className="form-grid">
         <input className="text-input" placeholder="Label" value={form.label} onChange={(e) => set("label", e.target.value)} />
         <input className="text-input" placeholder="Host / IP" value={form.host} onChange={(e) => set("host", e.target.value)} />
@@ -428,16 +451,20 @@ function SharesSection({
           onChange={(e) => set("password", e.target.value)}
         />
       </div>
+      {formTest && <p className="hint-inline">{formTest}</p>}
       <div className="form-actions">
-        <button className="btn" onClick={() => void save()} disabled={busy || !form.host || !form.share}>
+        <button className="btn btn-primary" onClick={() => void save()} disabled={busy || !form.host || !form.share}>
           {editingId ? "Save changes" : "Add share"}
         </button>
-        {editingId && (
-          <button className="btn btn-small" onClick={cancelEdit}>
-            Cancel
-          </button>
-        )}
+        <button className="btn" onClick={() => void testForm()} disabled={!form.host || !form.share}>
+          Test
+        </button>
+        <button className="btn" onClick={cancelEdit}>
+          Cancel
+        </button>
       </div>
+      </FormDialog>
+      )}
     </section>
   );
 }
@@ -451,6 +478,7 @@ function ProfilesSection({
 }) {
   const [form, setForm] = useState({ ...EMPTY_PROFILE });
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
   function set<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
@@ -461,11 +489,19 @@ function ProfilesSection({
     const { id, ...rest } = profile;
     setForm(rest);
     setEditingId(id);
+    setDialogOpen(true);
+  }
+
+  function add() {
+    setForm({ ...EMPTY_PROFILE });
+    setEditingId(null);
+    setDialogOpen(true);
   }
 
   function cancelEdit() {
     setForm({ ...EMPTY_PROFILE });
     setEditingId(null);
+    setDialogOpen(false);
   }
 
   async function save() {
@@ -479,6 +515,7 @@ function ProfilesSection({
       }
       setForm({ ...EMPTY_PROFILE });
       setEditingId(null);
+      setDialogOpen(false);
       await refreshSettings();
     } finally {
       setBusy(false);
@@ -512,7 +549,13 @@ function ProfilesSection({
           </li>
         ))}
       </ul>
-      {editingId && <p className="hint-inline">Editing "{form.label}" — Save changes to apply, or Cancel.</p>}
+      <div className="form-actions">
+        <button className="btn" onClick={add}>
+          Add site…
+        </button>
+      </div>
+      {dialogOpen && (
+      <FormDialog title={editingId ? `Edit “${form.label}”` : "Add a search site"} onClose={cancelEdit}>
       <div className="form-grid">
         <input className="text-input" placeholder="Label" value={form.label} onChange={(e) => set("label", e.target.value)} />
         <input
@@ -569,18 +612,18 @@ function ProfilesSection({
       </label>
       <div className="form-actions">
         <button
-          className="btn"
+          className="btn btn-primary"
           onClick={() => void save()}
           disabled={busy || !form.label || !form.searchUrlTemplate || !form.resultItemSelector}
         >
           {editingId ? "Save changes" : "Add site"}
         </button>
-        {editingId && (
-          <button className="btn btn-small" onClick={cancelEdit}>
-            Cancel
-          </button>
-        )}
+        <button className="btn" onClick={cancelEdit}>
+          Cancel
+        </button>
       </div>
+      </FormDialog>
+      )}
     </section>
   );
 }

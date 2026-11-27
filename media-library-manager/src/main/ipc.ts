@@ -21,7 +21,7 @@ import { relPathFromMediaPath, testShareConnection } from "./network/smbClient.j
 import { downloadRawFile } from "./network/smbRawClient.js";
 import { ensureStreamServer, registerStream, unregisterStream } from "./network/streamServer.js";
 import { searchSites } from "./search/siteSearch.js";
-import { log, logPath } from "./log.js";
+import { clearLog, log, logPath } from "./log.js";
 import { handOffDownload } from "./torrent/handoff.js";
 import { registerCopyHandlers } from "./transfer/copyIpc.js";
 import { registerRemoteHandlers } from "./remote/remoteIpc.js";
@@ -69,6 +69,7 @@ export function registerIpcHandlers(): void {
   });
   ipcMain.handle(IPC.libraryGetScanStatus, () => libraryScanStatus());
   ipcMain.handle(IPC.appVersion, () => app.getVersion());
+  ipcMain.handle(IPC.appClearLog, () => clearLog());
   ipcMain.handle(IPC.appOpenLog, async () => {
     log("app", `opened the log (version ${app.getVersion()})`);
     const error = await shell.openPath(logPath());

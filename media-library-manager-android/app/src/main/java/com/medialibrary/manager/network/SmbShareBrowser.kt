@@ -27,6 +27,7 @@ private const val CONCURRENCY = 4
 class SmbShareBrowser {
 
     suspend fun testConnection(share: NetworkShare): Result<Unit> = withContext(Dispatchers.IO) {
+        SmbContextFactory.forgetHostChoices()
         fun attempt() = runCatching {
             SmbFile(SmbContextFactory.rootUrl(share), SmbContextFactory.contextFor(share)).listFiles()
             Unit
@@ -104,7 +105,7 @@ fun friendlySmbError(share: NetworkShare, error: Throwable): String {
     val message = generateSequence(error) { it.cause }.mapNotNull { it.message }.joinToString(" / ")
     return when {
         Regex("Failed to connect|ConnectException|timed out|unreachable|No route", RegexOption.IGNORE_CASE).containsMatchIn(message) ->
-            "Can't reach ${share.host}. Check the phone is on the same network (or ZeroTier is on, and no other VPN), " +
+            "Can't reach ${share.host}${if (share.backupHost.isNotBlank()) " or ${share.backupHost}" else ""}. Check the phone is on the same network (or ZeroTier is on, and no other VPN), " +
                 "the computer is awake, and its firewall allows file sharing on that network."
         Regex("LOGON_FAILURE|Logon failure|ACCESS_DENIED", RegexOption.IGNORE_CASE).containsMatchIn(message) ->
             "${share.host} refused the username or password."

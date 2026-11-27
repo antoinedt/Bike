@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
@@ -150,24 +151,8 @@ private fun ScanButton(label: String, scanning: Boolean, onClick: () -> Unit) {
 
 @Composable
 private fun SharesSection(shares: List<NetworkShare>, testResult: String?, viewModel: MediaLibraryViewModel) {
-    var editingId by remember { mutableStateOf<String?>(null) }
-    var label by remember { mutableStateOf("") }
-    var host by remember { mutableStateOf("") }
-    var share by remember { mutableStateOf("") }
-    var subPath by remember { mutableStateOf("") }
-    var domain by remember { mutableStateOf("") }
-    var username by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-
-    fun clearForm() {
-        label = ""; host = ""; share = ""; subPath = ""; domain = ""; username = ""; password = ""
-    }
-
-    fun startEdit(s: NetworkShare) {
-        editingId = s.id
-        label = s.label; host = s.host; share = s.share; subPath = s.subPath
-        domain = s.domain; username = s.username; password = s.password
-    }
+    // null = no popup; "" = adding a new share; otherwise the id of the share being edited.
+    var dialogFor by remember { mutableStateOf<String?>(null) }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Local network (SMB shares)", style = MaterialTheme.typography.titleMedium)
@@ -180,72 +165,110 @@ private fun SharesSection(shares: List<NetworkShare>, testResult: String?, viewM
             ListItem(
                 headlineContent = { Text(s.label.ifBlank { "${s.host}/${s.share}" }) },
                 supportingContent = {
-                    Text("smb://${s.host}/${s.share}${if (s.subPath.isNotBlank()) "/${s.subPath}" else ""}")
+                    Text(
+                        "smb://${s.host}/${s.share}${if (s.subPath.isNotBlank()) "/${s.subPath}" else ""}" +
+                            if (s.backupHost.isNotBlank()) "\naway: ${s.backupHost}" else ""
+                    )
                 },
                 trailingContent = {
                     Row {
                         TextButton(onClick = { viewModel.testShare(s) }) { Text("Test") }
-                        ActionIcon(Icons.Filled.Edit, "Edit", { startEdit(s) })
-                        ActionIcon(Icons.Filled.Delete, "Remove", {
-                            if (s.id == editingId) { editingId = null; clearForm() }
-                            viewModel.removeShare(s.id)
-                        }, tint = MaterialTheme.colorScheme.error)
+                        ActionIcon(Icons.Filled.Edit, "Edit", { dialogFor = s.id })
+                        ActionIcon(Icons.Filled.Delete, "Remove", { viewModel.removeShare(s.id) }, tint = MaterialTheme.colorScheme.error)
                     }
                 }
             )
         }
-        if (shares.isNotEmpty()) {
-            val scanning by viewModel.isScanningNetwork.collectAsState()
-            ScanButton("Scan shares", scanning) { viewModel.scanNetwork(announce = true) }
-        }
         testResult?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-        if (editingId != null) {
-            Text("Editing \"${label.ifBlank { host }}\" — Save changes to apply, or Cancel.", style = MaterialTheme.typography.bodySmall)
-        }
-
-        AppTextField(label, { label = it }, label = { Text("Label") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        AppTextField(host, { host = it }, label = { Text("Host / IP") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        AppTextField(share, { share = it }, label = { Text("Share name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        AppTextField(subPath, { subPath = it }, label = { Text("Sub-path (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        AppTextField(domain, { domain = it }, label = { Text("Domain (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        AppTextField(username, { username = it }, label = { Text("Username") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        AppTextField(
-            password,
-            { password = it },
-            label = { Text("Password") },
-            singleLine = true,
-            visualTransformation = PasswordVisualTransformation(),
-            modifier = Modifier.fillMaxWidth()
-        )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(
-                onClick = {
-                    val id = editingId
-                    if (id != null) {
-                        viewModel.updateShare(
-                            NetworkShare(
-                                id = id, label = label, host = host, share = share, subPath = subPath,
-                                domain = domain.ifBlank { "WORKGROUP" }, username = username, password = password
-                            )
-                        )
-                    } else {
-                        viewModel.addShare(
-                            NetworkShare(
-                                label = label, host = host, share = share, subPath = subPath,
-                                domain = domain.ifBlank { "WORKGROUP" }, username = username, password = password
-                            )
-                        )
-                    }
-                    editingId = null
-                    clearForm()
-                },
-                enabled = host.isNotBlank() && share.isNotBlank()
-            ) { Text(if (editingId != null) "Save changes" else "Add share") }
-            if (editingId != null) {
-                TextButton(onClick = { editingId = null; clearForm() }) { Text("Cancel") }
+            Button(onClick = { dialogFor = "" }) { Text("Add share…") }
+            if (shares.isNotEmpty()) {
+                val scanning by viewModel.isScanningNetwork.collectAsState()
+                ScanButton("Scan shares", scanning) { viewModel.scanNetwork(announce = true) }
             }
         }
     }
+
+    dialogFor?.let { id ->
+        ShareDialog(
+            existing = shares.find { it.id == id },
+            testResult = testResult,
+            onTest = { viewModel.testShare(it) },
+            onSave = { share ->
+                if (shares.any { it.id == share.id }) viewModel.updateShare(share) else viewModel.addShare(share)
+                dialogFor = null
+            },
+            onDismiss = { dialogFor = null }
+        )
+    }
+}
+
+/** Add / edit a share, in a popup. */
+@Composable
+private fun ShareDialog(
+    existing: NetworkShare?,
+    testResult: String?,
+    onTest: (NetworkShare) -> Unit,
+    onSave: (NetworkShare) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var label by remember { mutableStateOf(existing?.label ?: "") }
+    var host by remember { mutableStateOf(existing?.host ?: "") }
+    var backupHost by remember { mutableStateOf(existing?.backupHost ?: "") }
+    var share by remember { mutableStateOf(existing?.share ?: "") }
+    var subPath by remember { mutableStateOf(existing?.subPath ?: "") }
+    var domain by remember { mutableStateOf(existing?.domain?.takeIf { it != "WORKGROUP" } ?: "") }
+    var username by remember { mutableStateOf(existing?.username ?: "") }
+    var password by remember { mutableStateOf(existing?.password ?: "") }
+    var tested by remember { mutableStateOf(false) }
+
+    fun build() = NetworkShare(
+        id = existing?.id ?: java.util.UUID.randomUUID().toString(),
+        label = label, host = host.trim(), share = share.trim(), subPath = subPath.trim(),
+        domain = domain.ifBlank { "WORKGROUP" }, username = username, password = password,
+        backupHost = backupHost.trim()
+    )
+
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (existing != null) "Edit \"${existing.label.ifBlank { existing.host }}\"" else "Add a network share") },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState())
+            ) {
+                AppTextField(label, { label = it }, label = { Text("Label") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                AppTextField(host, { host = it }, label = { Text("Host / IP (e.g. 192.168.1.28)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                AppTextField(
+                    backupHost, { backupHost = it },
+                    label = { Text("Away address (optional, e.g. ZeroTier IP)") },
+                    singleLine = true, modifier = Modifier.fillMaxWidth()
+                )
+                AppTextField(share, { share = it }, label = { Text("Share name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                AppTextField(subPath, { subPath = it }, label = { Text("Sub-path (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                AppTextField(domain, { domain = it }, label = { Text("Domain (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                AppTextField(username, { username = it }, label = { Text("Username") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                AppTextField(
+                    password,
+                    { password = it },
+                    label = { Text("Password") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (tested) testResult?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            }
+        },
+        confirmButton = {
+            Row {
+                TextButton(onClick = { tested = true; onTest(build()) }, enabled = host.isNotBlank() && share.isNotBlank()) { Text("Test") }
+                TextButton(onClick = { onSave(build()) }, enabled = host.isNotBlank() && share.isNotBlank()) {
+                    Text(if (existing != null) "Save" else "Add")
+                }
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }
 
 @Composable
@@ -303,7 +326,7 @@ private fun DownloadsSection(settings: com.medialibrary.manager.model.AppSetting
         Text(
             "Where finished downloads are saved: this device's Downloads folder, one of your local " +
                 "folders, or a network share. Pick a Library folder or share and they show up in the " +
-                "Library by themselves. Downloads stop sharing once complete.",
+                "Library by themselves.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -345,30 +368,8 @@ private fun TmdbSection(tmdbApiKey: String, viewModel: MediaLibraryViewModel) {
 
 @Composable
 private fun ProfilesSection(profiles: List<SiteProfile>, viewModel: MediaLibraryViewModel) {
-    var editingId by remember { mutableStateOf<String?>(null) }
-    var label by remember { mutableStateOf("") }
-    var searchUrlTemplate by remember { mutableStateOf("") }
-    var resultItemSelector by remember { mutableStateOf("") }
-    var titleSelector by remember { mutableStateOf("") }
-    var linkSelector by remember { mutableStateOf("") }
-    var sizeSelector by remember { mutableStateOf("") }
-    var seedersSelector by remember { mutableStateOf("") }
-    var detailPageLinkSelector by remember { mutableStateOf("") }
-    var useHeadlessBrowser by remember { mutableStateOf(false) }
-
-    fun clearForm() {
-        label = ""; searchUrlTemplate = ""; resultItemSelector = ""; titleSelector = ""
-        linkSelector = ""; sizeSelector = ""; seedersSelector = ""; detailPageLinkSelector = ""
-        useHeadlessBrowser = false
-    }
-
-    fun startEdit(p: SiteProfile) {
-        editingId = p.id
-        label = p.label; searchUrlTemplate = p.searchUrlTemplate; resultItemSelector = p.resultItemSelector
-        titleSelector = p.titleSelector; linkSelector = p.linkSelector; sizeSelector = p.sizeSelector
-        seedersSelector = p.seedersSelector; detailPageLinkSelector = p.detailPageLinkSelector
-        useHeadlessBrowser = p.useHeadlessBrowser
-    }
+    // null = no popup; "" = adding a new site; otherwise the id of the site being edited.
+    var dialogFor by remember { mutableStateOf<String?>(null) }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Search sites", style = MaterialTheme.typography.titleMedium)
@@ -384,82 +385,95 @@ private fun ProfilesSection(profiles: List<SiteProfile>, viewModel: MediaLibrary
                 supportingContent = { Text(p.searchUrlTemplate) },
                 trailingContent = {
                     Row {
-                        ActionIcon(Icons.Filled.Edit, "Edit", { startEdit(p) })
-                        ActionIcon(Icons.Filled.Delete, "Remove", {
-                            if (p.id == editingId) { editingId = null; clearForm() }
-                            viewModel.removeSiteProfile(p.id)
-                        }, tint = MaterialTheme.colorScheme.error)
+                        ActionIcon(Icons.Filled.Edit, "Edit", { dialogFor = p.id })
+                        ActionIcon(Icons.Filled.Delete, "Remove", { viewModel.removeSiteProfile(p.id) }, tint = MaterialTheme.colorScheme.error)
                     }
                 }
             )
         }
-        if (editingId != null) {
-            Text("Editing \"$label\" — Save changes to apply, or Cancel.", style = MaterialTheme.typography.bodySmall)
-        }
-        AppTextField(label, { label = it }, label = { Text("Label") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        AppTextField(
-            searchUrlTemplate, { searchUrlTemplate = it },
-            label = { Text("Search URL template ({query})") }, singleLine = true, modifier = Modifier.fillMaxWidth()
-        )
-        AppTextField(
-            resultItemSelector, { resultItemSelector = it },
-            label = { Text("Result item selector") }, singleLine = true, modifier = Modifier.fillMaxWidth()
-        )
-        AppTextField(
-            titleSelector, { titleSelector = it },
-            label = { Text("Title selector") }, singleLine = true, modifier = Modifier.fillMaxWidth()
-        )
-        AppTextField(
-            linkSelector, { linkSelector = it },
-            label = { Text("Link selector") }, singleLine = true, modifier = Modifier.fillMaxWidth()
-        )
-        AppTextField(
-            sizeSelector, { sizeSelector = it },
-            label = { Text("Size selector (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth()
-        )
-        AppTextField(
-            seedersSelector, { seedersSelector = it },
-            label = { Text("Seeders selector (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth()
-        )
-        AppTextField(
-            detailPageLinkSelector, { detailPageLinkSelector = it },
-            label = { Text("Detail-page link selector (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth()
-        )
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(checked = useHeadlessBrowser, onCheckedChange = { useHeadlessBrowser = it })
-            Text(
-                "Site renders results with JavaScript (use an off-screen WebView to fetch it — " +
-                    "slower, but works when \"View Page Source\" doesn't show the results)",
-                style = MaterialTheme.typography.bodySmall
-            )
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(
-                onClick = {
-                    val id = editingId
-                    val profile = SiteProfile(
-                        id = id ?: java.util.UUID.randomUUID().toString(),
-                        label = label,
-                        searchUrlTemplate = searchUrlTemplate,
-                        resultItemSelector = resultItemSelector,
-                        titleSelector = titleSelector,
-                        linkSelector = linkSelector,
-                        sizeSelector = sizeSelector,
-                        seedersSelector = seedersSelector,
-                        detailPageLinkSelector = detailPageLinkSelector,
-                        useHeadlessBrowser = useHeadlessBrowser
-                    )
-                    if (id != null) viewModel.updateSiteProfile(profile) else viewModel.addSiteProfile(profile)
-                    editingId = null
-                    clearForm()
-                },
-                enabled = label.isNotBlank() && searchUrlTemplate.isNotBlank() && resultItemSelector.isNotBlank()
-            ) { Text(if (editingId != null) "Save changes" else "Add site") }
-            if (editingId != null) {
-                TextButton(onClick = { editingId = null; clearForm() }) { Text("Cancel") }
-            }
-        }
+        Button(onClick = { dialogFor = "" }) { Text("Add site…") }
     }
+
+    dialogFor?.let { id ->
+        SiteDialog(
+            existing = profiles.find { it.id == id },
+            onSave = { profile ->
+                if (profiles.any { it.id == profile.id }) viewModel.updateSiteProfile(profile) else viewModel.addSiteProfile(profile)
+                dialogFor = null
+            },
+            onDismiss = { dialogFor = null }
+        )
+    }
+}
+
+/** Add / edit a search site, in a popup. */
+@Composable
+private fun SiteDialog(existing: SiteProfile?, onSave: (SiteProfile) -> Unit, onDismiss: () -> Unit) {
+    var label by remember { mutableStateOf(existing?.label ?: "") }
+    var searchUrlTemplate by remember { mutableStateOf(existing?.searchUrlTemplate ?: "") }
+    var resultItemSelector by remember { mutableStateOf(existing?.resultItemSelector ?: "") }
+    var titleSelector by remember { mutableStateOf(existing?.titleSelector ?: "") }
+    var linkSelector by remember { mutableStateOf(existing?.linkSelector ?: "") }
+    var sizeSelector by remember { mutableStateOf(existing?.sizeSelector ?: "") }
+    var seedersSelector by remember { mutableStateOf(existing?.seedersSelector ?: "") }
+    var detailPageLinkSelector by remember { mutableStateOf(existing?.detailPageLinkSelector ?: "") }
+    var useHeadlessBrowser by remember { mutableStateOf(existing?.useHeadlessBrowser ?: false) }
+    val canSave = label.isNotBlank() && searchUrlTemplate.isNotBlank() && resultItemSelector.isNotBlank()
+
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (existing != null) "Edit \"${existing.label}\"" else "Add a search site") },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState())
+            ) {
+                AppTextField(label, { label = it }, label = { Text("Label") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                AppTextField(
+                    searchUrlTemplate, { searchUrlTemplate = it },
+                    label = { Text("Search URL template ({query})") }, singleLine = true, modifier = Modifier.fillMaxWidth()
+                )
+                AppTextField(resultItemSelector, { resultItemSelector = it }, label = { Text("Result item selector") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                AppTextField(titleSelector, { titleSelector = it }, label = { Text("Title selector") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                AppTextField(linkSelector, { linkSelector = it }, label = { Text("Link selector") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                AppTextField(sizeSelector, { sizeSelector = it }, label = { Text("Size selector (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                AppTextField(seedersSelector, { seedersSelector = it }, label = { Text("Seeders selector (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                AppTextField(
+                    detailPageLinkSelector, { detailPageLinkSelector = it },
+                    label = { Text("Detail-page link selector (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth()
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = useHeadlessBrowser, onCheckedChange = { useHeadlessBrowser = it })
+                    Text(
+                        "Site renders results with JavaScript (slower; only if \"View Page Source\" doesn't show the results)",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    onSave(
+                        SiteProfile(
+                            id = existing?.id ?: java.util.UUID.randomUUID().toString(),
+                            label = label,
+                            searchUrlTemplate = searchUrlTemplate.trim(),
+                            resultItemSelector = resultItemSelector.trim(),
+                            titleSelector = titleSelector.trim(),
+                            linkSelector = linkSelector.trim(),
+                            sizeSelector = sizeSelector.trim(),
+                            seedersSelector = seedersSelector.trim(),
+                            detailPageLinkSelector = detailPageLinkSelector.trim(),
+                            useHeadlessBrowser = useHeadlessBrowser
+                        )
+                    )
+                },
+                enabled = canSave
+            ) { Text(if (existing != null) "Save" else "Add") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }
 
 /** "OmniPlay version 0.2.46" (the last number is the build), update status and "Check for updates". */
@@ -486,7 +500,13 @@ private fun VersionLine() {
         )
         if (status.isNotEmpty()) Text(status, style = MaterialTheme.typography.bodySmall)
         val available = update as? com.medialibrary.manager.update.UpdateState.Available
-        OutlinedButton(onClick = { com.medialibrary.manager.log.AppLog.share(context) }) { Text("Share log") }
+        var logCleared by remember { mutableStateOf(false) }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = { com.medialibrary.manager.log.AppLog.share(context) }) { Text("Share log") }
+            OutlinedButton(onClick = { com.medialibrary.manager.log.AppLog.clear(); logCleared = true }) {
+                Text(if (logCleared) "Log cleared" else "Clear log")
+            }
+        }
         if (available != null) {
             Button(onClick = { com.medialibrary.manager.update.AppUpdater.update(context) }) { Text("Update to ${available.version}") }
         } else {

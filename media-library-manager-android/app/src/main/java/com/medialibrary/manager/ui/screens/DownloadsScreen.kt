@@ -135,11 +135,6 @@ fun DownloadsScreen(viewModel: MediaLibraryViewModel, onOpenTorrentFile: (onPick
                     )
                     TextButton(onClick = { pickingTarget = true }) { Text("Change") }
                 }
-                Text(
-                    "Downloads stop sharing once complete. Only download content you're allowed to.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
         }
         if (torrents.isEmpty()) {

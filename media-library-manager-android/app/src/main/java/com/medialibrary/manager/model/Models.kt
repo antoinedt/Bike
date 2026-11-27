@@ -97,7 +97,9 @@ data class NetworkShare(
     val subPath: String = "",
     val domain: String = "WORKGROUP",
     val username: String = "",
-    val password: String = ""
+    val password: String = "",
+    /** Another address for the same computer, e.g. its ZeroTier IP — used when [host] can't be reached (away from home). */
+    val backupHost: String = ""
 )
 
 /**

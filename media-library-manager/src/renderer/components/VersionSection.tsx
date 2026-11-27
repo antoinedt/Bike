@@ -23,6 +23,7 @@ function describe(s: UpdateStatus): string {
 /** Top of Settings: the version, update status and "Check for updates". */
 export default function VersionSection() {
   const [status, setStatus] = useState<UpdateStatus | null>(null);
+  const [cleared, setCleared] = useState(false);
   useEffect(() => {
     void window.api.getUpdateStatus().then(setStatus);
     return window.api.onUpdateStatus(setStatus);
@@ -35,6 +36,14 @@ export default function VersionSection() {
       <span className="hint-inline">{describe(status)}</span>
       <button className="btn btn-small" onClick={() => void window.api.openLog()}>
         Open log
+      </button>
+      <button
+        className="btn btn-small"
+        onClick={() => {
+          void window.api.clearLog().then(() => setCleared(true));
+        }}
+      >
+        {cleared ? "Log cleared" : "Clear log"}
       </button>
       {status.state === "ready" ? (
         <button className="btn btn-small btn-primary" onClick={() => void window.api.installUpdateNow()}>
