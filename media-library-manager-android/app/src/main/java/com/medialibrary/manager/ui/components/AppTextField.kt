@@ -1,9 +1,17 @@
 package com.medialibrary.manager.ui.components
 
+import androidx.compose.foundation.text.KeyboardActionScope
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.Key
@@ -38,23 +46,63 @@ fun AppTextField(
     keyboardActions: KeyboardActions = KeyboardActions.Default
 ) {
     val isTv = LocalIsTv.current
+    if (!isTv) {
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            modifier = modifier,
+            label = label,
+            placeholder = placeholder,
+            singleLine = singleLine,
+            visualTransformation = visualTransformation,
+            keyboardOptions = keyboardOptions,
+            keyboardActions = keyboardActions
+        )
+        return
+    }
+    // TV: the field is read-only (so it can't bring up the keyboard, however it got focus — e.g.
+    // a popup focusing its first field) until OK is pressed on it; it goes back to read-only when
+    // the keyboard's action key is used or focus moves away.
     val keyboard = LocalSoftwareKeyboardController.current
+    var editing by remember { mutableStateOf(false) }
+    LaunchedEffect(editing) {
+        if (editing) {
+            // Let the field leave read-only mode (and start taking input) before asking for the keyboard.
+            kotlinx.coroutines.delay(80)
+            keyboard?.show()
+        }
+    }
+    fun done(scope: KeyboardActionScope, action: ImeAction, handler: (KeyboardActionScope.() -> Unit)?) {
+        editing = false
+        keyboard?.hide()
+        if (handler != null) handler(scope) else scope.defaultKeyboardAction(action)
+    }
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
-        modifier = if (!isTv) modifier else modifier.onPreviewKeyEvent { event ->
-            // Only the physical remote's OK button: an on-screen keyboard's own Enter must still
-            // reach the field (e.g. to trigger "Done").
-            val fromRemote = event.nativeKeyEvent.device?.isVirtual == false
-            if (!fromRemote || event.key !in OK_KEYS) return@onPreviewKeyEvent false
-            if (event.type == KeyEventType.KeyUp) keyboard?.show()
-            true
-        },
+        readOnly = !editing,
+        modifier = modifier
+            .onFocusChanged { if (!it.isFocused) editing = false }
+            .onPreviewKeyEvent { event ->
+                // Only the physical remote's OK button: an on-screen keyboard's own Enter must still
+                // reach the field (e.g. to trigger "Done").
+                val fromRemote = event.nativeKeyEvent.device?.isVirtual == false
+                if (editing || !fromRemote || event.key !in OK_KEYS) return@onPreviewKeyEvent false
+                if (event.type == KeyEventType.KeyUp) editing = true
+                true
+            },
         label = label,
         placeholder = placeholder,
         singleLine = singleLine,
         visualTransformation = visualTransformation,
-        keyboardOptions = if (isTv) keyboardOptions.copy(showKeyboardOnFocus = false) else keyboardOptions,
-        keyboardActions = keyboardActions
+        keyboardOptions = keyboardOptions.copy(showKeyboardOnFocus = false),
+        keyboardActions = KeyboardActions(
+            onDone = { done(this, ImeAction.Done, keyboardActions.onDone) },
+            onGo = { done(this, ImeAction.Go, keyboardActions.onGo) },
+            onNext = { done(this, ImeAction.Next, keyboardActions.onNext) },
+            onPrevious = { done(this, ImeAction.Previous, keyboardActions.onPrevious) },
+            onSearch = { done(this, ImeAction.Search, keyboardActions.onSearch) },
+            onSend = { done(this, ImeAction.Send, keyboardActions.onSend) }
+        )
     )
 }

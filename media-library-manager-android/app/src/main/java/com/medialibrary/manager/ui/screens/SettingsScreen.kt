@@ -47,7 +47,7 @@ fun SettingsScreen(
     viewModel: MediaLibraryViewModel,
     onPickFolder: () -> Unit,
     onChangeFolder: (String) -> Unit,
-    /** False on a TV, which has no Search tab to use these with. */
+    /** Shown everywhere now (a TV can download a result itself or send it to another device). */
     showSearchSites: Boolean = true
 ) {
     val settings by viewModel.settings.collectAsState()

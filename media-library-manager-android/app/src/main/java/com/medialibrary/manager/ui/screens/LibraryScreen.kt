@@ -117,7 +117,7 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, isTv: Boolean, onPickImage: 
     }
 
     val query = webQuery
-    val siteResults: (LazyGridScope.() -> Unit)? = if (isTv || query == null) null else fun LazyGridScope.() {
+    val siteResults: (LazyGridScope.() -> Unit)? = if (query == null) null else fun LazyGridScope.() {
         item(key = "web-header", span = { GridItemSpan(maxLineSpan) }) {
             SiteSearchHeader(
                 query = query,
@@ -205,13 +205,22 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, isTv: Boolean, onPickImage: 
             filterField = {
                 // A placeholder rather than a floating label keeps the field one line tall.
                 if (isTv) {
-                    AppTextField(
-                        value = filter,
-                        onValueChange = { filter = it },
-                        placeholder = { Text("Search") },
-                        singleLine = true,
-                        modifier = Modifier.width(280.dp).focusRequester(filterRequester)
-                    )
+                    // TV: Search box (press OK to type) + a search-sites button; results can be
+                    // downloaded here or sent to another device.
+                    androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        AppTextField(
+                            value = filter,
+                            onValueChange = ::onSearchTextChange,
+                            placeholder = { Text("Search") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                            keyboardActions = KeyboardActions(onSearch = { searchSites() }),
+                            modifier = Modifier.width(280.dp).focusRequester(filterRequester)
+                        )
+                        IconButton(onClick = { searchSites() }, enabled = filter.isNotBlank() && !searching) {
+                            Icon(Icons.Filled.Search, contentDescription = "Search sites")
+                        }
+                    }
                 } else {
                     // Phone: Search (filters the library as you type) + search-sites button + Cast.
                     androidx.compose.foundation.layout.Row(

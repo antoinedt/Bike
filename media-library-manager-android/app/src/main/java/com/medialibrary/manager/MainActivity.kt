@@ -218,8 +218,7 @@ private fun MediaLibraryApp(
         }
     }
 
-    // Site search lives in the Library (its Search button; not on a TV, where there's nothing to
-    // hand a torrent to and typing with a remote is painful). On a TV the tabs sit in a side rail
+    // Site search lives in the Library (its Search button, on phones and TVs). On a TV the tabs sit in a side rail
     // instead of a bottom bar so the media grid gets most of the screen's height.
     val tabs = TABS
     val backStackEntry by navController.currentBackStackEntryAsState()
@@ -268,7 +267,7 @@ private fun MediaLibraryApp(
                 composable("library") { LibraryScreen(viewModel, isTv, onPickImage) }
                 composable("tv") { TvScreen(isTv) }
                 composable("downloads") { DownloadsScreen(viewModel, onOpenTorrentFile) }
-                composable("settings") { SettingsScreen(viewModel, onPickFolder, onChangeFolder, showSearchSites = !isTv) }
+                composable("settings") { SettingsScreen(viewModel, onPickFolder, onChangeFolder) }
             }
         }
     }
