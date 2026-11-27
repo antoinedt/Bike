@@ -134,7 +134,15 @@ async function explainError(detail?: ShakaError): Promise<string> {
   try {
     const support = await shaka.Player.probeSupport();
     const wv = (support?.drm as Record<string, unknown> | undefined)?.["com.widevine.alpha"];
-    if (!wv) return `${base}\nWidevine isn't available in this app on this PC (the Castlabs DRM component didn't load). It isn't the channel — no protected channel can play until that's fixed.`;
+    if (!wv) {
+      let detail = "";
+      try {
+        detail = await window.api.getWidevineStatus();
+      } catch {
+        /* ignore */
+      }
+      return `${base}\nWidevine isn't available in this app on this PC (the Castlabs DRM component didn't load).${detail ? `\n[${detail}]` : ""}`;
+    }
     const robustness = (wv as { videoRobustnessLevels?: string[] }).videoRobustnessLevels;
     const hw = Array.isArray(robustness) && robustness.some((r) => /HW/i.test(r));
     return `${base}\nWidevine IS available here (software/L3${hw ? " + some hardware levels" : ""}), so the channel is refusing this computer's DRM — it likely needs hardware DRM a PC can't provide. Cast it to a Google TV instead.`;

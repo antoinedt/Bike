@@ -1,6 +1,7 @@
 import { BrowserWindow, ipcMain, safeStorage, session } from "electron";
 import Store from "electron-store";
 import { getCastController } from "../cast/castIpc.js";
+import { getWidevineStatus } from "../widevineState.js";
 import { IPC } from "../../shared/ipc.js";
 import type { TvResult, TvStatus } from "../../shared/types.js";
 import { FIZZ_CONFIG, FizzTvClient, randomDeviceId, SignInRequiredError, type BrowserSignIn, type TvCredentials, type TvCredentialStore } from "./fizzTv.js";
@@ -123,6 +124,7 @@ function signInWindow(pending: BrowserSignIn): Promise<string> {
 
 export function registerTvHandlers(): void {
   ipcMain.handle(IPC.tvStatus, () => status());
+  ipcMain.handle(IPC.tvWidevineStatus, () => getWidevineStatus());
   ipcMain.handle(IPC.tvSignIn, () =>
     wrap(async () => {
       const pending = client.startBrowserSignIn();

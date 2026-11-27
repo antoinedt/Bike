@@ -3,6 +3,7 @@ import electronRuntime, { app, BrowserWindow, shell } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { registerIpcHandlers } from "./ipc.js";
+import { setWidevineStatus } from "./widevineState.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = process.env.NODE_ENV === "development";
@@ -47,8 +48,30 @@ function createWindow(): void {
 // component to be ready. Standard Electron has no `components`, so this is a no-op there.
 const widevine = (electronRuntime as unknown as { components?: { whenReady(): Promise<unknown> } }).components;
 
+function summarizeWidevine(comps: unknown): string {
+  try {
+    const list = Array.isArray(comps) ? comps : [comps];
+    const wv = list.find((c) => /widevine/i.test(JSON.stringify(c)));
+    const text = JSON.stringify(wv ?? comps);
+    return `Widevine component: ${text.length > 300 ? text.slice(0, 300) + "…" : text}`;
+  } catch {
+    return "Widevine component ready (details unavailable).";
+  }
+}
+
 app.whenReady()
-  .then(() => (widevine ? widevine.whenReady().catch(() => undefined) : undefined))
+  .then(async () => {
+    if (!widevine) {
+      setWidevineStatus("This build has no Castlabs components API — it isn't the Widevine-enabled Electron.");
+      return;
+    }
+    try {
+      const comps = await widevine.whenReady();
+      setWidevineStatus(summarizeWidevine(comps));
+    } catch (e) {
+      setWidevineStatus(`Widevine component failed to install: ${(e as Error)?.message ?? String(e)}`);
+    }
+  })
   .then(() => {
     registerIpcHandlers();
     createWindow();

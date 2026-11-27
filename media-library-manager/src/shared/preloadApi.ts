@@ -162,6 +162,8 @@ export interface PreloadApi {
   getTvStream(channelId: number): Promise<TvResult<TvStreamInfo>>;
   /** Casts a live channel to a Google TV (reuses the cast target picked with discoverCastTargets). */
   castChannel(targetId: string, channelId: number, channelName: string): Promise<TvResult<boolean>>;
+  /** How the Castlabs Widevine component init went at startup (for diagnosing DRM failures). */
+  getWidevineStatus(): Promise<string>;
 }
 
 declare global {

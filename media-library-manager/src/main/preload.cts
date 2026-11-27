@@ -92,6 +92,7 @@ const api = {
   getTvGuide: (channelIds: number[], from: number, to: number) => ipcRenderer.invoke("tv:guide", channelIds, from, to),
   getTvStream: (channelId: number) => ipcRenderer.invoke("tv:stream", channelId),
   castChannel: (targetId: string, channelId: number, channelName: string) => ipcRenderer.invoke("tv:castLive", targetId, channelId, channelName),
+  getWidevineStatus: () => ipcRenderer.invoke("tv:widevineStatus"),
   onCopyUpdate: (callback: (jobs: unknown) => void) => {
     const listener = (_e: unknown, jobs: unknown) => callback(jobs);
     ipcRenderer.on("copy:update", listener);
