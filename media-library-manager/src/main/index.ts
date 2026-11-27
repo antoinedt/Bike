@@ -48,30 +48,61 @@ function createWindow(): void {
 // component to be ready. Standard Electron has no `components`, so this is a no-op there.
 const widevine = (electronRuntime as unknown as { components?: { whenReady(): Promise<unknown> } }).components;
 
+// Log the Widevine component download/install (and CDM load) to a file users can send us when a
+// protected channel won't play. Verbose only for the component/widevine/cdm modules to keep it small.
+const widevineLogPath = path.join(app.getPath("userData"), "omniplay-widevine.log");
+if (widevine) {
+  app.commandLine.appendSwitch("enable-logging");
+  app.commandLine.appendSwitch("log-file", widevineLogPath);
+  app.commandLine.appendSwitch("vmodule", "*component_updater*=2,*widevine*=2,*cdm*=2,*component_patcher*=2");
+}
+
 function summarizeWidevine(comps: unknown): string {
   try {
     const list = Array.isArray(comps) ? comps : [comps];
     const wv = list.find((c) => /widevine/i.test(JSON.stringify(c)));
     const text = JSON.stringify(wv ?? comps);
-    return `Widevine component: ${text.length > 300 ? text.slice(0, 300) + "…" : text}`;
+    return `Widevine component ready: ${text.length > 300 ? text.slice(0, 300) + "…" : text}`;
   } catch {
     return "Widevine component ready (details unavailable).";
   }
 }
 
-app.whenReady()
-  .then(async () => {
-    if (!widevine) {
-      setWidevineStatus("This build has no Castlabs components API — it isn't the Widevine-enabled Electron.");
-      return;
-    }
+function errorDetail(e: unknown): string {
+  const err = e as (Error & Record<string, unknown>) | undefined;
+  const parts = [err?.message ?? String(e)];
+  try {
+    const extra = JSON.stringify(err, Object.getOwnPropertyNames(err ?? {}));
+    if (extra && extra !== "{}" && extra !== `{"message":${JSON.stringify(err?.message)}}`) parts.push(extra.slice(0, 300));
+  } catch {
+    /* ignore */
+  }
+  return parts.join(" :: ");
+}
+
+// Retry across a few attempts — the first launch's download can fail transiently (or while a VPN
+// kill switch is still blocking) and then succeed moments later.
+async function initWidevine(): Promise<void> {
+  if (!widevine) {
+    setWidevineStatus("This build has no Castlabs components API — it isn't the Widevine-enabled Electron.");
+    return;
+  }
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       const comps = await widevine.whenReady();
       setWidevineStatus(summarizeWidevine(comps));
+      return;
     } catch (e) {
-      setWidevineStatus(`Widevine component failed to install: ${(e as Error)?.message ?? String(e)}`);
+      lastError = e;
+      await new Promise((resolve) => setTimeout(resolve, 2000 * attempt));
     }
-  })
+  }
+  setWidevineStatus(`Widevine component failed to install (3 tries): ${errorDetail(lastError)}. Details logged to ${widevineLogPath}`);
+}
+
+app.whenReady()
+  .then(initWidevine)
   .then(() => {
     registerIpcHandlers();
     createWindow();
