@@ -265,7 +265,7 @@ private fun SiteSearchHeader(
         Text("From your search sites", style = MaterialTheme.typography.titleSmall)
         Text(
             when {
-                searching -> "Searching for \"$query\"…"
+                searching -> "Searching for \"$query\"… (slow sites can take up to 2 minutes)"
                 count == 0 -> "No results for \"$query\"."
                 else -> "$count result${if (count == 1) "" else "s"} for \"$query\""
             },

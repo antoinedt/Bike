@@ -1,4 +1,5 @@
 import { BrowserWindow, session } from "electron";
+import { lookup } from "node:dns/promises";
 import { log } from "../log.js";
 
 /**
@@ -23,7 +24,7 @@ function browserUserAgent(): string {
 export async function fetchRenderedHtml(
   url: string,
   readySelector: string,
-  timeoutMs = 20000
+  timeoutMs = 120_000
 ): Promise<{ html: string; finalUrl: string }> {
   const win = new BrowserWindow({
     show: false,
@@ -45,6 +46,12 @@ export async function fetchRenderedHtml(
   win.webContents.on("did-fail-load", (_e, code, description, failedUrl) => {
     if (code !== -3) problems.push(`load failed ${description} ${failedUrl.slice(0, 120)}`);
   });
+  // When each loading step happened (ms after start), for the log.
+  const started = Date.now();
+  const timeline: string[] = [];
+  for (const name of ["did-start-loading", "did-navigate", "dom-ready", "did-finish-load"] as const) {
+    win.webContents.on(name as "dom-ready", () => timeline.push(`${name} ${Date.now() - started}ms`));
+  }
   try {
     win.webContents.setUserAgent(browserUserAgent());
 
@@ -61,8 +68,12 @@ export async function fetchRenderedHtml(
     if (!found) {
       const failed = problems;
       log("search", `results never appeared on ${url}${loadError ? ` (page failed: ${loadError.message})` : ""}; ` +
-        (failed.length ? `page errors: ${failed.slice(0, 10).join(" | ")}` : "the page reported no errors"));
+        (failed.length ? `page errors: ${failed.slice(0, 10).join(" | ")}` : "the page reported no errors") +
+        `; page events: ${timeline.join(", ") || "none"}`);
+      log("search", `connection check for ${url}: ${await connectionCheck(url)}`);
       if (loadError) throw loadError;
+    } else {
+      log("search", `results appeared after ${Date.now() - started}ms (${timeline.join(", ")})`);
     }
 
     const html = String(await win.webContents.mainFrame.executeJavaScript("document.documentElement.outerHTML"));
@@ -93,4 +104,29 @@ async function waitForSelector(
     await new Promise((resolve) => setTimeout(resolve, 300));
   }
   return false;
+}
+
+async function timed<T>(work: Promise<T>, limitMs = 15000): Promise<string> {
+  const t = Date.now();
+  try {
+    const value = await Promise.race([
+      work,
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`no answer after ${limitMs}ms`)), limitMs))
+    ]);
+    return `${Date.now() - t}ms ${typeof value === "string" ? value : JSON.stringify(value)}`.slice(0, 200);
+  } catch (err) {
+    return `${Date.now() - t}ms FAILED ${(err as Error).message}`.slice(0, 200);
+  }
+}
+
+/** Where a slow page load is stuck: proxy lookup, DNS (the app's and Windows'), or the server. */
+async function connectionCheck(url: string): Promise<string> {
+  const host = new URL(url).hostname;
+  const [proxy, appDns, systemDns, direct] = await Promise.all([
+    timed(session.defaultSession.resolveProxy(url)),
+    timed(session.defaultSession.resolveHost(host).then((r) => r.endpoints.map((e) => e.address).join(" "))),
+    timed(lookup(host, { all: true }).then((r) => r.map((a) => a.address).join(" "))),
+    timed(fetch(url, { headers: { "User-Agent": browserUserAgent() } }).then(async (res) => `HTTP ${res.status}, ${(await res.text()).length} bytes`))
+  ]);
+  return `proxy: ${proxy} | app DNS: ${appDns} | Windows DNS: ${systemDns} | direct download: ${direct}`;
 }

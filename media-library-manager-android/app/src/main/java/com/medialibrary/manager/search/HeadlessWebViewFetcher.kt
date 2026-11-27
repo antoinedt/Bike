@@ -34,7 +34,7 @@ class HeadlessWebViewFetcher(private val context: Context) {
      * It does NOT wait for the page to finish loading: ad-heavy sites can take 20+ s to do that
      * (or never do) although their results are on screen within a second or two.
      */
-    suspend fun fetchRenderedHtml(url: String, readySelector: String, timeoutMs: Long = 20_000): String? =
+    suspend fun fetchRenderedHtml(url: String, readySelector: String, timeoutMs: Long = 120_000): String? =
         withContext(Dispatchers.Main) {
             var rendererGone = false
             val webView = WebView(context).apply {

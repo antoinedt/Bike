@@ -85,7 +85,7 @@ export default function SiteSearchResults({
   }
 
   const status = searching
-    ? `Searching for “${request.query}”…`
+    ? `Searching for “${request.query}”… (slow sites can take up to 2 minutes)`
     : results.length === 0
       ? `No results for “${request.query}”.`
       : `${results.length} result${results.length === 1 ? "" : "s"} for “${request.query}”`;
