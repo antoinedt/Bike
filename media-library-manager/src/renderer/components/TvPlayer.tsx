@@ -34,32 +34,24 @@ export default function TvPlayer({ channelId, channelName, onClose }: { channelI
         await player.attach(video);
         player.addEventListener("error", (e: unknown) => {
           const detail = (e as { detail?: ShakaError }).detail;
-          console.error("TV playback error", detail);
+          console.error("TV playback error", detail?.code, JSON.stringify(detail));
           void explainError(detail).then((msg) => setError(msg));
         });
         if (stream.drmToken) {
-          // Some Windows PCs only have the hardware (Media Foundation) Widevine CDM, not the
-          // software one. EME won't match Widevine unless we ask for a robustness the CDM offers,
-          // so probe what's available and pick the strongest (prefer hardware). Left unset
-          // otherwise, so nothing changes where the default already worked.
-          let advanced: Record<string, unknown> | undefined;
-          try {
-            const support = await shaka.Player.probeSupport();
-            const wv = (support?.drm as Record<string, { videoRobustnessLevels?: string[] }> | undefined)?.["com.widevine.alpha"];
-            const levels = wv?.videoRobustnessLevels ?? [];
-            const preferred = ["HW_SECURE_ALL", "HW_SECURE_DECODE", "HW_SECURE_CRYPTO", "SW_SECURE_DECODE", "SW_SECURE_CRYPTO"];
-            const videoRobustness = preferred.find((l) => levels.includes(l));
-            if (videoRobustness) {
-              advanced = {
+          // Ask the CDM directly (via EME) which Widevine robustness levels it actually accepts,
+          // strongest first, and configure Shaka with the best one. This matches whatever CDM is
+          // installed (hardware Media Foundation, or software), and the report tells us, when it
+          // still fails, whether EME has no usable config at all vs. the CDM refusing to run.
+          const best = await probeWidevine();
+          const advanced = best.level
+            ? {
                 "com.widevine.alpha": {
-                  videoRobustness,
-                  audioRobustness: videoRobustness.startsWith("HW") ? "HW_SECURE_CRYPTO" : "SW_SECURE_CRYPTO"
+                  videoRobustness: best.level,
+                  audioRobustness: best.level.startsWith("HW") ? "HW_SECURE_CRYPTO" : best.level || "SW_SECURE_CRYPTO"
                 }
-              };
-            }
-          } catch {
-            /* fall back to the default config */
-          }
+              }
+            : undefined;
+          console.log("Widevine EME probe:", best.report, "→ using", best.level || "(default)");
           player.configure({ drm: { servers: { "com.widevine.alpha": stream.licenseUrl }, ...(advanced ? { advanced } : {}) } });
           player.getNetworkingEngine()?.registerRequestFilter((type: number, request: any) => {
             if (type !== shaka.net.NetworkingEngine.RequestType.LICENSE) return;
@@ -74,7 +66,7 @@ export default function TvPlayer({ channelId, channelName, onClose }: { channelI
         void video.play().catch(() => undefined);
       } catch (e) {
         if (!cancelled) {
-          console.error("TV playback error", e);
+          console.error("TV playback error", (e as ShakaError)?.code, JSON.stringify(e));
           setError(await explainError(e as ShakaError));
           setLoading(false);
         }
@@ -118,6 +110,36 @@ interface ShakaError {
   data?: unknown[];
 }
 
+// The last EME robustness probe, shown in the error so we can see what the CDM accepted.
+let lastWidevineProbe = "(not probed)";
+
+/**
+ * Asks the Widevine CDM, via EME directly, which robustness levels it accepts (strongest first).
+ * Returns the best usable level (null if none) and a short report of what each level did.
+ */
+async function probeWidevine(): Promise<{ level: string | null; report: string }> {
+  const levels = ["HW_SECURE_ALL", "HW_SECURE_DECODE", "HW_SECURE_CRYPTO", "SW_SECURE_DECODE", "SW_SECURE_CRYPTO", ""];
+  const report: string[] = [];
+  let best: string | null = null;
+  for (const robustness of levels) {
+    try {
+      await navigator.requestMediaKeySystemAccess("com.widevine.alpha", [
+        {
+          initDataTypes: ["cenc"],
+          videoCapabilities: [{ contentType: 'video/mp4; codecs="avc1.4d401f"', robustness }],
+          audioCapabilities: [{ contentType: 'audio/mp4; codecs="mp4a.40.2"', robustness }]
+        }
+      ]);
+      report.push(`${robustness || "none"}=ok`);
+      if (best === null) best = robustness;
+    } catch (e) {
+      report.push(`${robustness || "none"}=${(e as Error)?.name ?? "fail"}`);
+    }
+  }
+  lastWidevineProbe = report.join(" ");
+  return { level: best, report: lastWidevineProbe };
+}
+
 /** Digs out the licence server's HTTP status + body from a (possibly nested) Shaka network error. */
 function findHttp(err: ShakaError | undefined, depth = 0): { status?: number; body?: string } | null {
   if (!err || typeof err !== "object" || depth > 5) return null;
@@ -153,24 +175,19 @@ async function explainError(detail?: ShakaError): Promise<string> {
   const base = describeError(detail);
   const code = detail?.code;
   if (!(code && code >= 6000 && code < 7000)) return base;
+  let status = "";
   try {
-    const support = await shaka.Player.probeSupport();
-    const wv = (support?.drm as Record<string, unknown> | undefined)?.["com.widevine.alpha"];
-    if (!wv) {
-      let detail = "";
-      try {
-        detail = await window.api.getWidevineStatus();
-      } catch {
-        /* ignore */
-      }
-      return `${base}\nWidevine isn't available in this app on this PC (the Castlabs DRM component didn't load).${detail ? `\n[${detail}]` : ""}`;
-    }
-    const robustness = (wv as { videoRobustnessLevels?: string[] }).videoRobustnessLevels;
-    const hw = Array.isArray(robustness) && robustness.some((r) => /HW/i.test(r));
-    return `${base}\nWidevine IS available here (software/L3${hw ? " + some hardware levels" : ""}), so the channel is refusing this computer's DRM — it likely needs hardware DRM a PC can't provide. Cast it to a Google TV instead.`;
+    status = await window.api.getWidevineStatus();
   } catch {
-    return base;
+    /* ignore */
   }
+  const anyRobustness = /=(ok)/.test(lastWidevineProbe) && /SECURE.*=ok|none=ok/.test(lastWidevineProbe);
+  const diag = `\nEME probe: ${lastWidevineProbe}.${status ? `\n[${status}]` : ""}`;
+  if (!anyRobustness) {
+    // No robustness worked → the CDM process isn't usable (often a sandbox/antivirus block).
+    return `${base}\nWidevine's CDM isn't usable on this PC (no robustness level worked — often antivirus / Controlled Folder Access blocking it, or a sandbox error). Cast to a Google TV meanwhile.${diag}`;
+  }
+  return `${base}\nWidevine is present but the channel's licence still failed. It likely requires a robustness this PC can't meet (hardware/L1). Cast to a Google TV instead.${diag}`;
 }
 
 function describeError(detail?: ShakaError): string {
