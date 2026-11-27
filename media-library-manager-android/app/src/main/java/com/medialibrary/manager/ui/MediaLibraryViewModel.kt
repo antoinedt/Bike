@@ -33,10 +33,17 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.atomic.AtomicInteger
 
 data class PlaybackRequest(
     val item: MediaItem,
@@ -96,6 +103,14 @@ class MediaLibraryViewModel : ViewModel() {
 
     private val _isScanningNetwork = MutableStateFlow(false)
     val isScanningNetwork: StateFlow<Boolean> = _isScanningNetwork.asStateFlow()
+
+    private val _scanFound = MutableStateFlow(0)
+    /** Media files found so far by the running background scan (the Library's "Scanning…" line). */
+    val scanFound: StateFlow<Int> = _scanFound.asStateFlow()
+
+    // A copy/download that lands while a scan is running asks for one more pass afterwards.
+    @Volatile private var rescanLocalAfter = false
+    @Volatile private var rescanNetworkAfter = false
 
     private val _isSearching = MutableStateFlow(false)
     val isSearching: StateFlow<Boolean> = _isSearching.asStateFlow()
@@ -159,11 +174,88 @@ class MediaLibraryViewModel : ViewModel() {
         viewModelScope.launch {
             transfers.libraryChanged.collect { target ->
                 when (target.type) {
-                    TransferTarget.FOLDER -> if (!_isScanningLocal.value) scanLocal()
-                    TransferTarget.SHARE -> if (!_isScanningNetwork.value) scanNetwork()
+                    TransferTarget.FOLDER -> scanLocal()
+                    TransferTarget.SHARE -> scanNetwork()
                 }
             }
         }
+        // On launch: show the library as it was last time straight away, then re-read every folder
+        // and share in the background, all at once, filling the library in as items are found.
+        viewModelScope.launch {
+            val initial = settingsRepo.settingsFlow.first()
+            _settings.value = initial
+            restoreCachedLibrary(initial)
+            scanLocal()
+            scanNetwork()
+        }
+    }
+
+    /** The library from the last run (only folders/shares still configured), shown before the scan. */
+    private suspend fun restoreCachedLibrary(settings: AppSettings) {
+        val cached = runCatching { itemCache.load().values }.getOrNull() ?: return
+        if (cached.isEmpty()) return
+        val folderIds = settings.localFolders.mapTo(HashSet()) { it.id }
+        val shareIds = settings.networkShares.mapTo(HashSet()) { it.id }
+        if (_localItems.value.isEmpty()) {
+            _localItems.value = cached.filter {
+                it.sourceType == MediaSourceType.LOCAL && (if (folderIds.isEmpty()) it.folderId == null else it.folderId in folderIds)
+            }
+        }
+        if (_networkItems.value.isEmpty()) {
+            _networkItems.value = cached.filter { it.sourceType == MediaSourceType.NETWORK && it.shareId in shareIds }
+        }
+    }
+
+    /**
+     * Runs [scan], adding what it reports to [target] a few times a second — merged with what the
+     * library (or the cache) already knew about each item, so fetched artwork/info is kept. Returns
+     * how many items it found.
+     */
+    private suspend fun streamScan(
+        target: MutableStateFlow<List<MediaItem>>,
+        cache: Map<String, MediaItem>,
+        scan: suspend (onBatch: (List<MediaItem>) -> Unit) -> Unit
+    ): Int = coroutineScope {
+        val buffer = ConcurrentLinkedQueue<MediaItem>()
+        val count = AtomicInteger()
+        fun flush() {
+            val batch = ArrayList<MediaItem>()
+            while (true) batch += buffer.poll() ?: break
+            if (batch.isEmpty()) return
+            target.update { list ->
+                val current = list.associateBy { it.id }
+                val known = batch.mapNotNull { b -> (current[b.id] ?: cache[b.id])?.let { b.id to it } }.toMap()
+                val merged = itemCache.mergeWithCache(batch, known)
+                val byId = merged.associateBy { it.id }
+                list.map { byId[it.id] ?: it } + merged.filter { it.id !in current }
+            }
+        }
+        val ticker = launch {
+            while (true) {
+                delay(300)
+                flush()
+            }
+        }
+        try {
+            scan { batch ->
+                buffer.addAll(batch)
+                count.addAndGet(batch.size)
+                _scanFound.update { it + batch.size }
+            }
+        } finally {
+            ticker.cancel()
+            flush()
+        }
+        count.get()
+    }
+
+    /** Drops [target]'s items from one folder/share that a complete scan of it didn't find. */
+    private fun prune(target: MutableStateFlow<List<MediaItem>>, seenIds: Set<String>, belongs: (MediaItem) -> Boolean) {
+        target.update { list -> list.filter { !belongs(it) || it.id in seenIds } }
+    }
+
+    private suspend fun saveLibraryCache() {
+        runCatching { itemCache.save(_localItems.value + _networkItems.value) }
     }
 
     /** Other devices using the same mailbox share, most recently seen first. */
@@ -242,28 +334,63 @@ class MediaLibraryViewModel : ViewModel() {
 
     /**
      * Scoped to the configured folders when there are any; falls back to a whole-device
-     * MediaStore scan otherwise. Merges in previously-fetched artwork/title/year from the
-     * on-device cache (keyed by each item's stable, path-derived id) — without this, a fresh
-     * scan's items (which never carry that data themselves) would silently lose everything
-     * "Fetch artwork & info" had already found, on every rescan and every app restart.
+     * MediaStore scan otherwise. Every folder is read at the same time, in the background, and the
+     * library fills in as items are found — merged with previously-fetched artwork/title/year
+     * (keyed by each item's stable, path-derived id) so a rescan never loses what "Fetch artwork &
+     * info" found. Items that are gone are only dropped once their folder was read in full, so a
+     * folder that can't be read right now keeps its items. Runs at launch, from Settings' Scan
+     * button ([announce]: say how many were found) and after a copy/download into a folder.
      */
-    /** [announce]: say how many items were found (when you pressed Scan in Settings). */
     fun scanLocal(announce: Boolean = false) {
+        if (_isScanningLocal.value) {
+            if (announce) showMessage("Already scanning — the Library fills in as it goes.") else rescanLocalAfter = true
+            return
+        }
+        _isScanningLocal.value = true
+        if (!_isScanningNetwork.value) _scanFound.value = 0
         viewModelScope.launch {
-            _isScanningLocal.value = true
             val folders = _settings.value.localFolders
-            runCatching {
+            val errors = mutableListOf<String>()
+            try {
+                val cache = runCatching { itemCache.load() }.getOrDefault(emptyMap())
+                val found: Int
                 if (folders.isEmpty()) {
-                    mediaStoreScanner.scan()
+                    val fresh = runCatching { mediaStoreScanner.scan() }
+                        .onFailure { errors += it.message ?: "Couldn't read this device's media." }
+                        .getOrNull()
+                    if (fresh != null) {
+                        _localItems.update { current -> itemCache.mergeWithCache(fresh, cache + current.associateBy { it.id }) }
+                        _scanFound.update { it + fresh.size }
+                    }
+                    found = fresh?.size ?: 0
                 } else {
-                    folders.flatMap { localFolderScanner.scan(it) }
+                    val folderIds = folders.mapTo(HashSet()) { it.id }
+                    // Items from folders since removed in Settings (or from an earlier whole-device scan).
+                    _localItems.update { list -> list.filter { it.folderId in folderIds } }
+                    found = streamScan(_localItems, cache) { onBatch ->
+                        coroutineScope {
+                            folders.map { folder ->
+                                async {
+                                    runCatching { localFolderScanner.scan(folder, onBatch) }
+                                        .onSuccess { result ->
+                                            if (result.complete) prune(_localItems, result.seenIds) { it.folderId == folder.id }
+                                            else synchronized(errors) { errors += "Couldn't read ${folder.label}." }
+                                        }
+                                        .onFailure { e -> synchronized(errors) { errors += "${folder.label}: ${e.message}" } }
+                                }
+                            }.awaitAll()
+                        }
+                    }
                 }
-            }.onSuccess { fresh ->
-                val cache = itemCache.load()
-                _localItems.value = itemCache.mergeWithCache(fresh, cache)
-                if (announce) showMessage("Found ${fresh.size} item${if (fresh.size == 1) "" else "s"}. They're in the Library.")
-            }.onFailure { _errorMessage.value = it.message }
-            _isScanningLocal.value = false
+                saveLibraryCache()
+                if (announce) showMessage(errors.firstOrNull() ?: "Found $found item${if (found == 1) "" else "s"}. They're in the Library.")
+            } finally {
+                _isScanningLocal.value = false
+            }
+            if (rescanLocalAfter) {
+                rescanLocalAfter = false
+                scanLocal()
+            }
         }
     }
 
@@ -369,18 +496,46 @@ class MediaLibraryViewModel : ViewModel() {
 
     fun removeLocalFolder(id: String) = viewModelScope.launch { settingsRepo.removeLocalFolder(id) }
 
-    /** Merges in previously-fetched artwork/title/year from the on-device cache — see scanLocal(). */
+    /**
+     * Reads every share at the same time, in the background, filling the library in as items are
+     * found (merged with fetched info, see scanLocal()). A share that can't be reached keeps the
+     * items it had; at launch that stays quiet (away from home, say), from Settings it's reported.
+     */
     fun scanNetwork(announce: Boolean = false) {
+        if (_isScanningNetwork.value) {
+            if (announce) showMessage("Already scanning — the Library fills in as it goes.") else rescanNetworkAfter = true
+            return
+        }
+        _isScanningNetwork.value = true
+        if (!_isScanningLocal.value) _scanFound.value = 0
         viewModelScope.launch {
-            _isScanningNetwork.value = true
-            runCatching { _settings.value.networkShares.flatMap { share -> smbBrowser.scan(share) } }
-                .onSuccess { fresh ->
-                    val cache = itemCache.load()
-                    _networkItems.value = itemCache.mergeWithCache(fresh, cache)
-                    if (announce) showMessage("Found ${fresh.size} item${if (fresh.size == 1) "" else "s"}. They're in the Library.")
+            val shares = _settings.value.networkShares
+            val errors = mutableListOf<String>()
+            try {
+                val cache = runCatching { itemCache.load() }.getOrDefault(emptyMap())
+                val shareIds = shares.mapTo(HashSet()) { it.id }
+                // Items from shares since removed in Settings.
+                _networkItems.update { list -> list.filter { it.shareId in shareIds } }
+                val found = streamScan(_networkItems, cache) { onBatch ->
+                    coroutineScope {
+                        shares.map { share ->
+                            async {
+                                runCatching { smbBrowser.scan(share, onBatch) }
+                                    .onSuccess { result -> prune(_networkItems, result.seenIds) { it.shareId == share.id } }
+                                    .onFailure { e -> synchronized(errors) { errors += "${share.label}: ${e.message ?: "couldn't connect"}" } }
+                            }
+                        }.awaitAll()
+                    }
                 }
-                .onFailure { _errorMessage.value = it.message }
-            _isScanningNetwork.value = false
+                saveLibraryCache()
+                if (announce) showMessage(errors.firstOrNull() ?: "Found $found item${if (found == 1) "" else "s"}. They're in the Library.")
+            } finally {
+                _isScanningNetwork.value = false
+            }
+            if (rescanNetworkAfter) {
+                rescanNetworkAfter = false
+                scanNetwork()
+            }
         }
     }
 

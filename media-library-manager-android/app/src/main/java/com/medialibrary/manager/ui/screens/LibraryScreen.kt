@@ -1,6 +1,7 @@
 package com.medialibrary.manager.ui.screens
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -21,6 +22,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -53,6 +55,9 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, isTv: Boolean, onPickImage: 
     val copyProgress by viewModel.copyProgress.collectAsState()
     var copyingFrom by remember { mutableStateOf<MediaItem?>(null) }
     val castTarget by viewModel.castTarget.collectAsState()
+    val scanningLocal by viewModel.isScanningLocal.collectAsState()
+    val scanningNetwork by viewModel.isScanningNetwork.collectAsState()
+    val scanFound by viewModel.scanFound.collectAsState()
     var filter by remember { mutableStateOf("") }
     var selectedTags by remember { mutableStateOf(listOf<String>()) }
 
@@ -82,9 +87,22 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, isTv: Boolean, onPickImage: 
     }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = if (isTv) 8.dp else 12.dp)) {
+        // The library re-reads its folders and shares in the background (at launch, and after a
+        // scan/copy/download) and fills in as it goes.
+        if (scanningLocal || scanningNetwork) {
+            Row(Modifier.padding(bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    if (scanFound > 0) "Scanning… $scanFound found" else "Scanning…",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
         if (settings.localFolders.isEmpty() && settings.networkShares.isEmpty()) {
             Text(
-                "Nothing configured yet. Add a local folder or an SMB share in Settings, then scan it there.",
+                "Nothing configured yet. Add a local folder or an SMB share in Settings — it's scanned automatically.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
