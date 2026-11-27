@@ -1,5 +1,22 @@
 package com.medialibrary.manager.ui.screens
 
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridScope
+import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
+import androidx.compose.ui.text.input.ImeAction
+import com.medialibrary.manager.model.SearchResultItem
+import com.medialibrary.manager.model.SiteProfile
+import com.medialibrary.manager.ui.components.SearchResultRow
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -60,6 +77,74 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, isTv: Boolean, onPickImage: 
     val scanFound by viewModel.scanFound.collectAsState()
     var filter by remember { mutableStateOf("") }
     var selectedTags by remember { mutableStateOf(listOf<String>()) }
+    // Search sites: the term last sent with the Search button (null = no site search shown), and
+    // which sites to ask (empty = all of them).
+    var webQuery by remember { mutableStateOf<String?>(null) }
+    var webSites by remember { mutableStateOf(setOf<String>()) }
+    var sendingResult by remember { mutableStateOf<SearchResultItem?>(null) }
+    val webResults by viewModel.searchResults.collectAsState()
+    val searching by viewModel.isSearching.collectAsState()
+    val downloadingUrl by viewModel.downloadingUrl.collectAsState()
+
+    // Typing filters the library as you go; the Search button (or the keyboard's search key) also
+    // asks the search sites, and their results are listed below the library's.
+    fun searchSites() {
+        val term = filter.trim()
+        if (term.isEmpty()) return
+        if (settings.siteProfiles.isEmpty()) {
+            viewModel.showMessage("Add a search site in Settings to search for things to download.")
+            return
+        }
+        webQuery = term
+        viewModel.search(term, webSites)
+    }
+
+    fun onSearchTextChange(text: String) {
+        filter = text
+        if (text.isBlank() && webQuery != null) {
+            webQuery = null
+            viewModel.clearSearch()
+        }
+    }
+
+    sendingResult?.let { result ->
+        com.medialibrary.manager.ui.components.SendToDialog(
+            viewModel = viewModel,
+            source = result.downloadUrl,
+            title = result.title,
+            onDismiss = { sendingResult = null },
+            onSent = { message ->
+                sendingResult = null
+                viewModel.showMessage(message)
+            }
+        )
+    }
+
+    val query = webQuery
+    val siteResults: (LazyGridScope.() -> Unit)? = if (isTv || query == null) null else fun LazyGridScope.() {
+        item(key = "web-header", span = { GridItemSpan(maxLineSpan) }) {
+            SiteSearchHeader(
+                query = query,
+                searching = searching,
+                count = webResults.size,
+                sites = settings.siteProfiles,
+                selected = webSites,
+                onToggleSite = { id ->
+                    webSites = if (id in webSites) webSites - id else webSites + id
+                    viewModel.search(query, webSites)
+                }
+            )
+        }
+        itemsIndexed(webResults, key = { i, r -> "web:$i:${r.downloadUrl}" }, span = { _, _ -> GridItemSpan(maxLineSpan) }) { _, result ->
+            SearchResultRow(
+                result = result,
+                downloadingUrl = downloadingUrl,
+                onDownload = { viewModel.download(it) },
+                onOpenInOtherApp = { viewModel.openInOtherApp(it) },
+                onSendTo = if (settings.remoteShareId.isNotBlank()) ({ sendingResult = it }) else null
+            )
+        }
+    }
 
     val filterRequester = remember { FocusRequester() }
 
@@ -138,23 +223,28 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, isTv: Boolean, onPickImage: 
                     AppTextField(
                         value = filter,
                         onValueChange = { filter = it },
-                        placeholder = { Text("Filter") },
+                        placeholder = { Text("Search") },
                         singleLine = true,
                         modifier = Modifier.width(280.dp).focusRequester(filterRequester)
                     )
                 } else {
-                    // Phone: the Cast button sits next to the filter.
+                    // Phone: Search (filters the library as you type) + search-sites button + Cast.
                     androidx.compose.foundation.layout.Row(
                         verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         AppTextField(
                             value = filter,
-                            onValueChange = { filter = it },
-                            placeholder = { Text("Filter") },
+                            onValueChange = ::onSearchTextChange,
+                            placeholder = { Text("Search") },
                             singleLine = true,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                            keyboardActions = KeyboardActions(onSearch = { searchSites() }),
                             modifier = Modifier.weight(1f).focusRequester(filterRequester)
                         )
+                        IconButton(onClick = { searchSites() }, enabled = filter.isNotBlank() && !searching) {
+                            Icon(Icons.Filled.Search, contentDescription = "Search sites")
+                        }
                         com.medialibrary.manager.ui.components.CastButton(viewModel)
                     }
                 }
@@ -167,9 +257,50 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, isTv: Boolean, onPickImage: 
                 )
             },
             topBarFirst = filterRequester,
+            gridFooter = siteResults,
             modifier = Modifier.weight(1f)
         )
         if (!isTv) com.medialibrary.manager.ui.components.CastBar(viewModel, Modifier.padding(top = 6.dp))
     }
 }
 
+/** Heading above the search-site results: what was searched, how it went, and which sites to ask. */
+@Composable
+private fun SiteSearchHeader(
+    query: String,
+    searching: Boolean,
+    count: Int,
+    sites: List<SiteProfile>,
+    selected: Set<String>,
+    onToggleSite: (String) -> Unit
+) {
+    Column(Modifier.fillMaxWidth().padding(top = 12.dp)) {
+        HorizontalDivider()
+        Spacer(Modifier.height(10.dp))
+        Text("From your search sites", style = MaterialTheme.typography.titleSmall)
+        Text(
+            when {
+                searching -> "Searching for \"$query\"…"
+                count == 0 -> "No results for \"$query\"."
+                else -> "$count result${if (count == 1) "" else "s"} for \"$query\""
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        if (sites.size > 1) {
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                sites.forEach { site ->
+                    FilterChip(selected = site.id in selected, onClick = { onToggleSite(site.id) }, label = { Text(site.label) })
+                }
+            }
+            Text(
+                if (selected.isEmpty()) "Asking every site — tap to pick some." else "Asking ${selected.size} of ${sites.size} sites.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}

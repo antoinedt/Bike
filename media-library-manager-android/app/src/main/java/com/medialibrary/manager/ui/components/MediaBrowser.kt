@@ -1,5 +1,6 @@
 package com.medialibrary.manager.ui.components
 
+import androidx.compose.foundation.lazy.grid.LazyGridScope
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 
@@ -98,6 +99,8 @@ fun MediaBrowser(
     topBarFirst: FocusRequester? = null,
     /** Attached (by the caller) to the first *enabled* scan button, or null if none is enabled. */
     bottomBarFirst: FocusRequester? = null,
+    /** Full-width rows after the library tiles, in the same scroll (search-site results). */
+    gridFooter: (LazyGridScope.() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var path by remember { mutableStateOf(listOf<String>()) }
@@ -218,6 +221,7 @@ fun MediaBrowser(
             onCopy = onCopy,
             copyingItemId = copyingItemId,
             copyProgress = copyProgress,
+            footer = gridFooter,
             modifier = Modifier.weight(1f).fillMaxWidth()
         )
         Spacer(Modifier.height(4.dp))

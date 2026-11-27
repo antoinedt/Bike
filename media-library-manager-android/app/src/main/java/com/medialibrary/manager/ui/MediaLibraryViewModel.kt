@@ -561,17 +561,35 @@ class MediaLibraryViewModel : ViewModel() {
 
     fun removeSiteProfile(id: String) = viewModelScope.launch { settingsRepo.removeSiteProfile(id) }
 
+    private var searchJob: kotlinx.coroutines.Job? = null
+    private var searchSeq = 0
+
+    /** Searches the configured sites (all of them when [profileIds] is empty); a newer search replaces a running one. */
     fun search(query: String, profileIds: Set<String>) {
         if (query.isBlank()) return
-        viewModelScope.launch {
+        searchJob?.cancel()
+        val seq = ++searchSeq
+        searchJob = viewModelScope.launch {
             _isSearching.value = true
+            _searchResults.value = emptyList()
             val all = _settings.value.siteProfiles
             val profiles = if (profileIds.isEmpty()) all else all.filter { it.id in profileIds }
-            runCatching { siteSearch.searchSites(profiles, query) }
-                .onSuccess { _searchResults.value = it }
-                .onFailure { _errorMessage.value = it.message }
-            _isSearching.value = false
+            try {
+                runCatching { siteSearch.searchSites(profiles, query) }
+                    .onSuccess { _searchResults.value = it }
+                    .onFailure { if (it !is kotlinx.coroutines.CancellationException) _errorMessage.value = it.message }
+            } finally {
+                if (seq == searchSeq) _isSearching.value = false
+            }
         }
+    }
+
+    /** The search box was cleared: drop the search-site results. */
+    fun clearSearch() {
+        searchSeq++
+        searchJob?.cancel()
+        _searchResults.value = emptyList()
+        _isSearching.value = false
     }
 
     /** Downloads a search result in the app (Downloads tab). */

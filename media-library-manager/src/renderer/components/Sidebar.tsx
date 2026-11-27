@@ -3,7 +3,6 @@ import { Icon, type IconName } from "./Icon.js";
 
 const ITEMS: { id: Tab; label: string; icon: IconName }[] = [
   { id: "library", label: "Library", icon: "library" },
-  { id: "search", label: "Search", icon: "search" },
   { id: "tv", label: "TV", icon: "tv" },
   { id: "downloads", label: "Downloads", icon: "download" },
   { id: "settings", label: "Settings", icon: "settings" }

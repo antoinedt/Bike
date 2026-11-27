@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyGridState
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridScope
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -119,11 +121,13 @@ fun MediaGrid(
     copyingItemId: String? = null,
     /** 0f..1f for the item being copied; null while its size is unknown (shows an indeterminate spinner instead of a percentage). */
     copyProgress: Float? = null,
+    /** Full-width rows after the tiles, in the same scroll (the Library's search-site results). */
+    footer: (LazyGridScope.() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var editingItem by remember { mutableStateOf<MediaItem?>(null) }
 
-    if (items.isEmpty() && folders.isEmpty()) {
+    if (items.isEmpty() && folders.isEmpty() && footer == null) {
         Box(modifier.fillMaxWidth().padding(24.dp)) {
             Text("No media found yet. Try a scan.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -152,6 +156,15 @@ fun MediaGrid(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
+        if (items.isEmpty() && folders.isEmpty()) {
+            item(key = "library-empty", span = { GridItemSpan(maxLineSpan) }) {
+                Text(
+                    "Nothing in your library matches.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(8.dp)
+                )
+            }
+        }
         itemsIndexed(folders, key = { _, name -> "folder:$name" }) { index, name ->
             Card(onClick = { onOpenFolder(name) }, modifier = rememberTileModifier(gridFocus, index)) {
                 Column(
@@ -241,6 +254,7 @@ fun MediaGrid(
                 }
             }
         }
+        footer?.invoke(this)
     }
 
     editingItem?.let { item ->

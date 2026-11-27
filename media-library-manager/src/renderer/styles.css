@@ -1095,3 +1095,23 @@ body {
 .tv-player-error {
   color: var(--danger);
 }
+
+/* Search-site results, listed under the Library's own matches. */
+.site-search {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.site-search-header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.site-search-header h2 {
+  margin: 0;
+  font-size: 16px;
+}

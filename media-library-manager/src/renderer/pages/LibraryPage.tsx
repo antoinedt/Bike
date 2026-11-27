@@ -4,6 +4,8 @@ import FilterBar from "../components/FilterBar.js";
 import CastDialog from "../components/CastDialog.js";
 import CopyDialog from "../components/CopyDialog.js";
 import MediaBrowser from "../components/MediaBrowser.js";
+import { IconButton } from "../components/Icon.js";
+import SiteSearchResults, { type SiteSearchRequest } from "../components/SiteSearchResults.js";
 import StreamPlayer from "../components/StreamPlayer.js";
 
 interface ActiveStream {
@@ -12,12 +14,14 @@ interface ActiveStream {
   token: string;
 }
 
-export default function LibraryPage({ settings }: { settings: AppSettings }) {
+export default function LibraryPage({ settings, onOpenDownloads }: { settings: AppSettings; onOpenDownloads: () => void }) {
   const [copying, setCopying] = useState<MediaItem | null>(null);
   const [casting, setCasting] = useState<MediaItem | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [items, setItems] = useState<MediaItem[]>([]);
   const [filter, setFilter] = useState("");
+  // The term last sent to the search sites with the Search button (null: no site search shown).
+  const [siteSearch, setSiteSearch] = useState<SiteSearchRequest | null>(null);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [stream, setStream] = useState<ActiveStream | null>(null);
@@ -97,6 +101,24 @@ export default function LibraryPage({ settings }: { settings: AppSettings }) {
     }
   }
 
+  // Typing filters the library as you go; Search (or Enter) also asks your search sites, whose
+  // results are listed below the library's matches.
+  function searchSites() {
+    const query = filter.trim();
+    if (!query) return;
+    if (settings.siteProfiles.length === 0) {
+      setNotice("Add a search site in Settings to search for things to download.");
+      return;
+    }
+    setNotice(null);
+    setSiteSearch((prev) => ({ query, id: (prev?.id ?? 0) + 1 }));
+  }
+
+  function onSearchTextChange(text: string) {
+    setFilter(text);
+    if (!text.trim()) setSiteSearch(null);
+  }
+
   function toggleTag(tag: string) {
     setSelectedTags((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
   }
@@ -115,14 +137,22 @@ export default function LibraryPage({ settings }: { settings: AppSettings }) {
             Scanning… {scan.found > 0 ? `${scan.found} found` : ""}
           </span>
         )}
-        <div className="page-actions">
+        <form
+          className="page-actions"
+          onSubmit={(e) => {
+            e.preventDefault();
+            searchSites();
+          }}
+        >
           <input
             className="text-input"
-            placeholder="Filter…"
+            type="search"
+            placeholder="Search…"
             value={filter}
-            onChange={(e) => setFilter(e.target.value)}
+            onChange={(e) => onSearchTextChange(e.target.value)}
           />
-        </div>
+          <IconButton icon="search" label="Search your sites too" className="btn-primary" type="submit" disabled={!filter.trim()} />
+        </form>
       </div>
       {settings.localFolders.length === 0 && settings.networkShares.length === 0 && (
         <p className="hint">
@@ -154,6 +184,7 @@ export default function LibraryPage({ settings }: { settings: AppSettings }) {
         onItemUpdated={handleItemUpdated}
         onItemsChanged={setItems}
       />
+      {siteSearch && <SiteSearchResults settings={settings} request={siteSearch} onOpenDownloads={onOpenDownloads} />}
       {casting && <CastDialog item={casting} onClose={() => setCasting(null)} />}
       {copying && (
         <CopyDialog

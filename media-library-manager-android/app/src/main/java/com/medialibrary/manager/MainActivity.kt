@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material.icons.filled.VideoLibrary
@@ -51,7 +50,6 @@ import com.medialibrary.manager.ui.components.LocalIsTv
 import com.medialibrary.manager.ui.components.PlayerOverlay
 import com.medialibrary.manager.ui.screens.DownloadsScreen
 import com.medialibrary.manager.ui.screens.LibraryScreen
-import com.medialibrary.manager.ui.screens.SearchScreen
 import com.medialibrary.manager.ui.screens.SettingsScreen
 import com.medialibrary.manager.ui.screens.TvScreen
 import com.medialibrary.manager.ui.theme.MediaLibraryTheme
@@ -60,7 +58,6 @@ private data class BottomTab(val route: String, val label: String, val icon: Ima
 
 private val TABS = listOf(
     BottomTab("library", "Library", Icons.Filled.VideoLibrary),
-    BottomTab("search", "Search", Icons.Filled.Search),
     BottomTab("tv", "TV", Icons.Filled.Tv),
     BottomTab("downloads", "Downloads", Icons.Filled.Download),
     BottomTab("settings", "Settings", Icons.Filled.Settings)
@@ -211,10 +208,10 @@ private fun MediaLibraryApp(
         }
     }
 
-    // On a TV: no site search (nothing to hand a torrent to, and typing queries with a remote is
-    // painful), and the tabs sit in a side rail instead of a bottom bar so the media grid gets
-    // most of the screen's height.
-    val tabs = if (isTv) TABS.filter { it.route != "search" } else TABS
+    // Site search lives in the Library (its Search button; not on a TV, where there's nothing to
+    // hand a torrent to and typing with a remote is painful). On a TV the tabs sit in a side rail
+    // instead of a bottom bar so the media grid gets most of the screen's height.
+    val tabs = TABS
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
     val goTo: (String) -> Unit = { route ->
@@ -259,7 +256,6 @@ private fun MediaLibraryApp(
                 modifier = Modifier.weight(1f).fillMaxHeight()
             ) {
                 composable("library") { LibraryScreen(viewModel, isTv, onPickImage) }
-                if (!isTv) composable("search") { SearchScreen(viewModel) }
                 composable("tv") { TvScreen(isTv) }
                 composable("downloads") { DownloadsScreen(viewModel, onOpenTorrentFile) }
                 composable("settings") { SettingsScreen(viewModel, onPickFolder, onChangeFolder, showSearchSites = !isTv) }
