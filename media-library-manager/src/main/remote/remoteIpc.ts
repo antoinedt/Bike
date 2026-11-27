@@ -1,5 +1,6 @@
 import { BrowserWindow, ipcMain, Notification } from "electron";
 import { IPC } from "../../shared/ipc.js";
+import { log } from "../log.js";
 import type { RemoteDeviceInfo } from "../../shared/types.js";
 import { getSettings, updateRemoteSettings } from "../settings.js";
 import { addTorrentHere } from "../torrent/torrentIpc.js";
@@ -21,11 +22,18 @@ function notify(title: string, body: string): void {
   if (Notification.isSupported()) new Notification({ title, body }).show();
 }
 
+let lastMailbox = "";
+
 /** Runs `fn` against the configured mailbox share, or returns null when the feature is off. */
 async function withQueue<T>(fn: (queue: RemoteQueue) => Promise<T>): Promise<T | null> {
   const settings = getSettings();
   let mailbox: Mailbox;
   let close = () => {};
+  const where = settings.remoteLocalFolder || settings.networkShares.find((s) => s.id === settings.remoteShareId)?.label || "";
+  if (where && where !== lastMailbox) {
+    lastMailbox = where;
+    log("send-to", `this PC (${settings.deviceName}, ${settings.deviceId}) uses the mailbox in ${where}`);
+  }
   if (settings.remoteLocalFolder) {
     mailbox = localMailbox(settings.remoteLocalFolder);
   } else {
@@ -38,6 +46,7 @@ async function withQueue<T>(fn: (queue: RemoteQueue) => Promise<T>): Promise<T |
   try {
     const queue = new RemoteQueue(mailbox, { id: settings.deviceId, name: settings.deviceName, platform: "windows" }, {
       onJob: async (job) => {
+        log("send-to", `received "${job.name}" from ${job.fromName}`);
         const source = job.magnet ?? Buffer.from(job.torrent ?? "", "base64");
         const added = await addTorrentHere(source);
         notify("Download started", `${added.name} — sent from ${job.fromName}`);
@@ -61,6 +70,7 @@ async function withQueue<T>(fn: (queue: RemoteQueue) => Promise<T>): Promise<T |
 export function registerRemoteHandlers(): void {
   let lastHeartbeat = 0;
   let busy = false;
+  let lastError = "";
   const tick = async () => {
     if (busy) return;
     busy = true;
@@ -72,8 +82,13 @@ export function registerRemoteHandlers(): void {
         }
         await queue.poll();
       });
+      if (lastError) log("send-to", "mailbox reachable again");
+      lastError = "";
     } catch (err) {
-      console.error("[remote] poll failed:", (err as Error).message);
+      const message = (err as Error).message;
+      // Once per distinct failure, not every 8 s.
+      if (message !== lastError) log("send-to", `checking the mailbox failed: ${message}`);
+      lastError = message;
     } finally {
       busy = false;
     }
@@ -101,8 +116,12 @@ export function registerRemoteHandlers(): void {
       typeof resolved === "string"
         ? { magnet: resolved, name: title || magnetName(resolved) || "Download" }
         : { torrent: resolved, name: title || "Download" };
-    const sent = await withQueue((queue) => queue.send(deviceId, payload));
+    const sent = await withQueue((queue) => queue.send(deviceId, payload)).catch((err: Error) => {
+      log("send-to", `sending "${payload.name}" to ${deviceId} failed: ${err.message}`);
+      throw err;
+    });
     if (!sent) throw new Error("Pick a share or folder for “Send to another device” in Settings first.");
+    log("send-to", `sent "${sent.name}" to ${deviceId}`);
     return sent.name;
   });
 }

@@ -53,8 +53,14 @@ class RemoteManager(
         started = true
         scope.launch {
             settingsRepo.ensureDeviceId()
+            var lastError: String? = null
             while (true) {
-                runCatching { tick() }
+                // Log a failure once (not every 8 s), and when it recovers.
+                val error = runCatching { tick() }.exceptionOrNull()?.let { "${it.javaClass.simpleName}: ${it.message}" }
+                if (error != lastError) {
+                    com.medialibrary.manager.log.AppLog.log("send-to", if (error != null) "checking the mailbox failed: $error" else "mailbox reachable again")
+                    lastError = error
+                }
                 delay(POLL_MS)
             }
         }
@@ -63,7 +69,9 @@ class RemoteManager(
     /** Call after changing the name or share, so other devices see the change right away. */
     fun refreshNow() {
         lastHeartbeat = 0
-        scope.launch { runCatching { tick() } }
+        scope.launch {
+            runCatching { tick() }.onFailure { com.medialibrary.manager.log.AppLog.log("send-to", "checking the mailbox failed: ${it.javaClass.simpleName}: ${it.message}") }
+        }
     }
 
     private suspend fun tick() = lock.withLock {
@@ -88,14 +96,22 @@ class RemoteManager(
         val resolved = TorrentEngine.resolveSource(source)
         val magnet = resolved as? String
         val name = title?.takeIf { it.isNotBlank() } ?: magnet?.let { RemoteQueue.magnetName(it) } ?: "Download"
-        val job = withQueue { it.send(deviceId, magnet, resolved as? ByteArray, name) } ?: throw IllegalStateException(NOT_SET_UP)
+        val job = runCatching { withQueue { it.send(deviceId, magnet, resolved as? ByteArray, name) } ?: throw IllegalStateException(NOT_SET_UP) }
+            .onFailure { com.medialibrary.manager.log.AppLog.log("send-to", "sending \"$name\" to $deviceId failed: ${it.javaClass.simpleName}: ${it.message}") }
+            .getOrThrow()
+        com.medialibrary.manager.log.AppLog.log("send-to", "sent \"${job.name}\" to $deviceId")
         job.name
     }
 
     private suspend fun <T> withQueue(block: (RemoteQueue) -> T): T? {
         val settings = settingsRepo.current()
         val share = settings.networkShares.find { it.id == settings.remoteShareId } ?: return null
+        if (lastMailbox != share.host + "/" + share.share + "/" + share.subPath) {
+            lastMailbox = share.host + "/" + share.share + "/" + share.subPath
+            com.medialibrary.manager.log.AppLog.log("send-to", "this device (${deviceName(settings)}, ${settings.deviceId}) uses the mailbox on smb://$lastMailbox")
+        }
         val queue = RemoteQueue(SmbMailbox(share), me(settings), onJob = { job ->
+            com.medialibrary.manager.log.AppLog.log("send-to", "received \"${job.name}\" from ${job.fromName}")
             val added = runBlocking {
                 if (job.magnet != null) transfers.addTorrent(job.magnet)
                 else transfers.addTorrent(java.util.Base64.getDecoder().decode(job.torrent))
@@ -112,6 +128,8 @@ class RemoteManager(
         })
         return block(queue)
     }
+
+    @Volatile private var lastMailbox: String? = null
 
     private fun me(settings: AppSettings) = Me(settings.deviceId, deviceName(settings), platform)
 
