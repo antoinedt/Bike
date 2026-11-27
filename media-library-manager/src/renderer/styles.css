@@ -1136,3 +1136,22 @@ body {
   overflow-y: auto;
   margin: 8px 0;
 }
+
+.update-banner {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  border-radius: 8px;
+  background: var(--accent, #3b82f6);
+  color: #fff;
+}
+.version-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}

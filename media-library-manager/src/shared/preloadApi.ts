@@ -6,6 +6,7 @@ import type {
   CopyTarget,
   DownloadProgressEvent,
   LibraryScanStatus,
+  UpdateStatus,
   LocalFolder,
   MediaItem,
   NetworkShare,
@@ -125,6 +126,14 @@ export interface PreloadApi {
   getLibraryScanStatus(): Promise<LibraryScanStatus>;
   /** The app's version, e.g. "0.2.36" (the last number is the build). */
   getAppVersion(): Promise<string>;
+  getUpdateStatus(): Promise<UpdateStatus>;
+  /** Checks GitHub for a newer build and downloads it; resolves with the resulting status. */
+  checkForUpdate(): Promise<UpdateStatus>;
+  /** Quits, installs the downloaded update and starts the new version. */
+  installUpdateNow(): Promise<void>;
+  /** Install the downloaded update when the app is next closed instead. */
+  installUpdateLater(): Promise<void>;
+  onUpdateStatus(callback: (status: UpdateStatus) => void): () => void;
   /** Live scan status. Returns an unsubscribe function. */
   onLibraryScanStatus(callback: (status: LibraryScanStatus) => void): () => void;
   /** "Copy to…": queues a copy of a library item (local or network) into a folder on this computer or a share. */

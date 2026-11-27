@@ -462,16 +462,34 @@ private fun ProfilesSection(profiles: List<SiteProfile>, viewModel: MediaLibrary
     }
 }
 
-/** "OmniPlay version 0.2.46" — the last number is the build. */
+/** "OmniPlay version 0.2.46" (the last number is the build), update status and "Check for updates". */
 @Composable
 private fun VersionLine() {
     val context = androidx.compose.ui.platform.LocalContext.current
-    val version = remember {
-        runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "?"
+    val version = remember { com.medialibrary.manager.update.AppUpdater.currentVersion(context) }
+    val update by com.medialibrary.manager.update.AppUpdater.state.collectAsState()
+    val status = when (val s = update) {
+        com.medialibrary.manager.update.UpdateState.Checking -> "Checking for updates…"
+        com.medialibrary.manager.update.UpdateState.UpToDate -> "You have the latest version."
+        is com.medialibrary.manager.update.UpdateState.Available -> "${s.version} is available."
+        is com.medialibrary.manager.update.UpdateState.Downloading -> "Downloading ${s.version}…"
+        is com.medialibrary.manager.update.UpdateState.NeedsPermission -> "Allow installs from OmniPlay to update."
+        is com.medialibrary.manager.update.UpdateState.Installing -> "Installing ${s.version}…"
+        is com.medialibrary.manager.update.UpdateState.Failed -> s.message
+        com.medialibrary.manager.update.UpdateState.Idle -> ""
     }
-    Text(
-        "OmniPlay version $version",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
-    )
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            "OmniPlay version $version",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        if (status.isNotEmpty()) Text(status, style = MaterialTheme.typography.bodySmall)
+        val available = update as? com.medialibrary.manager.update.UpdateState.Available
+        if (available != null) {
+            Button(onClick = { com.medialibrary.manager.update.AppUpdater.update(context) }) { Text("Update to ${available.version}") }
+        } else {
+            OutlinedButton(onClick = { com.medialibrary.manager.update.AppUpdater.check(context) }) { Text("Check for updates") }
+        }
+    }
 }

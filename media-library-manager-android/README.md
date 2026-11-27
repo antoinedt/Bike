@@ -118,6 +118,13 @@ TV itself). The login is saved like the Fizz app does: a network error never wip
 session is renewed automatically, and you only sign in again if Fizz rejects the saved login (or
 you press **Sign out**). Unofficial, for your own account.
 
+## Updates
+
+Settings shows the version (`0.2.<build number>`). At launch the app checks this repo's GitHub
+releases (`mlm-build-<N>`); if there's a newer build it offers to update, downloads the APK and
+opens Android's install screen (Android always asks you to confirm; the first time it also asks
+you to allow installs from OmniPlay). Settings → Check for updates does the same on demand.
+
 ## Legal / scope note
 
 Same as the desktop app: the app includes a BitTorrent client (libtorrent) but no tracker or

@@ -4,6 +4,7 @@ import CastBar from "./components/CastBar.js";
 import Sidebar from "./components/Sidebar.js";
 import DownloadsPage from "./pages/DownloadsPage.js";
 import LibraryPage from "./pages/LibraryPage.js";
+import UpdateBanner from "./components/UpdateBanner.js";
 import SettingsPage from "./pages/SettingsPage.js";
 import TvPage from "./pages/TvPage.js";
 
@@ -36,6 +37,7 @@ export default function App() {
     <div className="app-shell">
       <Sidebar active={tab} onSelect={setTab} />
       <main className="app-content">
+        <UpdateBanner />
         {!settings ? (
           <div className="empty-state">Loading…</div>
         ) : tab === "library" ? (

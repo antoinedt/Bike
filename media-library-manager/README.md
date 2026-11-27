@@ -46,6 +46,13 @@ page. The login is saved like the Fizz app does (encrypted with Windows' key sto
 error never wipes it, an expired session is renewed automatically, and you only sign in again if
 Fizz rejects the saved login (or you press **Sign out**). Unofficial, for your own account.
 
+## Updates
+
+Settings shows the version (`0.2.<build number>`). At launch the installed Windows app checks
+this repo's GitHub releases (`mlm-win-build-<N>`); if there's a newer build it downloads the
+installer in the background, then restarts into it after a 10-second notice ("Later" installs it
+when you close the app). Settings → Check for updates does the same on demand.
+
 ## Legal / scope note
 
 The app includes a BitTorrent client ([WebTorrent](https://webtorrent.io/)) but no tracker or

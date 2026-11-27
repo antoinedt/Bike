@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { registerIpcHandlers } from "./ipc.js";
 import { scanLibraryInBackground } from "./library/libraryScan.js";
+import { checkForUpdateAtLaunch, registerUpdateHandlers } from "./update/autoUpdate.js";
 import { setWidevineStatus } from "./widevineState.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -109,10 +110,13 @@ app.whenReady()
     // ready immediately, so don't make the window wait on whenReady() (it can reject for ~60s).
     void initWidevine();
     registerIpcHandlers();
+    registerUpdateHandlers();
     createWindow();
     // Refresh the library in the background: it shows what was there last time straight away
     // and fills in / drops items as every folder and share is re-read in parallel.
     scanLibraryInBackground();
+    // Newer build on GitHub? Download it in the background, then offer to restart.
+    checkForUpdateAtLaunch();
 
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();

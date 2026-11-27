@@ -62,6 +62,15 @@ const api = {
   },
   getLibraryScanStatus: () => ipcRenderer.invoke("library:getScanStatus"),
   getAppVersion: () => ipcRenderer.invoke("app:version"),
+  getUpdateStatus: () => ipcRenderer.invoke("update:getStatus"),
+  checkForUpdate: () => ipcRenderer.invoke("update:check"),
+  installUpdateNow: () => ipcRenderer.invoke("update:installNow"),
+  installUpdateLater: () => ipcRenderer.invoke("update:later"),
+  onUpdateStatus: (callback: (status: unknown) => void) => {
+    const listener = (_e: unknown, status: unknown) => callback(status);
+    ipcRenderer.on("update:status", listener);
+    return () => ipcRenderer.removeListener("update:status", listener);
+  },
   onLibraryScanStatus: (callback: (status: unknown) => void) => {
     const listener = (_e: unknown, status: unknown) => callback(status);
     ipcRenderer.on("library:scanStatus", listener);

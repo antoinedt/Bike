@@ -223,6 +223,18 @@ export interface CastTarget {
   controlUrl?: string;
 }
 
+/** Self-update from GitHub releases (Windows app). */
+export interface UpdateStatus {
+  state: "idle" | "checking" | "up-to-date" | "downloading" | "ready" | "installing" | "error";
+  /** This app's version, e.g. "0.2.36". */
+  current: string;
+  /** The newest published version, once known. */
+  latest?: string;
+  /** 0..1 while downloading. */
+  progress?: number;
+  error?: string;
+}
+
 /** The background library scan, for the Library page's "Scanning…" indicator. */
 export interface LibraryScanStatus {
   scanning: boolean;

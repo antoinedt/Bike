@@ -1,5 +1,7 @@
 package com.medialibrary.manager
 
+import com.medialibrary.manager.update.AppUpdater
+import com.medialibrary.manager.update.UpdateState
 import android.Manifest
 import android.app.UiModeManager
 import android.content.Intent
@@ -129,6 +131,8 @@ class MainActivity : ComponentActivity() {
         }
         if (missing.isNotEmpty()) requestPermissions.launch(missing.toTypedArray())
         val isTv = isTelevision()
+        // Newer build on GitHub? Ask once per start.
+        AppUpdater.checkAtLaunch(this)
 
         setContent {
             MediaLibraryTheme {
@@ -160,6 +164,10 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         viewModel.onAppForeground()
+        // Back from allowing "Install unknown apps": carry on with the update.
+        if (AppUpdater.state.value is UpdateState.NeedsPermission && packageManager.canRequestPackageInstalls()) {
+            AppUpdater.update(this)
+        }
     }
 
     /** Google TV / Android TV. Checks the leanback feature too, since some TV boxes don't report the TV UI mode. */
@@ -200,6 +208,8 @@ private fun MediaLibraryApp(
     val playback by viewModel.playback.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+
+    com.medialibrary.manager.ui.components.UpdateDialog()
 
     LaunchedEffect(errorMessage) {
         errorMessage?.let {

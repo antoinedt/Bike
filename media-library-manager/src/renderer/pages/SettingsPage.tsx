@@ -1,6 +1,7 @@
 import { IconButton } from "../components/Icon.js";
 import { useEffect, useState } from "react";
 import ArtworkFetchSection from "../components/ArtworkFetchSection.js";
+import VersionSection from "../components/VersionSection.js";
 import type { AppSettings, LocalFolder, MediaItem, NetworkShare, SiteProfile } from "../../shared/types.js";
 
 const EMPTY_SHARE = { label: "", host: "", share: "", subPath: "", domain: "", username: "", password: "" };
@@ -23,16 +24,12 @@ export default function SettingsPage({
   settings: AppSettings;
   refreshSettings: () => Promise<void>;
 }) {
-  const [version, setVersion] = useState("");
-  useEffect(() => {
-    void window.api.getAppVersion().then(setVersion);
-  }, []);
   return (
     <div className="page">
       <div className="page-header">
         <h1>Settings</h1>
-        {version && <span className="hint-inline app-version">OmniPlay version {version}</span>}
       </div>
+      <VersionSection />
       <FoldersSection settings={settings} refreshSettings={refreshSettings} />
       <SharesSection settings={settings} refreshSettings={refreshSettings} />
       <TmdbSection settings={settings} refreshSettings={refreshSettings} />
