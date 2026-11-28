@@ -1,5 +1,19 @@
 package com.medialibrary.manager.ui.screens
 
+import androidx.compose.material3.TextButton
+
+import androidx.compose.foundation.background
+
+import androidx.compose.ui.draw.clip
+
+import androidx.compose.ui.text.font.FontWeight
+
+import androidx.compose.foundation.layout.PaddingValues
+
+import androidx.compose.material3.ButtonDefaults
+
+import androidx.compose.foundation.shape.RoundedCornerShape
+
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.height
@@ -81,6 +95,17 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, isTv: Boolean, onPickImage: 
     val webResults by viewModel.searchResults.collectAsState()
     val searching by viewModel.isSearching.collectAsState()
     val downloadingUrl by viewModel.downloadingUrl.collectAsState()
+    // Home (Cinema rows) or the folder browser; remembered between launches.
+    val viewPrefs = remember { context.getSharedPreferences("library", android.content.Context.MODE_PRIVATE) }
+    var showFolders by remember { mutableStateOf(viewPrefs.getString("view", "home") == "folders") }
+    fun setFolders(folders: Boolean) {
+        showFolders = folders
+        viewPrefs.edit().putString("view", if (folders) "folders" else "home").apply()
+    }
+    // "Continue watching": re-read whenever the player closes or the library changes.
+    val resumeStore = remember { com.medialibrary.manager.playback.ResumeStore(context) }
+    val playback by viewModel.playback.collectAsState()
+    val resumeEntries = remember(playback == null, items) { resumeStore.list() }
 
     // Typing filters the library as you go; the Search button (or the keyboard's search key) also
     // asks the search sites, and their results are listed below the library's.
@@ -158,6 +183,73 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, isTv: Boolean, onPickImage: 
         )
     }
 
+    @Composable
+    fun ViewSwitch() {
+        Row(
+            Modifier.padding(end = 8.dp).clip(RoundedCornerShape(50)).background(MaterialTheme.colorScheme.surfaceVariant).padding(3.dp)
+        ) {
+            listOf(false to "Home", true to "Folders").forEach { (folders, label) ->
+                val on = showFolders == folders
+                TextButton(
+                    onClick = { setFolders(folders) },
+                    colors = ButtonDefaults.textButtonColors(
+                        containerColor = if (on) MaterialTheme.colorScheme.onSurface else androidx.compose.ui.graphics.Color.Transparent,
+                        contentColor = if (on) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.onSurfaceVariant
+                    ),
+                    shape = RoundedCornerShape(50),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
+                    modifier = Modifier.height(36.dp)
+                ) { Text(label, fontWeight = FontWeight.SemiBold) }
+            }
+        }
+    }
+
+    // The top bar: Home/Folders, then Search (filters as you type; the button also asks the search sites).
+    val searchBar: @Composable () -> Unit = {
+        androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            ViewSwitch()
+                // A placeholder rather than a floating label keeps the field one line tall.
+            if (isTv) {
+                // TV: Search box (press OK to type) + a search-sites button; results can be
+                // downloaded here or sent to another device.
+                androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    AppTextField(
+                        value = filter,
+                        onValueChange = ::onSearchTextChange,
+                        placeholder = { Text("Search") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(onSearch = { searchSites() }),
+                        modifier = Modifier.width(280.dp).focusRequester(filterRequester)
+                    )
+                    IconButton(onClick = { searchSites() }, enabled = filter.isNotBlank() && !searching) {
+                        Icon(Icons.Filled.Search, contentDescription = "Search sites")
+                    }
+                }
+            } else {
+                // Phone: Search (filters the library as you type) + search-sites button + Cast.
+                androidx.compose.foundation.layout.Row(
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    AppTextField(
+                        value = filter,
+                        onValueChange = ::onSearchTextChange,
+                        placeholder = { Text("Search") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(onSearch = { searchSites() }),
+                        modifier = Modifier.weight(1f).focusRequester(filterRequester)
+                    )
+                    IconButton(onClick = { searchSites() }, enabled = filter.isNotBlank() && !searching) {
+                        Icon(Icons.Filled.Search, contentDescription = "Search sites")
+                    }
+                    com.medialibrary.manager.ui.components.CastButton(viewModel)
+                }
+            }
+                    }
+    }
+
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = if (isTv) 8.dp else 12.dp)) {
         // The library re-reads its folders and shares in the background (at launch, and after a
         // scan/copy/download) and fills in as it goes.
@@ -179,7 +271,24 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, isTv: Boolean, onPickImage: 
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        MediaBrowser(
+        if (!showFolders && filter.isBlank() && selectedTags.isEmpty()) {
+            if (isTv) Row(verticalAlignment = Alignment.CenterVertically) { searchBar() } else searchBar()
+            Spacer(Modifier.height(10.dp))
+            com.medialibrary.manager.ui.components.CinemaHome(
+                items = items,
+                resume = resumeEntries,
+                isTv = isTv,
+                onPlay = { item ->
+                    when {
+                        castTarget != null && item.kind != MediaKind.OTHER -> viewModel.castItem(item)
+                        item.sourceType == MediaSourceType.NETWORK -> viewModel.playNetworkItem(item)
+                        else -> viewModel.playLocalItem(context, item)
+                    }
+                },
+                onShowSearch = { show -> onSearchTextChange(show) },
+                modifier = Modifier.weight(1f).fillMaxWidth()
+            )
+        } else MediaBrowser(
             items = items,
             settings = settings,
             filter = filter,
@@ -202,47 +311,7 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, isTv: Boolean, onPickImage: 
             copyingItemId = copyingItemId,
             copyProgress = copyProgress,
             isTv = isTv,
-            filterField = {
-                // A placeholder rather than a floating label keeps the field one line tall.
-                if (isTv) {
-                    // TV: Search box (press OK to type) + a search-sites button; results can be
-                    // downloaded here or sent to another device.
-                    androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                        AppTextField(
-                            value = filter,
-                            onValueChange = ::onSearchTextChange,
-                            placeholder = { Text("Search") },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                            keyboardActions = KeyboardActions(onSearch = { searchSites() }),
-                            modifier = Modifier.width(280.dp).focusRequester(filterRequester)
-                        )
-                        IconButton(onClick = { searchSites() }, enabled = filter.isNotBlank() && !searching) {
-                            Icon(Icons.Filled.Search, contentDescription = "Search sites")
-                        }
-                    }
-                } else {
-                    // Phone: Search (filters the library as you type) + search-sites button + Cast.
-                    androidx.compose.foundation.layout.Row(
-                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        AppTextField(
-                            value = filter,
-                            onValueChange = ::onSearchTextChange,
-                            placeholder = { Text("Search") },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                            keyboardActions = KeyboardActions(onSearch = { searchSites() }),
-                            modifier = Modifier.weight(1f).focusRequester(filterRequester)
-                        )
-                        IconButton(onClick = { searchSites() }, enabled = filter.isNotBlank() && !searching) {
-                            Icon(Icons.Filled.Search, contentDescription = "Search sites")
-                        }
-                        com.medialibrary.manager.ui.components.CastButton(viewModel)
-                    }
-                }
-            },
+            filterField = { searchBar() },
             tagChips = {
                 TagFilterChips(
                     items = items,
