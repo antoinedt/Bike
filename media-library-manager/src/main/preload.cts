@@ -65,6 +65,7 @@ const api = {
   openLog: () => ipcRenderer.invoke("app:openLog"),
   clearLog: () => ipcRenderer.invoke("app:clearLog"),
   getResume: (itemId: string) => ipcRenderer.invoke("resume:get", itemId),
+  listResume: () => ipcRenderer.invoke("resume:list"),
   saveResume: (itemId: string, positionMs: number, durationMs: number, ended: boolean) =>
     ipcRenderer.invoke("resume:save", itemId, positionMs, durationMs, ended),
   getUpdateStatus: () => ipcRenderer.invoke("update:getStatus"),

@@ -132,6 +132,8 @@ export interface PreloadApi {
   /** Where this item was left off (ms), on this PC or another device; null = start from the beginning. */
   getResume(itemId: string): Promise<number | null>;
   saveResume(itemId: string, positionMs: number, durationMs: number, ended: boolean): Promise<void>;
+  /** Started-but-unfinished items on this PC, newest first. */
+  listResume(): Promise<{ itemId: string; positionMs: number; durationMs: number; at: number }[]>;
   getUpdateStatus(): Promise<UpdateStatus>;
   /** Checks GitHub for a newer build and downloads it; resolves with the resulting status. */
   checkForUpdate(): Promise<UpdateStatus>;

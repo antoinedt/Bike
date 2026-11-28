@@ -13,6 +13,8 @@ import { readSidecar, writeResumeToSidecar } from "./metadata/metadataScanner.js
 interface Saved {
   position: number;
   at: number;
+  /** ms; 0 when unknown. */
+  duration?: number;
 }
 
 const store = new Store<{ positions: Record<string, Saved> }>({ name: "resume-positions", defaults: { positions: {} } });
@@ -35,7 +37,7 @@ export async function saveResume(itemId: string, positionMs: number, durationMs:
   const keep = !ended && positionMs >= 30_000 && !(durationMs > 0 && positionMs >= durationMs * 0.95);
   const positions = { ...store.get("positions") };
   const now = Date.now();
-  if (keep) positions[itemId] = { position: Math.floor(positionMs), at: now };
+  if (keep) positions[itemId] = { position: Math.floor(positionMs), at: now, duration: Math.floor(durationMs) };
   else delete positions[itemId];
   store.set("positions", positions);
   const item = await itemById(itemId);
@@ -44,4 +46,11 @@ export async function saveResume(itemId: string, positionMs: number, durationMs:
       // Read-only share or offline: the local copy above still works on this PC.
     });
   }
+}
+
+/** Everything started and not finished on this PC, newest first: the Library's "Continue watching". */
+export function listResume(): { itemId: string; positionMs: number; durationMs: number; at: number }[] {
+  return Object.entries(store.get("positions"))
+    .map(([itemId, s]) => ({ itemId, positionMs: s.position, durationMs: s.duration ?? 0, at: s.at }))
+    .sort((a, b) => b.at - a.at);
 }

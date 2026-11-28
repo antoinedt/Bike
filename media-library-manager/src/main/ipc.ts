@@ -22,7 +22,7 @@ import { downloadRawFile } from "./network/smbRawClient.js";
 import { ensureStreamServer, registerLocalStream, registerStream, unregisterStream } from "./network/streamServer.js";
 import { searchSites } from "./search/siteSearch.js";
 import { clearLog, log, logPath } from "./log.js";
-import { getResume, saveResume } from "./resume.js";
+import { getResume, listResume, saveResume } from "./resume.js";
 import { handOffDownload } from "./torrent/handoff.js";
 import { registerCopyHandlers } from "./transfer/copyIpc.js";
 import { registerRemoteHandlers } from "./remote/remoteIpc.js";
@@ -72,6 +72,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.appVersion, () => app.getVersion());
   ipcMain.handle(IPC.appClearLog, () => clearLog());
   ipcMain.handle(IPC.resumeGet, (_e, itemId: string) => getResume(itemId));
+  ipcMain.handle(IPC.resumeList, () => listResume());
   ipcMain.handle(IPC.resumeSave, (_e, itemId: string, positionMs: number, durationMs: number, ended: boolean) =>
     saveResume(itemId, positionMs, durationMs, ended)
   );

@@ -7,6 +7,8 @@ import MediaBrowser from "../components/MediaBrowser.js";
 import { IconButton } from "../components/Icon.js";
 import SiteSearchResults, { type SiteSearchRequest } from "../components/SiteSearchResults.js";
 import StreamPlayer from "../components/StreamPlayer.js";
+import CinemaHome, { type ResumeEntry } from "../components/CinemaHome.js";
+import MediaDetailsPanel from "../components/MediaDetailsPanel.js";
 
 interface ActiveStream {
   item: MediaItem;
@@ -29,6 +31,31 @@ export default function LibraryPage({ settings, onOpenDownloads }: { settings: A
   const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
 
   const [scan, setScan] = useState<LibraryScanStatus>({ scanning: false, found: 0 });
+  // Home (Cinema rows) or the folder browser; remembered between launches.
+  const [view, setView] = useState<"home" | "folders">(() => {
+    try {
+      return localStorage.getItem("library.view") === "folders" ? "folders" : "home";
+    } catch {
+      return "home";
+    }
+  });
+  const [resume, setResume] = useState<ResumeEntry[]>([]);
+  const [detail, setDetail] = useState<MediaItem | null>(null);
+
+  function changeView(next: "home" | "folders") {
+    setView(next);
+    try {
+      localStorage.setItem("library.view", next);
+    } catch {
+      // not remembered; fine
+    }
+  }
+
+  // "Continue watching" — refreshed when the library changes and whenever a video is closed.
+  useEffect(() => {
+    if (stream) return;
+    void window.api.listResume().then(setResume).catch(() => {});
+  }, [stream, items]);
 
   // The library refreshes itself in the background (at startup, and after a scan/copy/download),
   // announcing changes a few times a second while it fills in. Refetches never overlap: a change
@@ -132,7 +159,14 @@ export default function LibraryPage({ settings, onOpenDownloads }: { settings: A
   return (
     <div className="page">
       <div className="page-header">
-        <h1>Library</h1>
+        <div className="view-switch" role="tablist" aria-label="Library view">
+          <button role="tab" aria-selected={view === "home"} className={view === "home" ? "on" : ""} onClick={() => changeView("home")}>
+            Home
+          </button>
+          <button role="tab" aria-selected={view === "folders"} className={view === "folders" ? "on" : ""} onClick={() => changeView("folders")}>
+            Folders
+          </button>
+        </div>
         {scan.scanning && (
           <span className="scan-status" role="status">
             <span className="scan-spinner" aria-hidden="true" />
@@ -169,6 +203,17 @@ export default function LibraryPage({ settings, onOpenDownloads }: { settings: A
           Downloading… {downloadProgress != null ? `${Math.round(downloadProgress * 100)}%` : ""}
         </p>
       )}
+      {view === "home" && !filter.trim() && selectedTags.length === 0 ? (
+        <CinemaHome
+          items={items}
+          resume={resume}
+          onPlay={(item) => void open(item)}
+          onDetails={setDetail}
+          onShowSearch={(query) => onSearchTextChange(query)}
+          onBrowseFolders={() => changeView("folders")}
+        />
+      ) : (
+      <>
       <FilterBar
         items={items}
         selectedTags={selectedTags}
@@ -185,6 +230,26 @@ export default function LibraryPage({ settings, onOpenDownloads }: { settings: A
         onCast={setCasting}
         onItemUpdated={handleItemUpdated}
       />
+      </>
+      )}
+      {detail && (
+        <MediaDetailsPanel
+          item={detail}
+          allTags={Array.from(new Set(items.flatMap((i) => i.tags ?? []))).sort()}
+          onClose={() => setDetail(null)}
+          onOpen={() => {
+            void open(detail);
+            setDetail(null);
+          }}
+          onDownload={detail.source.type === "network" ? () => { void download(detail); setDetail(null); } : undefined}
+          onCopy={() => { setCopying(detail); setDetail(null); }}
+          onCast={() => { setCasting(detail); setDetail(null); }}
+          onItemUpdated={(updated) => {
+            setDetail(updated);
+            handleItemUpdated(updated);
+          }}
+        />
+      )}
       {siteSearch && <SiteSearchResults settings={settings} request={siteSearch} onOpenDownloads={onOpenDownloads} />}
       {casting && <CastDialog item={casting} onClose={() => setCasting(null)} />}
       {copying && (

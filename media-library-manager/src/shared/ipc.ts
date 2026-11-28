@@ -46,6 +46,7 @@ export const IPC = {
   appVersion: "app:version",
   resumeGet: "resume:get",
   resumeSave: "resume:save",
+  resumeList: "resume:list",
   appOpenLog: "app:openLog",
   appClearLog: "app:clearLog",
   updateStatus: "update:status",
