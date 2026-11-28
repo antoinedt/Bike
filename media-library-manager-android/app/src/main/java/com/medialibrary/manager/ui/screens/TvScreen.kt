@@ -255,7 +255,6 @@ private fun TvGuide(controller: TvGuideController, isTv: Boolean) {
     val tuning by controller.tuning.collectAsState()
     val castTarget by controller.castTarget.collectAsState()
     var castPicking by remember { mutableStateOf(false) }
-    playing?.let { com.medialibrary.manager.ui.components.TvPlayerOverlay(it.stream, it.channelName, controller::closePlayer) }
     if (tuning != null && playing == null) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
     }

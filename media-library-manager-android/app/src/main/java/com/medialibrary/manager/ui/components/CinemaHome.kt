@@ -144,7 +144,12 @@ fun CinemaHome(
     isTv: Boolean,
     onPlay: (MediaItem) -> Unit,
     onShowSearch: (String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** What's on now on the last channels you watched ("On now" row, after the featured title). */
+    nowOn: List<com.medialibrary.manager.tv.TvGuideController.NowOn> = emptyList(),
+    tuningChannel: Int? = null,
+    onWatchChannel: (com.medialibrary.manager.tv.TvChannel) -> Unit = {},
+    onOpenGuide: () -> Unit = {}
 ) {
     val rows = remember(items, resume) { buildRows(items, resume) }
     val featuredEntry = rows.continuing.firstOrNull()
@@ -192,6 +197,19 @@ fun CinemaHome(
                         colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color(0xFF0B0D12)),
                         modifier = Modifier.focusRequester(playFocus)
                     ) { Text(if (featuredEntry != null) "▶  Resume" else "▶  Play", fontWeight = FontWeight.Bold) }
+                }
+            }
+        }
+        if (nowOn.isNotEmpty()) item(key = "now-on") {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("On now", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                    androidx.compose.material3.TextButton(onClick = onOpenGuide) { Text("TV guide ›") }
+                }
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(vertical = 6.dp, horizontal = 4.dp)) {
+                    items(nowOn, key = { it.channel.id }) { on ->
+                        ChannelNowCard(on, width = if (isTv) 280.dp else 220.dp, tuning = tuningChannel == on.channel.id) { onWatchChannel(on.channel) }
+                    }
                 }
             }
         }
@@ -309,5 +327,60 @@ private fun Poster(
             )
         }
         Spacer(Modifier.height(0.dp))
+    }
+}
+
+/** A live channel: the show's picture (or the channel logo), "LIVE", what's on and how far into it. */
+@Composable
+private fun ChannelNowCard(
+    on: com.medialibrary.manager.tv.TvGuideController.NowOn,
+    width: androidx.compose.ui.unit.Dp,
+    tuning: Boolean,
+    onClick: () -> Unit
+) {
+    var focused by remember { mutableStateOf(false) }
+    val program = on.program
+    val now = System.currentTimeMillis()
+    val progress = program?.let { ((now - it.start).toFloat() / (it.end - it.start).coerceAtLeast(1)).coerceIn(0f, 1f) }
+    Column(Modifier.width(width).onFocusChanged { focused = it.isFocused }.clickable(onClick = onClick)) {
+        Box(
+            Modifier.fillMaxWidth().aspectRatio(16f / 9f)
+                .scale(if (focused) 1.04f else 1f)
+                .clip(RoundedCornerShape(10.dp))
+                .background(placeholder(on.channel.name))
+                .then(if (focused) Modifier.border(3.dp, Coral, RoundedCornerShape(10.dp)) else Modifier)
+        ) {
+            val picture = program?.imageUrl ?: on.channel.logoUrl
+            if (picture != null) {
+                AsyncImage(
+                    model = picture, contentDescription = null,
+                    contentScale = if (program?.imageUrl != null) ContentScale.Crop else ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize().padding(if (program?.imageUrl != null) 0.dp else 24.dp)
+                )
+            }
+            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xE60B0D12)))))
+            Text(
+                if (tuning) "Opening…" else "● LIVE",
+                color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier.align(Alignment.TopStart).padding(8.dp)
+                    .clip(RoundedCornerShape(50)).background(Coral).padding(horizontal = 7.dp, vertical = 2.dp)
+            )
+            Column(Modifier.align(Alignment.BottomStart).padding(10.dp)) {
+                Text(
+                    program?.title ?: on.channel.name, color = Color.White, fontWeight = FontWeight.SemiBold,
+                    fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis
+                )
+                progress?.let { p ->
+                    Box(Modifier.padding(top = 6.dp).fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp)).background(Color(0x47FFFFFF))) {
+                        Box(Modifier.fillMaxWidth(p.coerceAtLeast(0.03f)).height(3.dp).background(Coral))
+                    }
+                }
+            }
+        }
+        Text(
+            listOfNotNull(on.channel.number?.toString(), on.channel.name).joinToString(" · "),
+            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1, modifier = Modifier.padding(top = 4.dp)
+        )
     }
 }

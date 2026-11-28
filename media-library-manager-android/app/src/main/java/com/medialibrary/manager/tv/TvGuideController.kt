@@ -54,6 +54,7 @@ class TvGuideController(context: Context) {
         _guide.update { it.copy(loading = false, error = friendly(e as? Exception ?: Exception(e))) }
     })
     private val store = PrefsCredentialStore(context.applicationContext)
+    private val recentPrefs = context.applicationContext.getSharedPreferences("tv_recent", Context.MODE_PRIVATE)
     val client = FizzTvClient(store, store::deviceId)
 
     /** null until checked. */
@@ -75,6 +76,42 @@ class TvGuideController(context: Context) {
     private val _tuning = MutableStateFlow<Int?>(null)
     /** The channel id currently being tuned (stream request in flight), for a spinner. */
     val tuning: StateFlow<Int?> = _tuning.asStateFlow()
+
+    // ---- Recently watched channels (Home's "On now" row) ----
+
+    /** A recently watched channel and what's on it right now (null while unknown or off air). */
+    data class NowOn(val channel: TvChannel, val program: TvProgram?)
+    private val _nowOn = MutableStateFlow<List<NowOn>>(emptyList())
+    val nowOn: StateFlow<List<NowOn>> = _nowOn.asStateFlow()
+
+    private fun recentIds(): List<Int> =
+        recentPrefs.getString("ids", "").orEmpty().split(',').mapNotNull { it.toIntOrNull() }
+
+    /** Remembers [channelId] as the most recent (watched here or cast); keeps the last 3. */
+    private fun recordRecent(channelId: Int) {
+        val ids = (listOf(channelId) + recentIds().filter { it != channelId }).take(3)
+        recentPrefs.edit().putString("ids", ids.joinToString(",")).apply()
+        refreshNowOn()
+    }
+
+    /** Looks up what's on now on the last 3 watched channels. Quietly does nothing when signed out. */
+    fun refreshNowOn() {
+        val ids = recentIds()
+        if (ids.isEmpty() || !client.isSignedIn()) {
+            _nowOn.value = emptyList()
+            return
+        }
+        scope.launch {
+            runCatching {
+                val channels = client.myPlanChannels().associateBy { it.id }
+                val now = System.currentTimeMillis()
+                val programs = client.guide(ids, now - 4 * 3_600_000L, now + 3_600_000L)
+                _nowOn.value = ids.mapNotNull { id ->
+                    channels[id]?.let { ch -> NowOn(ch, programs.firstOrNull { it.channelId == id && now >= it.start && now < it.end }) }
+                }
+            }
+        }
+    }
 
     /** Called when the TV tab opens. */
     fun open() {
@@ -146,6 +183,7 @@ class TvGuideController(context: Context) {
             try {
                 val stream = client.streamForChannel(channelId)
                 _playing.value = Playing(stream, channelName)
+                recordRecent(channelId)
             } catch (e: SignInRequiredException) {
                 _signedIn.value = false
                 _signIn.value = TvSignInState(error = e.message)
@@ -189,6 +227,7 @@ class TvGuideController(context: Context) {
                     drmContentId = stream.drmContentId
                 )
                 castManager.castLive(live, channelName)
+                recordRecent(channelId)
             } catch (e: SignInRequiredException) {
                 _signedIn.value = false
                 _signIn.value = TvSignInState(error = e.message)

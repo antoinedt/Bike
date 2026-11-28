@@ -1,5 +1,16 @@
 package com.medialibrary.manager
 
+import kotlinx.coroutines.launch
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.Alignment
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.IconButton
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Home
 import com.medialibrary.manager.update.AppUpdater
 import com.medialibrary.manager.update.UpdateState
 import android.Manifest
@@ -59,8 +70,9 @@ import com.medialibrary.manager.ui.theme.MediaLibraryTheme
 private data class BottomTab(val route: String, val label: String, val icon: ImageVector)
 
 private val TABS = listOf(
-    BottomTab("library", "Library", Icons.Filled.VideoLibrary),
-    BottomTab("tv", "TV", Icons.Filled.Tv),
+    BottomTab("home", "Home", Icons.Filled.Home),
+    BottomTab("folders", "Folders", Icons.Filled.Folder),
+    BottomTab("tv", "TV guide", Icons.Filled.Tv),
     BottomTab("downloads", "Downloads", Icons.Filled.Download),
     BottomTab("settings", "Settings", Icons.Filled.Settings)
 )
@@ -231,46 +243,98 @@ private fun MediaLibraryApp(
         }
     }
 
-    Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-        bottomBar = {
-            if (!isTv) {
-                NavigationBar {
-                    tabs.forEach { tab ->
-                        NavigationBarItem(
-                            selected = currentRoute == tab.route,
-                            onClick = { goTo(tab.route) },
-                            icon = { Icon(tab.icon, contentDescription = tab.label) }
-                        )
-                    }
-                }
-            }
+    val drawerState = androidx.compose.material3.rememberDrawerState(androidx.compose.material3.DrawerValue.Closed)
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val current = tabs.firstOrNull { it.route == currentRoute } ?: tabs.first()
+    val isLibrary = current.route == "home" || current.route == "folders"
+
+    val content: @Composable (Modifier) -> Unit = { modifier ->
+        NavHost(navController = navController, startDestination = "home", modifier = modifier) {
+            composable("home") { LibraryScreen(viewModel, isTv, onPickImage, showFolders = false, onOpenTv = { goTo("tv") }) }
+            composable("folders") { LibraryScreen(viewModel, isTv, onPickImage, showFolders = true, onOpenTv = { goTo("tv") }) }
+            composable("tv") { TvScreen(isTv) }
+            composable("downloads") { DownloadsScreen(viewModel, onOpenTorrentFile) }
+            composable("settings") { SettingsScreen(viewModel, onPickFolder, onChangeFolder) }
         }
-    ) { padding ->
-        Row(Modifier.padding(padding).fillMaxSize()) {
-            if (isTv) {
+    }
+
+    if (isTv) {
+        // TV: the menu is a labelled rail on the left; each screen keeps its own controls.
+        Scaffold(snackbarHost = { SnackbarHost(snackbarHostState) }) { padding ->
+            Row(Modifier.padding(padding).fillMaxSize()) {
                 NavigationRail {
                     tabs.forEach { tab ->
                         NavigationRailItem(
                             selected = currentRoute == tab.route,
                             onClick = { goTo(tab.route) },
-                            icon = { Icon(tab.icon, contentDescription = tab.label) }
+                            icon = { Icon(tab.icon, contentDescription = null) },
+                            label = { Text(tab.label) }
+                        )
+                    }
+                }
+                content(Modifier.weight(1f).fillMaxHeight())
+            }
+        }
+    } else {
+        // Phone: a side menu (≡ or swipe from the left) and the same top bar on every screen:
+        // ≡, the screen's name, then Search (where there's something to search) and Cast.
+        androidx.compose.material3.ModalNavigationDrawer(
+            drawerState = drawerState,
+            drawerContent = {
+                androidx.compose.material3.ModalDrawerSheet(Modifier.width(260.dp)) {
+                    Text(
+                        "OmniPlay",
+                        style = androidx.compose.material3.MaterialTheme.typography.titleLarge,
+                        modifier = Modifier.padding(start = 24.dp, top = 24.dp, bottom = 12.dp)
+                    )
+                    tabs.forEach { tab ->
+                        androidx.compose.material3.NavigationDrawerItem(
+                            label = { Text(tab.label) },
+                            icon = { Icon(tab.icon, contentDescription = null) },
+                            selected = currentRoute == tab.route,
+                            onClick = {
+                                goTo(tab.route)
+                                scope.launch { drawerState.close() }
+                            },
+                            modifier = Modifier.padding(horizontal = 12.dp)
                         )
                     }
                 }
             }
-            NavHost(
-                navController = navController,
-                startDestination = "library",
-                modifier = Modifier.weight(1f).fillMaxHeight()
-            ) {
-                composable("library") { LibraryScreen(viewModel, isTv, onPickImage) }
-                composable("tv") { TvScreen(isTv) }
-                composable("downloads") { DownloadsScreen(viewModel, onOpenTorrentFile) }
-                composable("settings") { SettingsScreen(viewModel, onPickFolder, onChangeFolder) }
+        ) {
+            Scaffold(
+                snackbarHost = { SnackbarHost(snackbarHostState) },
+                topBar = {
+                    Row(
+                        Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 4.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                            Icon(Icons.Filled.Menu, contentDescription = "Menu")
+                        }
+                        Text(
+                            current.label,
+                            style = androidx.compose.material3.MaterialTheme.typography.titleLarge,
+                            modifier = Modifier.weight(1f)
+                        )
+                        if (isLibrary) {
+                            IconButton(onClick = { viewModel.toggleLibrarySearch() }) {
+                                Icon(Icons.Filled.Search, contentDescription = "Search")
+                            }
+                        }
+                        com.medialibrary.manager.ui.components.CastButton(viewModel)
+                    }
+                }
+            ) { padding ->
+                content(Modifier.padding(padding).fillMaxSize())
             }
         }
     }
+
+    // Live TV plays over any screen (it can be started from Home's "On now" row too).
+    val tvController = remember { com.medialibrary.manager.di.ServiceLocator.tvGuide }
+    val tvPlaying by tvController.playing.collectAsState()
+    tvPlaying?.let { com.medialibrary.manager.ui.components.TvPlayerOverlay(it.stream, it.channelName, tvController::closePlayer) }
 
     playback?.let { request ->
         PlayerOverlay(

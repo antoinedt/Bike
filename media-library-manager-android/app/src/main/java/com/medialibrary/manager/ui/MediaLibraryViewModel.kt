@@ -158,6 +158,12 @@ class MediaLibraryViewModel : ViewModel() {
     @Volatile
     private var scanCancelled = false
 
+    /** The Library's search box, opened from the top bar's Search button (phone). */
+    private val _librarySearchOpen = MutableStateFlow(false)
+    val librarySearchOpen: StateFlow<Boolean> = _librarySearchOpen.asStateFlow()
+    fun toggleLibrarySearch() { _librarySearchOpen.value = !_librarySearchOpen.value }
+    fun closeLibrarySearch() { _librarySearchOpen.value = false }
+
     private val _playback = MutableStateFlow<PlaybackRequest?>(null)
     val playback: StateFlow<PlaybackRequest?> = _playback.asStateFlow()
 

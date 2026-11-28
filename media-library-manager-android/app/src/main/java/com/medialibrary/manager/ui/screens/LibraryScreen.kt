@@ -74,7 +74,14 @@ import com.medialibrary.manager.ui.components.TagFilterChips
  * network share), which runs in the background; progress shows on the tile and in Downloads.
  */
 @Composable
-fun LibraryScreen(viewModel: MediaLibraryViewModel, isTv: Boolean, onPickImage: (onPicked: (String) -> Unit) -> Unit) {
+fun LibraryScreen(
+    viewModel: MediaLibraryViewModel,
+    isTv: Boolean,
+    onPickImage: (onPicked: (String) -> Unit) -> Unit,
+    /** Home (Cinema rows) or Folders — chosen from the menu. */
+    showFolders: Boolean = false,
+    onOpenTv: () -> Unit = {}
+) {
     val context = LocalContext.current
     val items by viewModel.libraryItems.collectAsState()
     val settings by viewModel.settings.collectAsState()
@@ -95,13 +102,13 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, isTv: Boolean, onPickImage: 
     val webResults by viewModel.searchResults.collectAsState()
     val searching by viewModel.isSearching.collectAsState()
     val downloadingUrl by viewModel.downloadingUrl.collectAsState()
-    // Home (Cinema rows) or the folder browser; remembered between launches.
-    val viewPrefs = remember { context.getSharedPreferences("library", android.content.Context.MODE_PRIVATE) }
-    var showFolders by remember { mutableStateOf(viewPrefs.getString("view", "home") == "folders") }
-    fun setFolders(folders: Boolean) {
-        showFolders = folders
-        viewPrefs.edit().putString("view", if (folders) "folders" else "home").apply()
-    }
+    // Phone: the search box shows once the top bar's Search is tapped (or while something is typed).
+    val searchOpen by viewModel.librarySearchOpen.collectAsState()
+    // Home's "On now": what's on the last 3 channels you watched.
+    val tvGuide = remember { com.medialibrary.manager.di.ServiceLocator.tvGuide }
+    val nowOn by tvGuide.nowOn.collectAsState()
+    val tvTuning by tvGuide.tuning.collectAsState()
+    LaunchedEffect(showFolders) { if (!showFolders) tvGuide.refreshNowOn() }
     // "Continue watching": re-read whenever the player closes or the library changes.
     val resumeStore = remember { com.medialibrary.manager.playback.ResumeStore(context) }
     val playback by viewModel.playback.collectAsState()
@@ -195,33 +202,11 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, isTv: Boolean, onPickImage: 
         )
     }
 
-    @Composable
-    fun ViewSwitch() {
-        Row(
-            Modifier.padding(end = 8.dp).clip(RoundedCornerShape(50)).background(MaterialTheme.colorScheme.surfaceVariant).padding(3.dp)
-        ) {
-            listOf(false to "Home", true to "Folders").forEach { (folders, label) ->
-                val on = showFolders == folders
-                TextButton(
-                    onClick = { setFolders(folders) },
-                    colors = ButtonDefaults.textButtonColors(
-                        containerColor = if (on) MaterialTheme.colorScheme.onSurface else androidx.compose.ui.graphics.Color.Transparent,
-                        contentColor = if (on) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.onSurfaceVariant
-                    ),
-                    shape = RoundedCornerShape(50),
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
-                    modifier = Modifier.height(36.dp)
-                ) { Text(label, fontWeight = FontWeight.SemiBold) }
-            }
-        }
-    }
-
     // The top bar: Home/Folders, then Search (filters as you type; the button also asks the search sites).
     val searchBar: @Composable () -> Unit = {
         if (isTv) {
             // TV: one line — Home/Folders, then the Search box (press OK to type) + search-sites button.
             androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                ViewSwitch()
                 AppTextField(
                     value = filter,
                     onValueChange = ::onSearchTextChange,
@@ -236,17 +221,9 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, isTv: Boolean, onPickImage: 
                 }
             }
         } else {
-            // Phone: Home/Folders and Cast on the first line, full-width Search on the second.
-            Column(Modifier.fillMaxWidth()) {
-                androidx.compose.foundation.layout.Row(
-                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    ViewSwitch()
-                    Spacer(Modifier.weight(1f))
-                    com.medialibrary.manager.ui.components.CastButton(viewModel)
-                }
-                Spacer(Modifier.height(6.dp))
+            // Phone: full-width Search, opened from the top bar's Search button.
+            if (searchOpen || filter.isNotBlank()) Column(Modifier.fillMaxWidth()) {
+                LaunchedEffect(Unit) { if (filter.isBlank()) runCatching { filterRequester.requestFocus() } }
                 androidx.compose.foundation.layout.Row(
                     verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth()
@@ -292,10 +269,18 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, isTv: Boolean, onPickImage: 
         if (!showFolders && filter.isBlank() && selectedTags.isEmpty()) {
             if (isTv) Row(verticalAlignment = Alignment.CenterVertically) { searchBar() } else searchBar()
             Spacer(Modifier.height(10.dp))
+            // Back closes an open, empty search box first.
+            androidx.activity.compose.BackHandler(enabled = !isTv && searchOpen) { viewModel.closeLibrarySearch() }
             com.medialibrary.manager.ui.components.CinemaHome(
                 items = items,
                 resume = resumeEntries,
                 isTv = isTv,
+                nowOn = nowOn,
+                tuningChannel = tvTuning,
+                onWatchChannel = { ch ->
+                    if (tvGuide.castTarget.value != null) tvGuide.castChannel(ch.id, ch.name) else tvGuide.watch(ch.id, ch.name)
+                },
+                onOpenGuide = onOpenTv,
                 onPlay = { item ->
                     when {
                         castTarget != null && item.kind != MediaKind.OTHER -> viewModel.castItem(item)
@@ -312,6 +297,7 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, isTv: Boolean, onPickImage: 
         androidx.activity.compose.BackHandler(enabled = fromHome) {
             onSearchTextChange("")
             selectedTags = emptyList()
+            viewModel.closeLibrarySearch()
         }
         if (fromHome) {
             TextButton(onClick = { onSearchTextChange(""); selectedTags = emptyList() }) { Text("‹  Home") }
