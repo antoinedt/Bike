@@ -1,5 +1,6 @@
-import { useMemo, useRef } from "react";
-import type { MediaItem } from "../../shared/types.js";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { MediaItem, TvChannel, TvProgram } from "../../shared/types.js";
+import { recentChannels, recordRecentChannel } from "../lib/recentChannels.js";
 
 export interface ResumeEntry {
   itemId: string;
@@ -109,6 +110,88 @@ function Row({ title, children }: { title: string; children: React.ReactNode }) 
   );
 }
 
+function hhmm(ms: number): string {
+  return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+/** What's on now on the last three channels you watched; a card starts that channel. */
+function OnNowRow({ onWatch, onOpenGuide }: { onWatch: (c: { id: number; name: string }) => void; onOpenGuide: () => void }) {
+  const [cards, setCards] = useState<{ channel: TvChannel; program: TvProgram | null }[]>([]);
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const recent = recentChannels();
+    if (recent.length === 0) return;
+    let alive = true;
+    void (async () => {
+      try {
+        const list = await window.api.getTvChannels();
+        if (!list.ok || !alive) return;
+        const byId = new Map(list.value.map((c) => [c.id, c]));
+        const channels = recent.map((r) => byId.get(r.id)).filter((c): c is TvChannel => !!c);
+        if (channels.length === 0) return;
+        setCards(channels.map((channel) => ({ channel, program: null })));
+        const t = Date.now();
+        const guide = await window.api.getTvGuide(channels.map((c) => c.id), t - 4 * 3600_000, t + 3600_000);
+        if (!guide.ok || !alive) return;
+        setCards(
+          channels.map((channel) => ({
+            channel,
+            program: guide.value.find((p) => p.channelId === channel.id && p.start <= t && p.end > t) ?? null
+          }))
+        );
+      } catch {
+        // no TV row, then
+      }
+    })();
+    const tick = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => {
+      alive = false;
+      window.clearInterval(tick);
+    };
+  }, []);
+  if (cards.length === 0) return null;
+  return (
+    <section className="cine-row">
+      <div className="cine-row-head">
+        <h2>On now</h2>
+        <button className="cine-link" onClick={onOpenGuide}>TV guide ›</button>
+      </div>
+      <div className="cine-row-track cine-live-track">
+        {cards.map(({ channel, program }) => {
+          const progress = program ? (now - program.start) / Math.max(1, program.end - program.start) : null;
+          const art = program?.imageUrl ?? null;
+          return (
+            <button
+              key={channel.id}
+              className="cine-live"
+              title={`Watch ${channel.name}`}
+              onClick={() => {
+                recordRecentChannel(channel);
+                onWatch({ id: channel.id, name: channel.name });
+              }}
+            >
+              <div className="cine-live-art" style={art ? undefined : { background: placeholder(channel.name) }}>
+                {art ? <img src={art} alt="" loading="lazy" /> : channel.logoUrl ? <img className="cine-live-logo" src={channel.logoUrl} alt="" /> : null}
+                <span className="cine-live-pill">● LIVE</span>
+                {progress != null && (
+                  <span className="cine-progress">
+                    <i style={{ width: `${Math.min(100, Math.max(3, progress * 100))}%` }} />
+                  </span>
+                )}
+              </div>
+              <span className="cine-poster-label">{program?.title ?? channel.name}</span>
+              <span className="cine-poster-sub">
+                {channel.number} · {channel.name}
+                {program ? ` · until ${hhmm(program.end)}` : ""}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 /**
  * The Library's home in the Cinema style: a featured title (what you were last watching, or the
  * newest arrival) and rows of posters — Continue watching, Recently added, Shows, Movies, Music.
@@ -120,7 +203,9 @@ export default function CinemaHome({
   onPlay,
   onDetails,
   onShowSearch,
-  onBrowseFolders
+  onBrowseFolders,
+  onWatchChannel,
+  onOpenGuide
 }: {
   items: MediaItem[];
   resume: ResumeEntry[];
@@ -128,6 +213,8 @@ export default function CinemaHome({
   onDetails: (item: MediaItem) => void;
   onShowSearch: (query: string) => void;
   onBrowseFolders: () => void;
+  onWatchChannel: (channel: { id: number; name: string }) => void;
+  onOpenGuide: () => void;
 }) {
   const rows = useMemo(() => {
     const byId = new Map(items.map((i) => [i.id, i]));
@@ -181,6 +268,7 @@ export default function CinemaHome({
   if (!featured) {
     return (
       <div className="cine-empty">
+        <OnNowRow onWatch={onWatchChannel} onOpenGuide={onOpenGuide} />
         <p>No videos yet. Add a folder or a network share in Settings; it's scanned automatically.</p>
         <button className="btn" onClick={onBrowseFolders}>Browse folders</button>
       </div>
@@ -211,6 +299,8 @@ export default function CinemaHome({
           </div>
         </div>
       </section>
+
+      <OnNowRow onWatch={onWatchChannel} onOpenGuide={onOpenGuide} />
 
       {rows.continuing.length > 0 && (
         <Row title="Continue watching">

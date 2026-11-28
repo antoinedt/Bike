@@ -9,6 +9,8 @@ import SiteSearchResults, { type SiteSearchRequest } from "../components/SiteSea
 import StreamPlayer from "../components/StreamPlayer.js";
 import CinemaHome, { type ResumeEntry } from "../components/CinemaHome.js";
 import MediaDetailsPanel from "../components/MediaDetailsPanel.js";
+import TvPlayer from "../components/TvPlayer.js";
+import type { Tab } from "../App.js";
 
 interface ActiveStream {
   item: MediaItem;
@@ -19,12 +21,16 @@ interface ActiveStream {
 export default function LibraryPage({
   settings,
   refreshSettings,
-  onOpenDownloads
+  view,
+  onNavigate
 }: {
   settings: AppSettings;
   refreshSettings: () => Promise<void>;
-  onOpenDownloads: () => void;
+  /** Home (Cinema rows) or the folder browser: chosen in the side menu. */
+  view: "home" | "folders";
+  onNavigate: (tab: Tab) => void;
 }) {
+  const onOpenDownloads = () => onNavigate("downloads");
   const [copying, setCopying] = useState<MediaItem | null>(null);
   const [casting, setCasting] = useState<MediaItem | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -39,16 +45,9 @@ export default function LibraryPage({
   const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
 
   const [scan, setScan] = useState<LibraryScanStatus>({ scanning: false, found: 0 });
-  // Home (Cinema rows) or the folder browser; remembered between launches.
-  const [view, setView] = useState<"home" | "folders">(() => {
-    try {
-      return localStorage.getItem("library.view") === "folders" ? "folders" : "home";
-    } catch {
-      return "home";
-    }
-  });
   const [resume, setResume] = useState<ResumeEntry[]>([]);
   const [detail, setDetail] = useState<MediaItem | null>(null);
+  const [watchingChannel, setWatchingChannel] = useState<{ id: number; name: string } | null>(null);
 
   // Opened a show (or searched) from Home: the ‹ Home button, the mouse Back button, or
   // Alt+← go back to the rows.
@@ -72,15 +71,6 @@ export default function LibraryPage({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, filter, selectedTags]);
-
-  function changeView(next: "home" | "folders") {
-    setView(next);
-    try {
-      localStorage.setItem("library.view", next);
-    } catch {
-      // not remembered; fine
-    }
-  }
 
   // "Continue watching" — refreshed when the library changes and whenever a video is closed.
   useEffect(() => {
@@ -190,14 +180,7 @@ export default function LibraryPage({
   return (
     <div className="page">
       <div className="page-header">
-        <div className="view-switch" role="tablist" aria-label="Library view">
-          <button role="tab" aria-selected={view === "home"} className={view === "home" ? "on" : ""} onClick={() => changeView("home")}>
-            Home
-          </button>
-          <button role="tab" aria-selected={view === "folders"} className={view === "folders" ? "on" : ""} onClick={() => changeView("folders")}>
-            Folders
-          </button>
-        </div>
+        <h1>{view === "home" ? "Home" : "Folders"}</h1>
         {scan.scanning && (
           <span className="scan-status" role="status">
             <span className="scan-spinner" aria-hidden="true" />
@@ -246,7 +229,9 @@ export default function LibraryPage({
           onPlay={(item) => void open(item)}
           onDetails={setDetail}
           onShowSearch={(query) => onSearchTextChange(query)}
-          onBrowseFolders={() => changeView("folders")}
+          onBrowseFolders={() => onNavigate("folders")}
+          onOpenGuide={() => onNavigate("tv")}
+          onWatchChannel={setWatchingChannel}
         />
       ) : (
       <>
@@ -299,6 +284,9 @@ export default function LibraryPage({
             setNotice(`Copying "${copying.name}" to ${label} — progress is on the Downloads page.`);
           }}
         />
+      )}
+      {watchingChannel && (
+        <TvPlayer channelId={watchingChannel.id} channelName={watchingChannel.name} onClose={() => setWatchingChannel(null)} />
       )}
       {stream && <StreamPlayer item={stream.item} url={stream.url} onClose={() => setStream(null)} />}
     </div>

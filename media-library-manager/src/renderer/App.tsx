@@ -8,10 +8,10 @@ import UpdateBanner from "./components/UpdateBanner.js";
 import SettingsPage from "./pages/SettingsPage.js";
 import TvPage from "./pages/TvPage.js";
 
-export type Tab = "library" | "tv" | "downloads" | "settings";
+export type Tab = "home" | "folders" | "tv" | "downloads" | "settings";
 
 export default function App() {
-  const [tab, setTab] = useState<Tab>("library");
+  const [tab, setTab] = useState<Tab>("home");
   const [settings, setSettings] = useState<AppSettings | null>(null);
 
   const refreshSettings = useCallback(async () => {
@@ -40,8 +40,13 @@ export default function App() {
         <UpdateBanner />
         {!settings ? (
           <div className="empty-state">Loading…</div>
-        ) : tab === "library" ? (
-          <LibraryPage settings={settings} refreshSettings={refreshSettings} onOpenDownloads={() => setTab("downloads")} />
+        ) : tab === "home" || tab === "folders" ? (
+          <LibraryPage
+            settings={settings}
+            refreshSettings={refreshSettings}
+            view={tab}
+            onNavigate={setTab}
+          />
         ) : tab === "tv" ? (
           <TvPage />
         ) : tab === "downloads" ? (

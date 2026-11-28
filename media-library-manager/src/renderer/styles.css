@@ -1179,10 +1179,6 @@ body {
 .sidebar-item.active { background: var(--accent-soft); color: var(--accent); }
 h1, h2 { font-family: var(--display); letter-spacing: -0.01em; }
 
-.view-switch { display: inline-flex; background: var(--bg-alt); border: 1px solid var(--border); border-radius: 999px; padding: 3px; }
-.view-switch button { border: 0; background: transparent; color: var(--text-dim); padding: 6px 16px; border-radius: 999px; font: inherit; font-weight: 600; cursor: pointer; }
-.view-switch button.on { background: var(--text); color: var(--bg); }
-.view-switch button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .cine-home { display: grid; gap: 26px; padding-bottom: 24px; }
 .cine-empty { padding: 48px 0; color: var(--text-dim); display: grid; gap: 12px; justify-items: start; }
@@ -1232,3 +1228,27 @@ h1, h2 { font-family: var(--display); letter-spacing: -0.01em; }
 .cine-poster.is-group::before, .cine-poster.is-group::after { content: ""; position: absolute; left: 12px; right: 12px; top: 0; height: 4px; border-radius: 6px 6px 0 0; background: rgba(255, 255, 255, 0.2); }
 .cine-poster.is-group::after { left: 6px; right: 6px; top: 4px; background: rgba(255, 255, 255, 0.35); }
 .cine-poster:not(.is-group) { padding-top: 8px; }
+
+/* ---- Side menu (≡ shows the labels) ---- */
+.sidebar { transition: width 0.15s ease; }
+.sidebar.open { width: 200px; align-items: stretch; }
+.sidebar-top { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+.sidebar-brand { display: inline-flex; align-items: center; gap: 8px; font-family: var(--display); font-weight: 700; font-size: 17px; white-space: nowrap; }
+.sidebar-brand .sidebar-logo { width: 26px; height: 26px; }
+.sidebar.open .sidebar-item:not(.sidebar-menu) { width: 100%; justify-content: flex-start; gap: 14px; padding: 0 14px; }
+.sidebar-label { font-size: 14px; font-weight: 600; white-space: nowrap; }
+.sidebar-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .sidebar { transition: none; } }
+
+/* ---- Home: "On now" (last three channels) ---- */
+.cine-link { border: 0; background: transparent; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; padding: 4px 6px; border-radius: 6px; }
+.cine-link:hover { text-decoration: underline; }
+.cine-link:focus-visible { outline: 2px solid var(--accent); }
+.cine-live-track { grid-auto-columns: clamp(220px, 22vw, 300px); }
+.cine-live { all: unset; cursor: pointer; display: grid; gap: 4px; padding-top: 8px; min-width: 0; scroll-snap-align: start; }
+.cine-live-art { position: relative; aspect-ratio: 16 / 9; border-radius: 10px; overflow: hidden; background: var(--bg-alt); display: grid; place-items: center; transition: transform 0.15s ease, box-shadow 0.15s ease; }
+.cine-live-art img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cine-live-art img.cine-live-logo { width: 45%; height: auto; object-fit: contain; }
+.cine-live:hover .cine-live-art, .cine-live:focus-visible .cine-live-art { transform: scale(1.03); box-shadow: 0 10px 30px rgba(0,0,0,0.5), 0 0 0 3px var(--accent); }
+.cine-live-pill { position: absolute; top: 8px; left: 8px; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; border-radius: 999px; padding: 3px 8px; }
+@media (prefers-reduced-motion: reduce) { .cine-live-art { transition: none; } }
