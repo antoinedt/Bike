@@ -64,6 +64,9 @@ const api = {
   getAppVersion: () => ipcRenderer.invoke("app:version"),
   openLog: () => ipcRenderer.invoke("app:openLog"),
   clearLog: () => ipcRenderer.invoke("app:clearLog"),
+  getResume: (itemId: string) => ipcRenderer.invoke("resume:get", itemId),
+  saveResume: (itemId: string, positionMs: number, durationMs: number, ended: boolean) =>
+    ipcRenderer.invoke("resume:save", itemId, positionMs, durationMs, ended),
   getUpdateStatus: () => ipcRenderer.invoke("update:getStatus"),
   checkForUpdate: () => ipcRenderer.invoke("update:check"),
   installUpdateNow: () => ipcRenderer.invoke("update:installNow"),

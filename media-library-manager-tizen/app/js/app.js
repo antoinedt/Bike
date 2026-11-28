@@ -347,8 +347,66 @@
     return videoPlayer.classList.contains("hidden") ? audioPlayer : videoPlayer;
   }
 
+  // --- Resume -----------------------------------------------------------------------------
+  // Where each file was left off (per TV, in localStorage), plus — when the drive was last used
+  // with the PC/phone app, which keep it in "<file>.metadata.json" next to the file — that
+  // position too, whichever is newer. Not kept for the first 30 s or the last 5%.
+  var RESUME_KEY = "omniplay.resume";
+  var resumeTimer = null;
+  var playingItem = null;
+
+  function resumeStore() {
+    try { return JSON.parse(localStorage.getItem(RESUME_KEY) || "{}"); } catch (e) { return {}; }
+  }
+
+  function saveResume(item, player, ended) {
+    if (!item) return;
+    var store = resumeStore();
+    var pos = Math.floor((player.currentTime || 0) * 1000);
+    var dur = isFinite(player.duration) ? player.duration * 1000 : 0;
+    if (ended || pos < 30000 || (dur > 0 && pos >= dur * 0.95)) delete store[item.uri];
+    else store[item.uri] = { position: pos, at: Date.now() };
+    try { localStorage.setItem(RESUME_KEY, JSON.stringify(store)); } catch (e) {}
+  }
+
+  function readSidecarResume(item, callback) {
+    try {
+      var xhr = new XMLHttpRequest();
+      xhr.open("GET", item.uri + ".metadata.json", true);
+      xhr.timeout = 2000;
+      xhr.onload = function () {
+        try {
+          var m = JSON.parse(xhr.responseText);
+          callback(m && m.resumePositionMs ? { position: m.resumePositionMs, at: m.resumeUpdatedAt || 0 } : null);
+        } catch (e) { callback(null); }
+      };
+      xhr.onerror = xhr.ontimeout = function () { callback(null); };
+      xhr.send();
+    } catch (e) { callback(null); }
+  }
+
+  function applyResume(item, player) {
+    var local = resumeStore()[item.uri] || null;
+    readSidecarResume(item, function (shared) {
+      var best = local;
+      if (shared && (!best || shared.at > best.at)) best = shared;
+      if (!best || playingItem !== item) return;
+      var seek = function () { player.currentTime = best.position / 1000; };
+      if (player.readyState >= 1) seek();
+      else player.addEventListener("loadedmetadata", seek, { once: true });
+      setStatusOnPlayer("Resumed at " + formatDuration(best.position));
+    });
+  }
+
+  function setStatusOnPlayer(text) {
+    var base = playingItem ? playingItem.title : "";
+    nowPlaying.textContent = base + "  ·  " + text;
+    setTimeout(function () { if (playingItem) nowPlaying.textContent = playingItem.title; }, 6000);
+  }
+
   function play(item) {
     lastFocusedId = "item-" + item.id;
+    playingItem = item;
     var player = item.kind === "video" ? videoPlayer : audioPlayer;
     var other = item.kind === "video" ? audioPlayer : videoPlayer;
     other.classList.add("hidden");
@@ -361,9 +419,16 @@
     var started = player.play();
     if (started && started.catch) started.catch(function () {});
     player.focus();
+    applyResume(item, player);
+    clearInterval(resumeTimer);
+    resumeTimer = setInterval(function () { saveResume(item, player, false); }, 5000);
+    player.onended = function () { saveResume(item, player, true); };
   }
 
   function stopPlayback() {
+    clearInterval(resumeTimer);
+    if (playingItem) saveResume(playingItem, activePlayer(), activePlayer().ended);
+    playingItem = null;
     [videoPlayer, audioPlayer].forEach(function (p) {
       p.pause();
       p.removeAttribute("src");

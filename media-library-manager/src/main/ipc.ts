@@ -19,9 +19,10 @@ import {
 import { libraryScanStatus, scanLibrary } from "./library/libraryScan.js";
 import { relPathFromMediaPath, testShareConnection } from "./network/smbClient.js";
 import { downloadRawFile } from "./network/smbRawClient.js";
-import { ensureStreamServer, registerStream, unregisterStream } from "./network/streamServer.js";
+import { ensureStreamServer, registerLocalStream, registerStream, unregisterStream } from "./network/streamServer.js";
 import { searchSites } from "./search/siteSearch.js";
 import { clearLog, log, logPath } from "./log.js";
+import { getResume, saveResume } from "./resume.js";
 import { handOffDownload } from "./torrent/handoff.js";
 import { registerCopyHandlers } from "./transfer/copyIpc.js";
 import { registerRemoteHandlers } from "./remote/remoteIpc.js";
@@ -70,6 +71,10 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.libraryGetScanStatus, () => libraryScanStatus());
   ipcMain.handle(IPC.appVersion, () => app.getVersion());
   ipcMain.handle(IPC.appClearLog, () => clearLog());
+  ipcMain.handle(IPC.resumeGet, (_e, itemId: string) => getResume(itemId));
+  ipcMain.handle(IPC.resumeSave, (_e, itemId: string, positionMs: number, durationMs: number, ended: boolean) =>
+    saveResume(itemId, positionMs, durationMs, ended)
+  );
   ipcMain.handle(IPC.appOpenLog, async () => {
     log("app", `opened the log (version ${app.getVersion()})`);
     const error = await shell.openPath(logPath());
@@ -178,7 +183,12 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.networkStreamOpen, async (_e, item: MediaItem) => {
     const source = item.source;
-    if (source.type !== "network") throw new Error("Not a network item.");
+    if (source.type === "local") {
+      // Played in the app's own player too, so the position can be remembered.
+      const port = await ensureStreamServer();
+      const token = registerLocalStream(item.path, item.extension);
+      return { url: `http://127.0.0.1:${port}/stream/${token}`, token };
+    }
     const { networkShares } = getSettings();
     const share = networkShares.find((s) => s.id === source.shareId);
     if (!share) throw new Error("Network share for this item is no longer configured.");

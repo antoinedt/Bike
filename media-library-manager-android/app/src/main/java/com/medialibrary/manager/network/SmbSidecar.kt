@@ -29,7 +29,27 @@ object SmbSidecar {
         }.getOrNull()
     }
 
+    /** Writes [metadata], keeping a saved playback position (from any device) unless [metadata] has its own. */
     suspend fun write(share: NetworkShare, relPath: String, metadata: MediaMetadata) = withContext(Dispatchers.IO) {
+        val merged = if (metadata.resumePositionMs != null) metadata else {
+            val existing = read(share, relPath)
+            metadata.copy(resumePositionMs = existing?.resumePositionMs, resumeUpdatedAt = existing?.resumeUpdatedAt)
+        }
+        writeRaw(share, relPath, merged)
+    }
+
+    /** Sets (or, with null, removes) the shared playback position, keeping everything else in the file. */
+    suspend fun writeResume(share: NetworkShare, relPath: String, positionMs: Long?, at: Long) = withContext(Dispatchers.IO) {
+        val existing = read(share, relPath)
+        if (positionMs == null && existing?.resumePositionMs == null) return@withContext
+        val next = (existing ?: MediaMetadata()).copy(
+            resumePositionMs = positionMs,
+            resumeUpdatedAt = if (positionMs == null) null else at
+        )
+        writeRaw(share, relPath, next)
+    }
+
+    private fun writeRaw(share: NetworkShare, relPath: String, metadata: MediaMetadata) {
         SmbFile(sidecarUrl(share, relPath), SmbContextFactory.contextFor(share)).outputStream.use {
             it.write(json.encodeToString(metadata).toByteArray(Charsets.UTF_8))
         }

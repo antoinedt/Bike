@@ -219,6 +219,37 @@ export async function readSidecar(item: MediaItem, networkShares: NetworkShare[]
 }
 
 export async function writeSidecar(item: MediaItem, metadata: MediaMetadata, networkShares: NetworkShare[]): Promise<void> {
+  // Keep a saved playback position unless this write sets one itself.
+  if (!("resumePositionMs" in metadata)) {
+    const existing = await readSidecar(item, networkShares).catch(() => null);
+    if (existing?.resumePositionMs) {
+      metadata = { ...metadata, resumePositionMs: existing.resumePositionMs, resumeUpdatedAt: existing.resumeUpdatedAt };
+    }
+  }
+  await writeSidecarRaw(item, metadata, networkShares);
+}
+
+/** Sets (or, with null, removes) the shared playback position in the item's sidecar, keeping everything else. */
+export async function writeResumeToSidecar(
+  item: MediaItem,
+  positionMs: number | null,
+  at: number,
+  networkShares: NetworkShare[]
+): Promise<void> {
+  const existing = (await readSidecar(item, networkShares).catch(() => null)) ?? {};
+  if (positionMs == null && existing.resumePositionMs == null) return;
+  const next: MediaMetadata = { ...existing };
+  if (positionMs == null) {
+    delete next.resumePositionMs;
+    delete next.resumeUpdatedAt;
+  } else {
+    next.resumePositionMs = positionMs;
+    next.resumeUpdatedAt = at;
+  }
+  await writeSidecarRaw(item, next, networkShares);
+}
+
+async function writeSidecarRaw(item: MediaItem, metadata: MediaMetadata, networkShares: NetworkShare[]): Promise<void> {
   const source = item.source;
   if (source.type === "local") {
     await fs.writeFile(`${item.path}.metadata.json`, JSON.stringify(metadata, null, 2), "utf8");

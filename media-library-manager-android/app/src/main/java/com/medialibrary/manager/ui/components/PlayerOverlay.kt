@@ -52,6 +52,7 @@ import androidx.media3.ui.PlayerView
 import com.medialibrary.manager.model.MediaItem
 import com.medialibrary.manager.network.SmbStreamStats
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.media3.common.MediaItem as ExoMediaItem
 
 /**
@@ -96,13 +97,15 @@ fun PlayerOverlay(
     val resume = remember { ResumePositions(context) }
     var resumedAt by remember { mutableStateOf<Long?>(null) }
     LaunchedEffect(player) {
-        resume.get(item.id)?.let { at ->
+        resume.load(item)?.let { at ->
             player.seekTo(at)
             resumedAt = at
         }
+        var ticks = 0
         while (true) {
             delay(5_000)
-            resume.save(item.id, player.currentPosition, player.duration)
+            ticks++
+            if (player.isPlaying) resume.save(item, player.currentPosition, player.duration, share = ticks % 3 == 0)
         }
     }
     LaunchedEffect(resumedAt) {
@@ -113,7 +116,10 @@ fun PlayerOverlay(
     }
     DisposableEffect(Unit) {
         onDispose {
-            resume.save(item.id, player.currentPosition, player.duration, ended = player.playbackState == androidx.media3.common.Player.STATE_ENDED)
+            resume.save(
+                item, player.currentPosition, player.duration,
+                ended = player.playbackState == androidx.media3.common.Player.STATE_ENDED, share = true
+            )
             player.release()
         }
     }
@@ -206,7 +212,7 @@ fun PlayerOverlay(
                     Text("Resumed at ${formatPosition(at)}", color = Color.White, style = MaterialTheme.typography.bodySmall)
                     androidx.compose.material3.TextButton(onClick = {
                         player.seekTo(0)
-                        resume.clear(item.id)
+                        resume.clear(item)
                         resumedAt = null
                         playerView?.requestFocus()
                     }) { Text("Start over") }
@@ -273,20 +279,43 @@ private fun formatPosition(ms: Long): String {
 }
 
 /**
- * Where each item was left off, by item id. Not saved in the first 30 s or the last 5% (or once it
- * played to the end) — those start from the beginning next time.
+ * Where each item was left off: kept on this device, and — for items on a share — in the file's
+ * shared ".metadata.json" sidecar too, so the PC, the TV or another phone can continue it.
+ * Whichever was saved last wins. Not kept for the first 30 s or the last 5% (or once it ended).
  */
 private class ResumePositions(context: android.content.Context) {
     private val prefs = context.getSharedPreferences("resume_positions", android.content.Context.MODE_PRIVATE)
+    private val background = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
 
-    fun get(id: String): Long? = prefs.getLong(id, -1L).takeIf { it > 0 }
-
-    fun save(id: String, position: Long, duration: Long, ended: Boolean = false) {
-        val nearEnd = duration > 0 && position >= duration * 0.95
-        if (ended || nearEnd || position < 30_000) clear(id) else prefs.edit().putLong(id, position).apply()
+    private suspend fun shareFor(item: MediaItem): Pair<com.medialibrary.manager.model.NetworkShare, String>? {
+        if (item.sourceType != com.medialibrary.manager.model.MediaSourceType.NETWORK) return null
+        val share = item.shareId?.let { com.medialibrary.manager.di.ServiceLocator.settingsRepository.shareById(it) } ?: return null
+        return share to item.path.removePrefix("smb://${share.id}/")
     }
 
-    fun clear(id: String) = prefs.edit().remove(id).apply()
+    /** The newest saved position, here or from another device; null = start from the beginning. */
+    suspend fun load(item: MediaItem): Long? {
+        val local = prefs.getLong(item.id, -1L).takeIf { it > 0 }?.let { it to prefs.getLong("${item.id}@at", 0L) }
+        val shared = shareFor(item)?.let { (share, rel) ->
+            com.medialibrary.manager.network.SmbSidecar.read(share, rel)
+        }?.let { m -> m.resumePositionMs?.let { it to (m.resumeUpdatedAt ?: 0L) } }
+        return listOfNotNull(local, shared).maxByOrNull { it.second }?.first
+    }
+
+    /** Saves here right away; to the shared file too when [share] is true (every ~15 s and on close). */
+    fun save(item: MediaItem, position: Long, duration: Long, ended: Boolean = false, share: Boolean = false) {
+        val now = System.currentTimeMillis()
+        val keep = !ended && position >= 30_000 && !(duration > 0 && position >= duration * 0.95)
+        if (keep) prefs.edit().putLong(item.id, position).putLong("${item.id}@at", now).apply()
+        else prefs.edit().remove(item.id).remove("${item.id}@at").apply()
+        if (share) background.launch {
+            runCatching {
+                shareFor(item)?.let { (s, rel) -> com.medialibrary.manager.network.SmbSidecar.writeResume(s, rel, if (keep) position else null, now) }
+            }
+        }
+    }
+
+    fun clear(item: MediaItem) = save(item, 0, 0, ended = true, share = true)
 }
 
 /** The error (always), plus the playback info lines when [showInfo] is on. */

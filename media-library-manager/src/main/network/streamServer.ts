@@ -1,5 +1,7 @@
 import http from "node:http";
 import { randomUUID } from "node:crypto";
+import { createReadStream } from "node:fs";
+import { stat } from "node:fs/promises";
 import type { NetworkShare } from "../../shared/types.js";
 import { closeRawFile, openRawFile, readRawStream, type RawFileHandle } from "./smbRawClient.js";
 
@@ -26,8 +28,10 @@ const MIME_BY_EXTENSION: Record<string, string> = {
 
 
 interface StreamEntry {
-  share: NetworkShare;
+  share: NetworkShare | null;
   relPath: string;
+  /** A file on this PC instead of a share. */
+  localPath?: string;
   mimeType: string;
   handle: Promise<RawFileHandle> | null;
 }
@@ -41,6 +45,19 @@ export function registerStream(share: NetworkShare, relPath: string, extension: 
   streams.set(token, {
     share,
     relPath,
+    mimeType: MIME_BY_EXTENSION[extension.toLowerCase()] ?? "application/octet-stream",
+    handle: null
+  });
+  return token;
+}
+
+/** Serves a file on this PC to the in-app player (same range support as share streams). */
+export function registerLocalStream(localPath: string, extension: string): string {
+  const token = randomUUID();
+  streams.set(token, {
+    share: null,
+    relPath: "",
+    localPath,
     mimeType: MIME_BY_EXTENSION[extension.toLowerCase()] ?? "application/octet-stream",
     handle: null
   });
@@ -77,9 +94,13 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return;
   }
 
+  if (entry.localPath) {
+    await serveLocal(entry, req, res);
+    return;
+  }
   try {
     if (!entry.handle) {
-      entry.handle = openRawFile(entry.share, entry.relPath);
+      entry.handle = openRawFile(entry.share!, entry.relPath);
     }
     const handle = await entry.handle;
 
@@ -118,6 +139,39 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       }
     }
     res.end();
+  } catch (err) {
+    if (!res.headersSent) res.writeHead(500);
+    res.end(`Stream error: ${(err as Error).message ?? err}`);
+  }
+}
+
+async function serveLocal(entry: StreamEntry, req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+  try {
+    const size = (await stat(entry.localPath!)).size;
+    let start = 0;
+    let end = size - 1;
+    let status = 200;
+    const match = /bytes=(\d+)-(\d*)/.exec(req.headers.range ?? "");
+    if (match) {
+      start = Number(match[1]);
+      end = match[2] ? Number(match[2]) : size - 1;
+      status = 206;
+    }
+    end = Math.min(end, size - 1);
+    const length = Math.max(0, end - start + 1);
+    res.writeHead(status, {
+      "Content-Type": entry.mimeType,
+      "Accept-Ranges": "bytes",
+      "Content-Length": length,
+      ...(status === 206 ? { "Content-Range": `bytes ${start}-${end}/${size}` } : {})
+    });
+    if (req.method === "HEAD" || length === 0) {
+      res.end();
+      return;
+    }
+    const stream = createReadStream(entry.localPath!, { start, end });
+    res.on("close", () => stream.destroy());
+    stream.pipe(res);
   } catch (err) {
     if (!res.headersSent) res.writeHead(500);
     res.end(`Stream error: ${(err as Error).message ?? err}`);

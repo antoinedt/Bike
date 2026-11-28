@@ -72,7 +72,9 @@ export default function LibraryPage({ settings, onOpenDownloads }: { settings: A
   async function open(item: MediaItem) {
     setError(null);
     try {
-      if (item.source.type === "local") {
+      // Images and other files open in their usual app; video and audio play here (so the
+      // position is remembered and can be continued on another device).
+      if (item.kind !== "video" && item.kind !== "audio") {
         await window.api.openItem(item);
       } else {
         const { url, token } = await window.api.openNetworkStream(item);

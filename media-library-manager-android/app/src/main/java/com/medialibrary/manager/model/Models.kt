@@ -77,7 +77,11 @@ data class MediaMetadata(
     val year: String? = null,
     val artworkUrl: String? = null,
     val tags: List<String> = emptyList(),
-    val infoFetched: Boolean = false
+    val infoFetched: Boolean = false,
+    /** Where playback was left off (ms) — shared with the other apps through the sidecar file. */
+    val resumePositionMs: Long? = null,
+    /** When [resumePositionMs] was saved (ms since epoch); the newest wins. */
+    val resumeUpdatedAt: Long? = null
 )
 
 /** A user-picked device folder (SAF tree URI) to scope the local scan to. */

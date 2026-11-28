@@ -42,6 +42,10 @@ export interface MediaMetadata {
   artworkUrl?: string;
   tags?: string[];
   infoFetched?: boolean;
+  /** Where playback was left off (ms), shared between devices through the sidecar file. */
+  resumePositionMs?: number;
+  /** When [resumePositionMs] was saved (ms since epoch), so the newest wins. */
+  resumeUpdatedAt?: number;
 }
 
 export interface LocalFolder {

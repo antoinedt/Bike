@@ -129,6 +129,9 @@ export interface PreloadApi {
   /** Opens OmniPlay's log file (search, updates…); resolves with its path. */
   openLog(): Promise<string>;
   clearLog(): Promise<void>;
+  /** Where this item was left off (ms), on this PC or another device; null = start from the beginning. */
+  getResume(itemId: string): Promise<number | null>;
+  saveResume(itemId: string, positionMs: number, durationMs: number, ended: boolean): Promise<void>;
   getUpdateStatus(): Promise<UpdateStatus>;
   /** Checks GitHub for a newer build and downloads it; resolves with the resulting status. */
   checkForUpdate(): Promise<UpdateStatus>;
