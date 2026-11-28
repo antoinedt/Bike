@@ -206,28 +206,35 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, isTv: Boolean, onPickImage: 
 
     // The top bar: Home/Folders, then Search (filters as you type; the button also asks the search sites).
     val searchBar: @Composable () -> Unit = {
-        androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-            ViewSwitch()
-                // A placeholder rather than a floating label keeps the field one line tall.
-            if (isTv) {
-                // TV: Search box (press OK to type) + a search-sites button; results can be
-                // downloaded here or sent to another device.
-                androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    AppTextField(
-                        value = filter,
-                        onValueChange = ::onSearchTextChange,
-                        placeholder = { Text("Search") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                        keyboardActions = KeyboardActions(onSearch = { searchSites() }),
-                        modifier = Modifier.width(280.dp).focusRequester(filterRequester)
-                    )
-                    IconButton(onClick = { searchSites() }, enabled = filter.isNotBlank() && !searching) {
-                        Icon(Icons.Filled.Search, contentDescription = "Search sites")
-                    }
+        if (isTv) {
+            // TV: one line — Home/Folders, then the Search box (press OK to type) + search-sites button.
+            androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                ViewSwitch()
+                AppTextField(
+                    value = filter,
+                    onValueChange = ::onSearchTextChange,
+                    placeholder = { Text("Search") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { searchSites() }),
+                    modifier = Modifier.width(280.dp).focusRequester(filterRequester)
+                )
+                IconButton(onClick = { searchSites() }, enabled = filter.isNotBlank() && !searching) {
+                    Icon(Icons.Filled.Search, contentDescription = "Search sites")
                 }
-            } else {
-                // Phone: Search (filters the library as you type) + search-sites button + Cast.
+            }
+        } else {
+            // Phone: Home/Folders and Cast on the first line, full-width Search on the second.
+            Column(Modifier.fillMaxWidth()) {
+                androidx.compose.foundation.layout.Row(
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    ViewSwitch()
+                    Spacer(Modifier.weight(1f))
+                    com.medialibrary.manager.ui.components.CastButton(viewModel)
+                }
+                Spacer(Modifier.height(6.dp))
                 androidx.compose.foundation.layout.Row(
                     verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth()
@@ -235,7 +242,7 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, isTv: Boolean, onPickImage: 
                     AppTextField(
                         value = filter,
                         onValueChange = ::onSearchTextChange,
-                        placeholder = { Text("Search") },
+                        placeholder = { Text("Search your library") },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                         keyboardActions = KeyboardActions(onSearch = { searchSites() }),
@@ -244,10 +251,9 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, isTv: Boolean, onPickImage: 
                     IconButton(onClick = { searchSites() }, enabled = filter.isNotBlank() && !searching) {
                         Icon(Icons.Filled.Search, contentDescription = "Search sites")
                     }
-                    com.medialibrary.manager.ui.components.CastButton(viewModel)
                 }
             }
-                    }
+        }
     }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = if (isTv) 8.dp else 12.dp)) {

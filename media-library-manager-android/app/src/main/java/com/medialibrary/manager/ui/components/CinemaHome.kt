@@ -65,7 +65,9 @@ fun episodeInfo(item: MediaItem): EpisodeInfo? {
 private fun cleanTitle(item: MediaItem): String {
     val base = item.name.substringBeforeLast('.').replace(Regex("[._]+"), " ")
     val cut = QUALITY_CUT.find(base)?.range?.first ?: -1
-    return (if (cut > 0) base.substring(0, cut) else base).trimEnd(' ', '(', '[', '-').trim().ifEmpty { base.trim() }
+    val title = (if (cut > 0) base.substring(0, cut) else base).trimEnd(' ', '(', '[', '-').trim().ifEmpty { base.trim() }
+    // A year at the very start ("1967 Astérix le Gaulois") is the year, not part of the title.
+    return title.replace(Regex("""^(19|20)\d{2}\s+(?=\S)"""), "").ifEmpty { title }
 }
 
 fun displayTitle(item: MediaItem): String {
@@ -95,9 +97,19 @@ private data class Rows(
     val music: List<MediaItem>
 )
 
-private fun buildRows(items: List<MediaItem>, resume: List<ResumeStore.Entry>): Rows {
-    val byId = items.associateBy { it.id }
+/**
+ * One entry per file: the same file found in two places (e.g. a local folder and a share, same
+ * name and size) shows once, preferring the local copy.
+ */
+private fun distinctFiles(items: List<MediaItem>): List<MediaItem> =
+    items.groupBy { "${it.name.lowercase()}|${it.sizeBytes}" }
+        .values.map { copies -> copies.firstOrNull { it.sourceType == com.medialibrary.manager.model.MediaSourceType.LOCAL } ?: copies.first() }
+
+private fun buildRows(all: List<MediaItem>, resume: List<ResumeStore.Entry>): Rows {
+    val byId = all.associateBy { it.id }
+    val items = distinctFiles(all)
     val continuing = resume.mapNotNull { e -> byId[e.itemId]?.let { e to it } }
+        .distinctBy { (_, item) -> "${item.name.lowercase()}|${item.sizeBytes}" }
     val videos = items.filter { it.kind == MediaKind.VIDEO }
     val recent = videos.sortedByDescending { it.modifiedAtMillis }.take(24)
     val shows = linkedMapOf<String, Triple<String, MediaItem, Int>>()

@@ -24,7 +24,9 @@ function cleanName(item: MediaItem): { title: string; year?: string } {
   const year = /\b(19\d{2}|20\d{2})\b/.exec(base);
   const cut = base.search(/[([]?\b(19\d{2}|20\d{2}|2160p|1080p|720p|480p|x26[45]|h ?26[45]|hevc|web|webrip|web-dl|bluray|brrip|hdtv)\b/i);
   const title = (cut > 0 ? base.slice(0, cut) : base).replace(/[\s([-]+$/, "").trim();
-  return { title: title || base.trim(), year: year?.[1] };
+  // A year at the very start ("1967 Astérix le Gaulois") is the year, not part of the title.
+  const clean = (title || base.trim()).replace(/^(19|20)\d{2}\s+(?=\S)/, "");
+  return { title: clean || title || base.trim(), year: year?.[1] };
 }
 
 function displayTitle(item: MediaItem): string {
@@ -125,10 +127,20 @@ export default function CinemaHome({
 }) {
   const rows = useMemo(() => {
     const byId = new Map(items.map((i) => [i.id, i]));
+    // One entry per file: the same file in two places (same name and size) shows once, the local copy.
+    const fileKey = (i: MediaItem) => `${i.name.toLowerCase()}|${i.sizeBytes}`;
+    const distinct = new Map<string, MediaItem>();
+    for (const i of items) {
+      const prev = distinct.get(fileKey(i));
+      if (!prev || (prev.source.type !== "local" && i.source.type === "local")) distinct.set(fileKey(i), i);
+    }
+    const files = [...distinct.values()];
+    const seen = new Set<string>();
     const continuing = resume
       .map((r) => ({ entry: r, item: byId.get(r.itemId) }))
-      .filter((x): x is { entry: ResumeEntry; item: MediaItem } => !!x.item);
-    const videos = items.filter((i) => i.kind === "video");
+      .filter((x): x is { entry: ResumeEntry; item: MediaItem } => !!x.item)
+      .filter((x) => !seen.has(fileKey(x.item)) && !!seen.add(fileKey(x.item)));
+    const videos = files.filter((i) => i.kind === "video");
     const recent = [...videos].sort((a, b) => b.modifiedAt - a.modifiedAt).slice(0, 24);
 
     // One tile per show: its newest episode stands in for it.
@@ -149,7 +161,7 @@ export default function CinemaHome({
       }
     }
     movies.sort((a, b) => displayTitle(a).localeCompare(displayTitle(b)));
-    const music = items.filter((i) => i.kind === "audio").sort((a, b) => b.modifiedAt - a.modifiedAt).slice(0, 24);
+    const music = files.filter((i) => i.kind === "audio").sort((a, b) => b.modifiedAt - a.modifiedAt).slice(0, 24);
     return {
       continuing,
       recent,
