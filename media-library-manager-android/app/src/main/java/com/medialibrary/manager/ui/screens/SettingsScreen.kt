@@ -62,6 +62,8 @@ fun SettingsScreen(
         item { HorizontalDivider() }
         item { SharesSection(settings.networkShares, shareTestResult, viewModel) }
         item { HorizontalDivider() }
+        item { ExcludedSection(settings, viewModel) }
+        item { HorizontalDivider() }
         item { TmdbSection(settings.tmdbApiKey, viewModel) }
         item { HorizontalDivider() }
         item { com.medialibrary.manager.ui.components.ArtworkFetchSection(viewModel) }
@@ -511,6 +513,30 @@ private fun VersionLine() {
             Button(onClick = { com.medialibrary.manager.update.AppUpdater.update(context) }) { Text("Update to ${available.version}") }
         } else {
             OutlinedButton(onClick = { com.medialibrary.manager.update.AppUpdater.check(context) }) { Text("Check for updates") }
+        }
+    }
+}
+
+/** Folders left out of scans: list them, include one again, or show them in the Folders view. */
+@Composable
+private fun ExcludedSection(settings: com.medialibrary.manager.model.AppSettings, viewModel: MediaLibraryViewModel) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Excluded folders", style = MaterialTheme.typography.titleMedium)
+        Text(
+            "In the Library's Folders view, open a folder and tick \"Exclude this folder\" to leave it (and everything in it) out of the library.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(checked = settings.showExcludedFolders, onCheckedChange = { viewModel.setShowExcludedFolders(it) })
+            Text("Show excluded folders in the Folders view (greyed out), so they can be included again", style = MaterialTheme.typography.bodySmall)
+        }
+        settings.excludedFolders.forEach { key ->
+            val label = com.medialibrary.manager.ui.components.excludedFolderLabel(key, settings)
+            ListItem(
+                headlineContent = { Text("🚫 $label") },
+                trailingContent = { TextButton(onClick = { viewModel.setFolderExcluded(key, false) }) { Text("Include again") } }
+            )
         }
     }
 }

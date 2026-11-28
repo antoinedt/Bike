@@ -34,6 +34,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -123,6 +124,8 @@ fun MediaGrid(
     copyProgress: Float? = null,
     /** Full-width rows after the tiles, in the same scroll (the Library's search-site results). */
     footer: (LazyGridScope.() -> Unit)? = null,
+    /** Folder names shown greyed with 🚫: left out of scans. */
+    excludedFolders: Set<String> = emptySet(),
     /** "Fetch artwork & info" for one item, from its edit dialog. */
     onFetchInfo: ((MediaItem) -> Unit)? = null,
     modifier: Modifier = Modifier
@@ -168,12 +171,16 @@ fun MediaGrid(
             }
         }
         itemsIndexed(folders, key = { _, name -> "folder:$name" }) { index, name ->
-            Card(onClick = { onOpenFolder(name) }, modifier = rememberTileModifier(gridFocus, index)) {
+            val excluded = name in excludedFolders
+            Card(
+                onClick = { onOpenFolder(name) },
+                modifier = rememberTileModifier(gridFocus, index).then(if (excluded) Modifier.alpha(0.5f) else Modifier)
+            ) {
                 Column(
                     modifier = Modifier.padding(12.dp).fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text("📁", style = MaterialTheme.typography.headlineMedium)
+                    Text(if (excluded) "🚫" else "📁", style = MaterialTheme.typography.headlineMedium)
                     Box(Modifier.height(4.dp))
                     Text(name, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
                 }

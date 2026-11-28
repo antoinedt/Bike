@@ -340,6 +340,7 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, isTv: Boolean, onPickImage: 
             topBarFirst = filterRequester,
             gridFooter = siteResults,
             onFetchInfo = { item -> viewModel.fetchInfo(setOf(item.id), force = true) },
+            onSetFolderExcluded = { key, excluded -> viewModel.setFolderExcluded(key, excluded) },
             modifier = Modifier.weight(1f)
         )
         if (!isTv) com.medialibrary.manager.ui.components.CastBar(viewModel, Modifier.padding(top = 6.dp))

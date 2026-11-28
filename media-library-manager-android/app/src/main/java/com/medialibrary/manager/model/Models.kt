@@ -188,7 +188,11 @@ data class AppSettings(
     /** How this device shows up on other devices ("" = its model name). */
     val deviceName: String = "",
     /** The network share used as the mailbox for "Send to another device"; "" = off. */
-    val remoteShareId: String = ""
+    val remoteShareId: String = "",
+    /** Folders left out of scans (with everything inside): "local:<folderId>:<rel/path>" or "network:<shareId>:<rel/path>". */
+    val excludedFolders: List<String> = emptyList(),
+    /** Show excluded folders (greyed) in the Folders view, so they can be included again. */
+    val showExcludedFolders: Boolean = false
 )
 
 /** One lookup step's outcome for a single item during "Fetch artwork & info" — what the progress dialog's log is built from. */

@@ -59,6 +59,13 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun removeSiteProfile(id: String) = update { it.copy(siteProfiles = it.siteProfiles.filterNot { p -> p.id == id }) }
 
+    suspend fun setFolderExcluded(key: String, excluded: Boolean) = update {
+        val rest = it.excludedFolders - key
+        it.copy(excludedFolders = if (excluded) rest + key else rest)
+    }
+
+    suspend fun setShowExcludedFolders(show: Boolean) = update { it.copy(showExcludedFolders = show) }
+
     suspend fun shareById(id: String): NetworkShare? = current().networkShares.find { it.id == id }
 
     suspend fun updateTmdbApiKey(tmdbApiKey: String) = update { it.copy(tmdbApiKey = tmdbApiKey) }

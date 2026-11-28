@@ -42,7 +42,11 @@ class LocalFolderScanner(private val context: Context) {
 
     private class Child(val documentId: String, val name: String, val isDirectory: Boolean, val size: Long, val modified: Long)
 
-    suspend fun scan(folder: LocalFolder, onBatch: (List<MediaItem>) -> Unit = {}): SourceScanResult = withContext(Dispatchers.IO) {
+    suspend fun scan(
+        folder: LocalFolder,
+        onBatch: (List<MediaItem>) -> Unit = {},
+        excluded: Set<String> = emptySet()
+    ): SourceScanResult = withContext(Dispatchers.IO) {
         val treeUri = Uri.parse(folder.treeUri)
         val rootId = runCatching { DocumentsContract.getTreeDocumentId(treeUri) }.getOrNull()
             ?: return@withContext SourceScanResult(complete = false, seenIds = emptySet())
@@ -62,6 +66,7 @@ class LocalFolderScanner(private val context: Context) {
                 for (child in children) {
                     val childRel = if (relPath.isEmpty()) child.name else "$relPath/${child.name}"
                     if (child.isDirectory) {
+                        if ("local:${folder.id}:$childRel" in excluded) continue
                         if (depth + 1 <= MAX_DEPTH) launch { walk(child.documentId, childRel, depth + 1) }
                         continue
                     }

@@ -371,7 +371,7 @@ class MediaLibraryViewModel : ViewModel() {
                         coroutineScope {
                             folders.map { folder ->
                                 async {
-                                    runCatching { localFolderScanner.scan(folder, onBatch) }
+                                    runCatching { localFolderScanner.scan(folder, onBatch, _settings.value.excludedFolders.toSet()) }
                                         .onSuccess { result ->
                                             if (result.complete) prune(_localItems, result.seenIds) { it.folderId == folder.id }
                                             else synchronized(errors) { errors += "Couldn't read ${folder.label}." }
@@ -523,7 +523,7 @@ class MediaLibraryViewModel : ViewModel() {
                     coroutineScope {
                         shares.map { share ->
                             async {
-                                runCatching { smbBrowser.scan(share, onBatch) }
+                                runCatching { smbBrowser.scan(share, onBatch, _settings.value.excludedFolders.toSet()) }
                                     .onSuccess { result -> prune(_networkItems, result.seenIds) { it.shareId == share.id } }
                                     .onFailure { e ->
                                         com.medialibrary.manager.log.AppLog.log("share", "scan ${share.label} (${share.host}) failed: ${com.medialibrary.manager.network.causeChain(e)}")
@@ -546,6 +546,15 @@ class MediaLibraryViewModel : ViewModel() {
             }
         }
     }
+
+    /** Leave a folder (and everything in it) out of scans, or include it again; rescans that kind of source. */
+    fun setFolderExcluded(key: String, excluded: Boolean) = viewModelScope.launch {
+        settingsRepo.setFolderExcluded(key, excluded)
+        _settings.value = settingsRepo.current()
+        if (key.startsWith("network:")) scanNetwork() else scanLocal()
+    }
+
+    fun setShowExcludedFolders(show: Boolean) = viewModelScope.launch { settingsRepo.setShowExcludedFolders(show) }
 
     fun updateTmdbApiKey(tmdbApiKey: String) = viewModelScope.launch { settingsRepo.updateTmdbApiKey(tmdbApiKey) }
 

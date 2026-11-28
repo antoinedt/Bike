@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -59,6 +60,42 @@ internal fun segmentsForItem(item: MediaItem, settings: AppSettings): List<Strin
 }
 
 /**
+ * The exclusion key ("local:<folderId>:<rel>" / "network:<shareId>:<rel>") of the folder at [path]
+ * in the Folders view, or null for a grouping level (Local, a share's root) or the device-wide
+ * media index (which has no folders to exclude).
+ */
+internal fun folderKeyForPath(path: List<String>, settings: AppSettings): String? {
+    if (path.isEmpty()) return null
+    if (path[0] == "Local") {
+        val multi = settings.localFolders.size > 1
+        val folder = if (multi) settings.localFolders.find { it.label == path.getOrNull(1) } else settings.localFolders.firstOrNull()
+        val rel = path.drop(if (multi) 2 else 1)
+        return if (folder != null && rel.isNotEmpty()) "local:${folder.id}:${rel.joinToString("/")}" else null
+    }
+    val share = settings.networkShares.find { it.label == path[0] } ?: return null
+    val rel = path.drop(1)
+    return if (rel.isNotEmpty()) "network:${share.id}:${rel.joinToString("/")}" else null
+}
+
+/** The Folders-view path of an exclusion key; null if its folder or share is no longer configured. */
+internal fun pathForFolderKey(key: String, settings: AppSettings): List<String>? {
+    val parts = key.split(":", limit = 3)
+    if (parts.size < 3) return null
+    val rel = parts[2].split("/").filter { it.isNotEmpty() }
+    return if (parts[0] == "local") {
+        val folder = settings.localFolders.find { it.id == parts[1] } ?: return null
+        (if (settings.localFolders.size > 1) listOf("Local", folder.label) else listOf("Local")) + rel
+    } else {
+        val share = settings.networkShares.find { it.id == parts[1] } ?: return null
+        listOf(share.label) + rel
+    }
+}
+
+/** "Local / Movies / Kids" for an exclusion key, for Settings' list. */
+fun excludedFolderLabel(key: String, settings: AppSettings): String =
+    pathForFolderKey(key, settings)?.joinToString(" / ") ?: key.substringAfter(':').substringAfter(':')
+
+/**
  * The Library's browsing area: a slim top bar (filter field, folder path, tag chips), the grid of
  * subfolders + files taking all the remaining height, and a slim bottom bar (scan buttons). With no filter active it browses one folder at a time
  * using [segmentsForItem]; any active filter (name text or tags) switches to a flat search across
@@ -96,6 +133,8 @@ fun MediaBrowser(
     bottomBarFirst: FocusRequester? = null,
     /** Full-width rows after the library tiles, in the same scroll (search-site results). */
     gridFooter: (LazyGridScope.() -> Unit)? = null,
+    /** Exclude the folder being browsed (and its subfolders) from scans, or include it again. */
+    onSetFolderExcluded: ((key: String, excluded: Boolean) -> Unit)? = null,
     onFetchInfo: ((MediaItem) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -114,6 +153,7 @@ fun MediaBrowser(
     }
 
     val depth = path.size
+    val excludedHere = mutableSetOf<String>()
     val folders: List<String>
     val files: List<MediaItem>
     if (hasActiveFilter) {
@@ -127,6 +167,16 @@ fun MediaBrowser(
             if (segments.size < depth) continue
             if ((0 until depth).any { segments.getOrNull(it) != path[it] }) continue
             if (segments.size == depth) filesHere += item else subfolders += segments[depth]
+        }
+        // Excluded folders have no scanned files, so they only show up (greyed) when Settings says to.
+        if (settings.showExcludedFolders) {
+            for (key in settings.excludedFolders) {
+                val p = pathForFolderKey(key, settings) ?: continue
+                if (p.size > depth && (0 until depth).all { p[it] == path[it] }) {
+                    subfolders += p[depth]
+                    if (p.size == depth + 1) excludedHere += p[depth]
+                }
+            }
         }
         folders = subfolders.toList()
         files = filesHere
@@ -192,8 +242,30 @@ fun MediaBrowser(
                 tagChips()
             }
         }
+        val currentKey = if (hasActiveFilter || onSetFolderExcluded == null) null else folderKeyForPath(path, settings)
+        if (currentKey != null) {
+            val ancestorExcluded = (1 until depth).any { i ->
+                folderKeyForPath(path.take(i), settings)?.let { it in settings.excludedFolders } == true
+            }
+            val excluded = currentKey in settings.excludedFolders
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(
+                    checked = excluded || ancestorExcluded,
+                    enabled = !ancestorExcluded,
+                    onCheckedChange = { exclude ->
+                        onSetFolderExcluded?.invoke(currentKey, exclude)
+                        if (exclude && !settings.showExcludedFolders) path = path.dropLast(1)
+                    }
+                )
+                Text(
+                    if (ancestorExcluded) "Excluded with its parent folder" else "Exclude this folder and its subfolders from scans",
+                    style = androidx.compose.material3.MaterialTheme.typography.bodySmall
+                )
+            }
+        }
         Spacer(Modifier.height(4.dp))
         MediaGrid(
+            excludedFolders = excludedHere,
             items = files,
             allTags = allTags,
             folders = folders,

@@ -45,7 +45,11 @@ class SmbShareBrowser {
      * [onBatch] as soon as it's read, so the library fills in while the scan runs. Throws if the share
      * itself can't be reached (offline, wrong password), so callers keep what the library already has.
      */
-    suspend fun scan(share: NetworkShare, onBatch: (List<MediaItem>) -> Unit = {}): SourceScanResult = withContext(Dispatchers.IO) {
+    suspend fun scan(
+        share: NetworkShare,
+        onBatch: (List<MediaItem>) -> Unit = {},
+        excluded: Set<String> = emptySet()
+    ): SourceScanResult = withContext(Dispatchers.IO) {
         val context = SmbContextFactory.contextFor(share)
         val seen = ConcurrentHashMap.newKeySet<String>()
         val permits = Semaphore(CONCURRENCY)
@@ -61,6 +65,7 @@ class SmbShareBrowser {
                     val isDir = runCatching { child.isDirectory }.getOrDefault(false)
                     if (isDir) {
                         if (depth + 1 > MAX_DEPTH) continue
+                        if ("network:${share.id}:$childRel" in excluded) continue
                         launch {
                             // Only the listing holds a permit, never the recursion — no deadlock.
                             val sub = permits.withPermit { runCatching { child.listFiles() }.getOrNull() }
