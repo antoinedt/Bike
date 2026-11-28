@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import { pathToFileURL } from "node:url";
 import type { MediaItem, MediaMetadata, NetworkShare, ScanLogEntry, ScanProgressEvent } from "../../shared/types.js";
-import { fetchAlbumArtFromMusicBrainz, fetchArtworkFromTmdb, fetchMetadataFromItunes, guessTitle } from "../artwork/artworkFetcher.js";
+import { fetchAlbumArtFromMusicBrainz, fetchArtworkFromTmdb, fetchMetadataFromItunes, guessTitle, fetchTvFromTmdb } from "../artwork/artworkFetcher.js";
 import { readNetworkSidecar, relPathFromMediaPath, writeNetworkSidecar } from "../network/smbClient.js";
 import { ensureStreamServer, registerStream, unregisterStream } from "../network/streamServer.js";
 import { probeDurationSeconds } from "./durationProbe.js";
@@ -95,8 +95,11 @@ async function buildMetadata(
   // search term than re-guessing from the filename every time, and (the actual point of this)
   // must survive a re-fetch unchanged: re-deriving from the filename on every "Force" run is how
   // a manual correction used to get silently overwritten back to a worse guess.
-  const existingTitle = item.title?.trim() || undefined;
-  const existingYear = item.year?.trim() || undefined;
+  // Episodes always search for their show and are titled "Show S01E01" (an earlier fetch may have
+  // stored a wrong movie title for them).
+  const isEpisode = !!guessed.episode && item.kind === "video";
+  const existingTitle = isEpisode ? undefined : item.title?.trim() || undefined;
+  const existingYear = isEpisode ? undefined : item.year?.trim() || undefined;
 
   let itunes: Awaited<ReturnType<typeof fetchMetadataFromItunes>> = null;
   try {
@@ -115,7 +118,7 @@ async function buildMetadata(
   }
 
   const metadata: MediaMetadata = {
-    title: existingTitle || itunes?.title || guessed.title,
+    title: existingTitle || itunes?.title || (isEpisode ? `${guessed.title} ${guessed.episode}` : guessed.title),
     year: existingYear || itunes?.year || guessed.year,
     durationSeconds: durationSeconds ?? undefined,
     artworkUrl: itunes?.artworkUrl,
@@ -132,7 +135,9 @@ async function buildMetadata(
     if (item.kind === "video") {
       if (tmdbApiKey) {
         try {
-          const tmdb = await fetchArtworkFromTmdb(tmdbApiKey, query, metadata.year, signal);
+          const tmdb = isEpisode
+            ? await fetchTvFromTmdb(tmdbApiKey, guessed.title, guessed.year, signal)
+            : await fetchArtworkFromTmdb(tmdbApiKey, query, metadata.year, signal);
           log({ step: "TMDb", result: tmdb.artworkUrl || tmdb.year ? "found" : "not-found" });
           if (!metadata.artworkUrl) metadata.artworkUrl = tmdb.artworkUrl;
           if (!metadata.year) metadata.year = tmdb.year;
@@ -152,6 +157,9 @@ async function buildMetadata(
       }
     }
   }
+
+  // An episode keeps no stale year from an earlier wrong match ("" clears it).
+  if (isEpisode && !metadata.year) metadata.year = "";
 
   // Still nothing? For video, a real frame pulled from the file itself works for literally
   // anything with a video track, no external lookup required — the last resort.

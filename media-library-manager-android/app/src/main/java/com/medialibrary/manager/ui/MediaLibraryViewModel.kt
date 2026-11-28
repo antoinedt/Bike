@@ -451,8 +451,13 @@ class MediaLibraryViewModel : ViewModel() {
                 fun apply(item: MediaItem) = found[item.id]?.let {
                     item.copy(
                         artworkUrl = if (force) (it.artworkUrl ?: item.artworkUrl) else (item.artworkUrl ?: it.artworkUrl),
-                        title = item.title ?: it.title,
-                        year = item.year ?: it.year,
+                        // Force re-fetch: take what was found (a movie keeps its own title/year in the
+                        // lookup anyway; an episode gets "Show S01E01" and the show's year).
+                        title = if (force) (it.title ?: item.title) else (item.title ?: it.title),
+                        year = if (force) {
+                            // An episode keeps no stale year from an earlier wrong movie match.
+                            if (com.medialibrary.manager.artwork.guessTitle(item.name).episode != null) it.year else (it.year ?: item.year)
+                        } else (item.year ?: it.year),
                         tags = item.tags.ifEmpty { it.tags },
                         infoFetched = true
                     )

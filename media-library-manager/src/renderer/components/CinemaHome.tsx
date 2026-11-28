@@ -61,17 +61,21 @@ function Poster({
   label,
   sub,
   progress,
+  group,
   onClick
 }: {
   item: MediaItem;
   label: string;
   sub?: string;
   progress?: number;
+  /** A show (opens its episodes) rather than a file (plays): drawn as a stack with a badge. */
+  group?: number;
   onClick: () => void;
 }) {
   return (
-    <button className="cine-poster" onClick={onClick} title={label}>
+    <button className={`cine-poster${group != null ? " is-group" : ""}`} onClick={onClick} title={label}>
       <div className="cine-poster-art" style={item.artworkUrl ? undefined : { background: placeholder(label) }}>
+        <span className="cine-badge" aria-hidden="true">{group != null ? `📂 ${group}` : "▶"}</span>
         {item.artworkUrl && <img src={item.artworkUrl} alt="" loading="lazy" />}
         {!item.artworkUrl && <span className="cine-poster-fallback">{label}</span>}
         {progress != null && (
@@ -238,7 +242,8 @@ export default function CinemaHome({
                 key={show}
                 item={item}
                 label={show}
-                sub={`${count} episode${count === 1 ? "" : "s"}`}
+                sub={`Show · ${count} episode${count === 1 ? "" : "s"}`}
+                group={count}
                 onClick={() => onShowSearch(show)}
               />
             );

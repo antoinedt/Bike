@@ -1224,3 +1224,11 @@ h1, h2 { font-family: var(--display); letter-spacing: -0.01em; }
 
 .exclude-toggle { margin: 4px 0 10px; color: var(--text-dim); }
 .folder-card.excluded { opacity: 0.55; text-decoration: line-through; }
+
+.back-home { margin-bottom: 10px; }
+.cine-badge { position: absolute; top: 8px; right: 8px; z-index: 1; background: rgba(0, 0, 0, 0.6); color: #fff; font-size: 11px; font-weight: 700; border-radius: 999px; padding: 3px 8px; }
+/* A show: two card edges peeking above the poster. */
+.cine-poster.is-group { padding-top: 8px; position: relative; }
+.cine-poster.is-group::before, .cine-poster.is-group::after { content: ""; position: absolute; left: 12px; right: 12px; top: 0; height: 4px; border-radius: 6px 6px 0 0; background: rgba(255, 255, 255, 0.2); }
+.cine-poster.is-group::after { left: 6px; right: 6px; top: 4px; background: rgba(255, 255, 255, 0.35); }
+.cine-poster:not(.is-group) { padding-top: 8px; }

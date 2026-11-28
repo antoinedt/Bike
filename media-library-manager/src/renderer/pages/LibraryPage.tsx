@@ -50,6 +50,29 @@ export default function LibraryPage({
   const [resume, setResume] = useState<ResumeEntry[]>([]);
   const [detail, setDetail] = useState<MediaItem | null>(null);
 
+  // Opened a show (or searched) from Home: the ‹ Home button, the mouse Back button, or
+  // Alt+← go back to the rows.
+  function backToHome() {
+    onSearchTextChange("");
+    setSelectedTags([]);
+  }
+  useEffect(() => {
+    if (view !== "home" || (!filter.trim() && selectedTags.length === 0)) return;
+    const onMouse = (e: MouseEvent) => {
+      if (e.button === 3) backToHome();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.altKey && e.key === "ArrowLeft") backToHome();
+    };
+    window.addEventListener("mouseup", onMouse);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mouseup", onMouse);
+      window.removeEventListener("keydown", onKey);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, filter, selectedTags]);
+
   function changeView(next: "home" | "folders") {
     setView(next);
     try {
@@ -210,6 +233,11 @@ export default function LibraryPage({
         <p className="hint-inline">
           Downloading… {downloadProgress != null ? `${Math.round(downloadProgress * 100)}%` : ""}
         </p>
+      )}
+      {view === "home" && (filter.trim() || selectedTags.length > 0) && (
+        <button className="btn btn-small back-home" onClick={backToHome}>
+          ‹ Home
+        </button>
       )}
       {view === "home" && !filter.trim() && selectedTags.length === 0 ? (
         <CinemaHome

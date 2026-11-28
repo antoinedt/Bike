@@ -214,7 +214,7 @@ fun CinemaHome(
         if (rows.shows.isNotEmpty()) item(key = "shows") {
             PosterRow("Shows") {
                 items(rows.shows, key = { it.first }) { (show, item, count) ->
-                    Poster(item, show, "$count episode${if (count == 1) "" else "s"}", width = posterWidth) { onShowSearch(show) }
+                    Poster(item, show, "Show · $count episode${if (count == 1) "" else "s"}", width = posterWidth, group = count) { onShowSearch(show) }
                 }
             }
         }
@@ -246,15 +246,22 @@ private fun Poster(
     sub: String?,
     progress: Float? = null,
     width: androidx.compose.ui.unit.Dp,
+    /** A show (opens a list of episodes) rather than a file (plays): drawn as a stack with a badge. */
+    group: Int? = null,
     onClick: () -> Unit
 ) {
     var focused by remember { mutableStateOf(false) }
     Column(
         Modifier.width(width)
             .onFocusChanged { focused = it.isFocused }
-            .clickable(onClick = onClick),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+            .clickable(onClick = onClick)
     ) {
+        if (group == null) Spacer(Modifier.height(8.dp))
+        if (group != null) {
+            // Two card edges peeking above: "there's more than one in here".
+            Box(Modifier.padding(horizontal = 12.dp).fillMaxWidth().height(4.dp).clip(RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp)).background(Color(0x33FFFFFF)))
+            Box(Modifier.padding(horizontal = 6.dp).fillMaxWidth().height(4.dp).clip(RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp)).background(Color(0x55FFFFFF)))
+        }
         Box(
             Modifier.fillMaxWidth().aspectRatio(2f / 3f)
                 .scale(if (focused) 1.06f else 1f)
@@ -271,6 +278,15 @@ private fun Poster(
                     modifier = Modifier.align(Alignment.BottomStart).padding(start = 8.dp, end = 8.dp, bottom = 18.dp)
                 )
             }
+            // Top-right badge: ▶ plays this file; 📂 n opens a show's episodes.
+            Text(
+                if (group != null) "📂 $group" else "▶",
+                color = Color.White,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.align(Alignment.TopEnd).padding(6.dp)
+                    .clip(RoundedCornerShape(50)).background(Color(0x99000000)).padding(horizontal = 7.dp, vertical = 3.dp)
+            )
             progress?.let { p ->
                 Box(
                     Modifier.align(Alignment.BottomCenter).padding(horizontal = 8.dp, vertical = 8.dp)
@@ -281,9 +297,17 @@ private fun Poster(
             }
         }
         if (item.artworkUrl != null) {
-            Text(label, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                label, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, maxLines = 1,
+                overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp)
+            )
         }
-        sub?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1) }
+        sub?.let {
+            Text(
+                it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1, modifier = Modifier.padding(top = 2.dp)
+            )
+        }
         Spacer(Modifier.height(0.dp))
     }
 }

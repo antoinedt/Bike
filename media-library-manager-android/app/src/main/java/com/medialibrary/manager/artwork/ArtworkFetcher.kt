@@ -31,7 +31,16 @@ private val NOISE_MARKERS = Regex(
 )
 private val YEAR_MARKER = Regex("\\b(19|20)\\d{2}\\b")
 
-data class GuessedTitle(val title: String, val year: String?)
+/** [episode] is "S01E01" when the file is a TV episode; [title] is then the show's name. */
+data class GuessedTitle(val title: String, val year: String?, val episode: String? = null)
+
+private val EPISODE_MARKER = Regex("""\b(?:S(\d{1,2})[\s._-]?E(\d{1,3})|(\d{1,2})x(\d{2,3}))\b""", RegexOption.IGNORE_CASE)
+
+/** A plausible release year: 1900 up to next year ("Blade Runner 2099" is a title, not a year). */
+private fun plausibleYear(text: String): MatchResult? {
+    val max = java.time.Year.now().value + 1
+    return YEAR_MARKER.findAll(text).lastOrNull { it.value.toInt() in 1900..max }
+}
 
 /**
  * Guesses a clean search title from a scene-style filename — a Kotlin port of the desktop
@@ -41,10 +50,23 @@ fun guessTitle(filename: String): GuessedTitle {
     val withoutExt = filename.substringBeforeLast('.', filename)
     var cleaned = withoutExt.replace(Regex("[._]+"), " ").replace(Regex("\\s+"), " ").trim()
 
+    // A TV episode: search for the show (the part before S01E01), not a movie.
+    EPISODE_MARKER.find(cleaned)?.let { m ->
+        var show = cleaned.substring(0, m.range.first).replace(Regex("[\\s\\-(\\[]+$"), "").trim()
+        val season = (m.groupValues[1].ifEmpty { m.groupValues[3] }).toInt()
+        val ep = (m.groupValues[2].ifEmpty { m.groupValues[4] }).toInt()
+        var year: String? = null
+        plausibleYear(show)?.takeIf { it.range.last == show.length - 1 && it.range.first > 0 }?.let {
+            year = it.value
+            show = show.substring(0, it.range.first).replace(Regex("[\\s(\\[]+$"), "").trim()
+        }
+        if (show.isNotBlank()) return GuessedTitle(show, year, "S%02dE%02d".format(season, ep))
+    }
+
     val noiseMatch = NOISE_MARKERS.find(cleaned)
     if (noiseMatch != null) cleaned = cleaned.substring(0, noiseMatch.range.first).trim()
 
-    val yearMatch = YEAR_MARKER.find(cleaned)
+    val yearMatch = plausibleYear(cleaned)
     var year: String? = null
     if (yearMatch != null) {
         year = yearMatch.value
@@ -138,6 +160,56 @@ class ArtworkFetcher(
      * failing every item. Searches movies first, then TV (a scene-style filename doesn't say
      * which it is).
      */
+    /**
+     * A TV episode: look up its show (iTunes TV seasons, then TMDb TV) and title it "Show S01E01",
+     * so episodes stay told apart while sharing the show's poster.
+     */
+    private suspend fun fetchEpisodeMetadata(
+        show: String,
+        year: String?,
+        episode: String,
+        tmdbApiKey: String,
+        log: MutableList<ScanLogEntry>
+    ): MediaMetadata {
+        var artworkUrl: String? = null
+        var foundYear: String? = year
+        try {
+            val r = lookupItunes(show, "tvSeason")
+            log += ScanLogEntry("iTunes", if (r != null) "found" else "not-found", "TV show \"$show\"")
+            artworkUrl = r?.artworkUrl100?.let(::upsizeArtwork)
+            if (foundYear == null) foundYear = r?.releaseDate?.take(4)
+        } catch (e: Exception) {
+            log += ScanLogEntry("iTunes", "error", e.message)
+        }
+        if (artworkUrl == null) {
+            if (tmdbApiKey.isNotBlank()) {
+                try {
+                    val tv = fetchTvFromTmdb(tmdbApiKey, show, year)
+                    log += ScanLogEntry("TMDb", if (tv.artworkUrl != null) "found" else "not-found", "TV show \"$show\"")
+                    artworkUrl = tv.artworkUrl
+                    if (foundYear == null) foundYear = tv.year
+                } catch (e: Exception) {
+                    log += ScanLogEntry("TMDb", "error", e.message)
+                }
+            } else {
+                log += ScanLogEntry("TMDb", "not-found", "no API key configured in Settings")
+            }
+        }
+        return MediaMetadata(title = "$show $episode", year = foundYear, artworkUrl = artworkUrl, infoFetched = true)
+    }
+
+    private suspend fun fetchTvFromTmdb(apiKey: String, query: String, year: String?): TmdbMetadata = withContext(Dispatchers.IO) {
+        val yearParam = year?.let { "&first_air_date_year=${URLEncoder.encode(it, "UTF-8")}" } ?: ""
+        val url = "https://api.themoviedb.org/3/search/tv?api_key=${URLEncoder.encode(apiKey, "UTF-8")}" +
+            "&query=${URLEncoder.encode(query, "UTF-8")}$yearParam"
+        val tv = httpClient.newCall(Request.Builder().url(url).build()).execute().use { response ->
+            if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
+            val body = response.body?.string() ?: throw IOException("Empty response body")
+            json.decodeFromString<TmdbTvSearchResponse>(body).results.firstOrNull()
+        }
+        TmdbMetadata(artworkUrl = tv?.poster_path?.let { "$TMDB_IMAGE_BASE$it" }, year = tv?.first_air_date?.take(4))
+    }
+
     private suspend fun fetchArtworkFromTmdb(apiKey: String, query: String, year: String?): TmdbMetadata {
         if (apiKey.isBlank()) return TmdbMetadata()
         val yearParam = year?.let { "&year=${URLEncoder.encode(it, "UTF-8")}" } ?: ""
@@ -198,7 +270,8 @@ class ArtworkFetcher(
     }
 
     private suspend fun fetchMetadata(item: MediaItem, tmdbApiKey: String, log: MutableList<ScanLogEntry>): MediaMetadata {
-        val (guessedTitle, guessedYear) = guessTitle(item.name)
+        val (guessedTitle, guessedYear, episode) = guessTitle(item.name)
+        if (episode != null && item.kind == MediaKind.VIDEO) return fetchEpisodeMetadata(guessedTitle, guessedYear, episode, tmdbApiKey, log)
         // A title/year the item already has — from a previous fetch or a manual edit — is a
         // better search term than re-guessing from the filename every time, and (the actual
         // point of this) must survive a re-fetch unchanged: re-deriving from the filename on

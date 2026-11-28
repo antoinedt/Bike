@@ -306,7 +306,17 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, isTv: Boolean, onPickImage: 
                 onShowSearch = { show -> onSearchTextChange(show) },
                 modifier = Modifier.weight(1f).fillMaxWidth()
             )
-        } else MediaBrowser(
+        } else {
+        // Came from Home (a show, or a search): Back — or this button — returns there.
+        val fromHome = !showFolders && (filter.isNotBlank() || selectedTags.isNotEmpty())
+        androidx.activity.compose.BackHandler(enabled = fromHome) {
+            onSearchTextChange("")
+            selectedTags = emptyList()
+        }
+        if (fromHome) {
+            TextButton(onClick = { onSearchTextChange(""); selectedTags = emptyList() }) { Text("‹  Home") }
+        }
+        MediaBrowser(
             items = items,
             settings = settings,
             filter = filter,
@@ -343,6 +353,7 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, isTv: Boolean, onPickImage: 
             onSetFolderExcluded = { key, excluded -> viewModel.setFolderExcluded(key, excluded) },
             modifier = Modifier.weight(1f)
         )
+        }
         if (!isTv) com.medialibrary.manager.ui.components.CastBar(viewModel, Modifier.padding(top = 6.dp))
     }
 }

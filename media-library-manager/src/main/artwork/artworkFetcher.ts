@@ -11,14 +11,43 @@ const NOISE_MARKERS =
  * "The.Movie.Name.2019.1080p.BluRay.x264-GROUP.mkv" -> { title: "The Movie Name", year: "2019" }.
  * Best-effort — feeds a search query, not a definitive title.
  */
-export function guessTitle(filename: string): { title: string; year?: string } {
+/** The last 1900..next-year number in [text] ("Blade Runner 2099" is a title, not a year). */
+function plausibleYear(text: string): RegExpExecArray | null {
+  const max = new Date().getFullYear() + 1;
+  let last: RegExpExecArray | null = null;
+  const re = /\b(19|20)\d{2}\b/g;
+  for (let m = re.exec(text); m; m = re.exec(text)) if (Number(m[0]) >= 1900 && Number(m[0]) <= max) last = m;
+  return last;
+}
+
+/**
+ * [episode] ("S01E01") is set when the file is a TV episode; [title] is then the show's name, so
+ * lookups search for the show instead of a movie named after the whole file.
+ */
+export function guessTitle(filename: string): { title: string; year?: string; episode?: string } {
   const withoutExt = filename.replace(/\.[^.]+$/, "");
   let cleaned = withoutExt.replace(/[._]+/g, " ").replace(/\s+/g, " ").trim();
+
+  const ep = /\b(?:S(\d{1,2})[\s._-]?E(\d{1,3})|(\d{1,2})x(\d{2,3}))\b/i.exec(cleaned);
+  if (ep) {
+    let show = cleaned.slice(0, ep.index).replace(/[\s\-([]+$/, "").trim();
+    const season = Number(ep[1] ?? ep[3]);
+    const episodeNo = Number(ep[2] ?? ep[4]);
+    let year: string | undefined;
+    const y = plausibleYear(show);
+    if (y && y.index > 0 && y.index + 4 === show.length) {
+      year = y[0];
+      show = show.slice(0, y.index).replace(/[\s([]+$/, "").trim();
+    }
+    if (show) {
+      return { title: show, year, episode: `S${String(season).padStart(2, "0")}E${String(episodeNo).padStart(2, "0")}` };
+    }
+  }
 
   const noiseMatch = NOISE_MARKERS.exec(cleaned);
   if (noiseMatch) cleaned = cleaned.slice(0, noiseMatch.index).trim();
 
-  const yearMatch = /\b(19|20)\d{2}\b/.exec(cleaned);
+  const yearMatch = plausibleYear(cleaned);
   let year: string | undefined;
   if (yearMatch) {
     year = yearMatch[0];
@@ -124,6 +153,13 @@ export async function fetchArtworkFromTmdb(
   return {};
 }
 
+/** TMDb TV search only — for an episode, whose show is known to be a series. */
+export async function fetchTvFromTmdb(apiKey: string, show: string, year: string | undefined, signal?: AbortSignal): Promise<TmdbMetadata> {
+  if (!apiKey) return {};
+  const tv = await searchTmdb<TmdbTvResult>("tv", apiKey, show, year, signal);
+  return tv ? { artworkUrl: tv.poster_path ? `${TMDB_IMAGE_BASE}${tv.poster_path}` : undefined, year: tv.first_air_date?.slice(0, 4) } : {};
+}
+
 export interface AlbumArtMetadata {
   artworkUrl?: string;
 }
@@ -176,6 +212,16 @@ export async function fetchMetadataFromItunes(
   yearOverride?: string
 ): Promise<ItunesMetadata | null> {
   const guessed = guessTitle(item.name);
+  if (guessed.episode && item.kind === "video") {
+    // A TV episode: its show's season artwork; titled "Show S01E01" so episodes stay apart.
+    const show = await searchItunes(guessed.title, "tvSeason", signal);
+    if (!show) return null;
+    return {
+      title: `${guessed.title} ${guessed.episode}`,
+      year: guessed.year ?? (show.releaseDate ? show.releaseDate.slice(0, 4) : undefined),
+      artworkUrl: show.artworkUrl100 ? upsizeArtwork(show.artworkUrl100) : undefined
+    };
+  }
   const title = titleOverride || guessed.title;
   const year = yearOverride || guessed.year;
   if (!title) return null;
