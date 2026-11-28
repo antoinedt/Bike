@@ -270,6 +270,21 @@
       };
       art.appendChild(img);
     }
+    // Cinema: a muted color per title when the TV has no thumbnail, and how far you got.
+    if (!item.thumbnail && item.kind === "video") {
+      var hue = 0;
+      for (var i = 0; i < item.title.length; i++) hue = (hue * 31 + item.title.charCodeAt(i)) % 360;
+      art.style.background = "linear-gradient(160deg, hsl(" + hue + ",32%,30%), hsl(" + ((hue + 30) % 360) + ",40%,9%))";
+    }
+    var saved = resumeStore()[item.uri];
+    if (saved && saved.duration) {
+      var bar = document.createElement("span");
+      bar.className = "card-progress";
+      var fill = document.createElement("i");
+      fill.style.width = Math.max(3, Math.min(100, saved.position / saved.duration * 100)) + "%";
+      bar.appendChild(fill);
+      art.appendChild(bar);
+    }
     card.appendChild(art);
 
     var title = document.createElement("div");
@@ -365,7 +380,7 @@
     var pos = Math.floor((player.currentTime || 0) * 1000);
     var dur = isFinite(player.duration) ? player.duration * 1000 : 0;
     if (ended || pos < 30000 || (dur > 0 && pos >= dur * 0.95)) delete store[item.uri];
-    else store[item.uri] = { position: pos, at: Date.now() };
+    else store[item.uri] = { position: pos, at: Date.now(), duration: dur };
     try { localStorage.setItem(RESUME_KEY, JSON.stringify(store)); } catch (e) {}
   }
 
@@ -437,6 +452,7 @@
     });
     playerView.classList.add("hidden");
     libraryView.classList.remove("hidden");
+    render();
     var restore = lastFocusedId && document.getElementById(lastFocusedId);
     if (restore) restore.focus();
   }

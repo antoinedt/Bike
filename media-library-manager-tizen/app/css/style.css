@@ -3,8 +3,8 @@
 
    Deliberately avoids CSS variables, CSS Grid, flexbox `gap` and `aspect-ratio`: Samsung TVs
    from 2017-2020 run browser engines too old for some or all of them, and the app should look
-   the same there. Colors match the other two apps: #14161a background, #1c1f26 panels,
-   #5b8cff accent, #f4f6f8 text. */
+   the same there. Cinema colors, matching the other two apps: #0b0d12 background, #141821
+   panels, #ff5a4e (coral) accent, #f4f6f8 text. */
 
 * {
   box-sizing: border-box;
@@ -15,7 +15,7 @@ body {
   margin: 0;
   width: 100%;
   height: 100%;
-  background: #14161a;
+  background: #0b0d12;
   color: #f4f6f8;
   font-family: "SamsungOne", "Samsung Sans", "Helvetica Neue", Arial, sans-serif;
   font-size: 28px;
@@ -32,7 +32,7 @@ button {
 button:focus,
 video:focus,
 audio:focus {
-  outline: 6px solid #5b8cff;
+  outline: 6px solid #ff5a4e;
   outline-offset: 4px;
 }
 
@@ -71,12 +71,12 @@ audio:focus {
   margin-right: 16px;
   padding: 14px 36px;
   border-radius: 40px;
-  background: #1c1f26;
+  background: #141821;
   color: #9aa3b2;
 }
 
 .tab.active {
-  background: #5b8cff;
+  background: #ff5a4e;
   color: #f4f6f8;
 }
 
@@ -113,7 +113,7 @@ audio:focus {
   padding: 0 0 18px;
   text-align: left;
   border-radius: 16px;
-  background: #1c1f26;
+  background: #141821;
   overflow: hidden;
   -webkit-transition: -webkit-transform 0.12s ease;
   transition: transform 0.12s ease;
@@ -122,7 +122,7 @@ audio:focus {
 .card:focus {
   -webkit-transform: scale(1.05);
   transform: scale(1.05);
-  background: #252a33;
+  background: #1b2030;
 }
 
 /* 16:9 box via the padding trick (works on every engine, unlike aspect-ratio). */
@@ -131,13 +131,13 @@ audio:focus {
   width: 100%;
   height: 0;
   padding-top: 56.25%;
-  background: #252a33;
+  background: #1b2030;
   overflow: hidden;
 }
 
 .card-art.audio {
-  background: -webkit-linear-gradient(315deg, #2a3350, #252a33);
-  background: linear-gradient(135deg, #2a3350, #252a33);
+  background: -webkit-linear-gradient(315deg, #2a3350, #1b2030);
+  background: linear-gradient(135deg, #2a3350, #1b2030);
 }
 
 .card-art:after {
@@ -199,14 +199,14 @@ audio:focus {
   -webkit-align-items: center;
   align-items: center;
   padding: 24px 48px;
-  background: #14161a;
+  background: #0b0d12;
 }
 
 .back-button {
   margin-right: 32px;
   padding: 12px 32px;
   border-radius: 40px;
-  background: #1c1f26;
+  background: #141821;
 }
 
 .now-playing {
@@ -253,7 +253,7 @@ audio.player {
   margin: 8px 0;
 }
 .tv-code-url {
-  color: #5b8cff !important;
+  color: #ff5a4e !important;
   font-size: 40px;
 }
 .tv-code-value {
@@ -270,7 +270,7 @@ audio.player {
   margin-top: 24px;
   padding: 18px 48px;
   border-radius: 40px;
-  background: #5b8cff;
+  background: #ff5a4e;
 }
 .tv-guide {
   position: absolute;
@@ -296,12 +296,12 @@ audio.player {
   margin-right: 10px;
   padding: 10px 22px;
   border-radius: 30px;
-  background: #1c1f26;
+  background: #141821;
   color: #9aa3b2;
   font-size: 24px;
 }
 .tv-day.active {
-  background: #5b8cff;
+  background: #ff5a4e;
   color: #f4f6f8;
 }
 .tv-action {
@@ -348,7 +348,7 @@ audio.player {
 .tv-row {
   position: relative;
   height: 96px;
-  border-bottom: 2px solid #1c1f26;
+  border-bottom: 2px solid #141821;
 }
 .tv-ch {
   position: absolute;
@@ -356,7 +356,7 @@ audio.player {
   top: 0;
   width: 212px;
   height: 92px;
-  background: #1c1f26;
+  background: #141821;
   border-radius: 10px;
   text-align: center;
   padding-top: 12px;
@@ -435,7 +435,7 @@ audio.player {
   width: 1100px;
   margin: 160px auto 0;
   padding: 40px 48px;
-  background: #1c1f26;
+  background: #141821;
   border-radius: 20px;
 }
 .tv-details-box h2 {
@@ -490,4 +490,42 @@ audio.player {
   font-size: 32px;
   color: #fff;
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
+}
+
+/* Cinema: cards are bare artwork with the title underneath; coral outline + progress for resume. */
+.card {
+  background: transparent;
+}
+.card:focus {
+  background: transparent;
+  outline: none;
+}
+.card:focus .card-art {
+  box-shadow: 0 0 0 6px #ff5a4e, 0 18px 40px rgba(0, 0, 0, 0.6);
+}
+.card-art {
+  border-radius: 14px;
+}
+.card-title {
+  padding: 14px 4px 0;
+  font-weight: 600;
+}
+.card-meta {
+  padding: 6px 4px 0;
+}
+.card-progress {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 12px;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.3);
+  z-index: 2;
+}
+.card-progress i {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: #ff5a4e;
 }
