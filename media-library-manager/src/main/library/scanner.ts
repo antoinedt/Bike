@@ -22,7 +22,11 @@ export interface SourceScanResult {
  * folder's media to `onBatch` as soon as it's read, so the library fills in while the scan runs.
  * Symlinks are not followed to avoid cycles.
  */
-export async function scanLocalFolder(folder: LocalFolder, onBatch: (items: MediaItem[]) => void = () => undefined): Promise<SourceScanResult> {
+export async function scanLocalFolder(
+  folder: LocalFolder,
+  onBatch: (items: MediaItem[]) => void = () => undefined,
+  excluded: ReadonlySet<string> = new Set()
+): Promise<SourceScanResult> {
   const seenIds = new Set<string>();
   let rootReadable = true;
   await runPool([{ dir: folder.path, depth: 0 }], CONCURRENCY, async ({ dir, depth }, push) => {
@@ -39,6 +43,8 @@ export async function scanLocalFolder(folder: LocalFolder, onBatch: (items: Medi
       const fullPath = path.join(dir, entry.name);
       if (entry.isDirectory()) {
         if (SKIP_DIR_NAMES.has(entry.name) || entry.name.startsWith(".")) continue;
+        const rel = path.relative(folder.path, fullPath).split(path.sep).join("/");
+        if (excluded.has(`local:${folder.id}:${rel}`)) continue;
         if (depth + 1 <= MAX_DEPTH) push({ dir: fullPath, depth: depth + 1 });
       } else if (entry.isFile()) {
         const ext = path.extname(entry.name).slice(1);

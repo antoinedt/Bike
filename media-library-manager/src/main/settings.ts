@@ -12,7 +12,9 @@ const defaults: AppSettings = {
   deviceId: "",
   deviceName: "",
   remoteShareId: "",
-  remoteLocalFolder: ""
+  remoteLocalFolder: "",
+  excludedFolders: [],
+  showExcludedFolders: false
 };
 
 const store = new Store<AppSettings>({
@@ -30,7 +32,9 @@ export function getSettings(): AppSettings {
     deviceId: deviceId(),
     deviceName: store.get("deviceName", "") || hostname(),
     remoteShareId: store.get("remoteShareId", ""),
-    remoteLocalFolder: store.get("remoteLocalFolder", "")
+    remoteLocalFolder: store.get("remoteLocalFolder", ""),
+    excludedFolders: store.get("excludedFolders", []),
+    showExcludedFolders: store.get("showExcludedFolders", false)
   };
 }
 
@@ -48,6 +52,15 @@ export function updateRemoteSettings(deviceName: string, remoteShareId: string, 
   store.set("deviceName", deviceName.trim());
   store.set("remoteShareId", remoteLocalFolder ? "" : remoteShareId);
   store.set("remoteLocalFolder", remoteLocalFolder);
+}
+
+export function setFolderExcluded(key: string, excluded: boolean): void {
+  const current = store.get("excludedFolders", []).filter((k) => k !== key);
+  store.set("excludedFolders", excluded ? [...current, key] : current);
+}
+
+export function setShowExcludedFolders(show: boolean): void {
+  store.set("showExcludedFolders", show);
 }
 
 export function updateTmdbApiKey(tmdbApiKey: string): void {

@@ -90,7 +90,8 @@ function scanSource(
  * a message for each folder/share that couldn't be read (the rest of the library is still updated).
  */
 export async function scanLibrary(scope: Scope): Promise<{ errors: string[] }> {
-  const { localFolders, networkShares } = getSettings();
+  const { localFolders, networkShares, excludedFolders } = getSettings();
+  const excluded = new Set(excludedFolders);
   const errors: string[] = [];
   const jobs: Promise<void>[] = [];
   if (scope !== "network") {
@@ -98,7 +99,7 @@ export async function scanLibrary(scope: Scope): Promise<{ errors: string[] }> {
       jobs.push(
         scanSource(
           `folder:${folder.id}`,
-          (onBatch) => scanLocalFolder(folder, onBatch),
+          (onBatch) => scanLocalFolder(folder, onBatch, excluded),
           (item) => item.source.type === "local" && item.source.folderId === folder.id
         ).then(
           (result) => {
@@ -114,7 +115,7 @@ export async function scanLibrary(scope: Scope): Promise<{ errors: string[] }> {
       jobs.push(
         scanSource(
           `share:${share.id}`,
-          (onBatch) => scanNetworkShare(share, onBatch),
+          (onBatch) => scanNetworkShare(share, onBatch, excluded),
           (item) => item.source.type === "network" && item.source.shareId === share.id
         ).then(
           () => undefined,

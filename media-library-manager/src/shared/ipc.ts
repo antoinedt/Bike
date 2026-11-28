@@ -44,6 +44,8 @@ export const IPC = {
   libraryScanStatus: "library:scanStatus",
   libraryGetScanStatus: "library:getScanStatus",
   appVersion: "app:version",
+  folderSetExcluded: "folder:setExcluded",
+  folderSetShowExcluded: "folder:setShowExcluded",
   resumeGet: "resume:get",
   resumeSave: "resume:save",
   resumeList: "resume:list",

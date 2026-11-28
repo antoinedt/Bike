@@ -123,6 +123,13 @@ export interface AppSettings {
   remoteShareId: string;
   /** Or a folder on this PC (Windows) used as that mailbox — e.g. one it shares with the phone; "" = not used. */
   remoteLocalFolder: string;
+  /**
+   * Folders left out of scans (with everything inside), as "local:<folderId>:<rel/path>" or
+   * "network:<shareId>:<rel/path>" — the same relative path the Folders view browses.
+   */
+  excludedFolders: string[];
+  /** Show excluded folders in the Folders view anyway, so they can be included again. */
+  showExcludedFolders: boolean;
 }
 
 export interface RemoteDeviceInfo {

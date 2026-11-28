@@ -53,7 +53,8 @@ const NOT_A_FOLDER = /\.(srt|ass|ssa|sub|idx|vtt|smi|nfo|txt|json|xml|db|ini|url
  */
 export async function scanNetworkShare(
   share: NetworkShare,
-  onBatch: (items: MediaItem[]) => void = () => undefined
+  onBatch: (items: MediaItem[]) => void = () => undefined,
+  excluded: ReadonlySet<string> = new Set()
 ): Promise<{ complete: boolean; seenIds: Set<string> }> {
   const client = createClient(share);
   const seenIds = new Set<string>();
@@ -90,6 +91,7 @@ export async function scanNetworkShare(
           continue;
         }
         if (name.startsWith(".") || NOT_A_FOLDER.test(name) || task.depth + 1 > MAX_DEPTH) continue;
+        if (excluded.has(`network:${share.id}:${entryPath.replace(/\\/g, "/").replace(/^\/+/, "")}`)) continue;
         // Might be a folder: listing it works for folders and fails for files, and the listing is
         // reused for the folder's own visit.
         const sub = await readdir(client, entryPath).catch(() => null);

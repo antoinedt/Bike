@@ -126,6 +126,9 @@ export interface PreloadApi {
   getLibraryScanStatus(): Promise<LibraryScanStatus>;
   /** The app's version, e.g. "0.2.36" (the last number is the build). */
   getAppVersion(): Promise<string>;
+  /** Leave a folder (and everything in it) out of scans, or include it again; rescans in the background. */
+  setFolderExcluded(key: string, excluded: boolean): Promise<void>;
+  setShowExcludedFolders(show: boolean): Promise<void>;
   /** Opens OmniPlay's log file (search, updates…); resolves with its path. */
   openLog(): Promise<string>;
   clearLog(): Promise<void>;

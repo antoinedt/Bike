@@ -16,7 +16,15 @@ interface ActiveStream {
   token: string;
 }
 
-export default function LibraryPage({ settings, onOpenDownloads }: { settings: AppSettings; onOpenDownloads: () => void }) {
+export default function LibraryPage({
+  settings,
+  refreshSettings,
+  onOpenDownloads
+}: {
+  settings: AppSettings;
+  refreshSettings: () => Promise<void>;
+  onOpenDownloads: () => void;
+}) {
   const [copying, setCopying] = useState<MediaItem | null>(null);
   const [casting, setCasting] = useState<MediaItem | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -229,6 +237,7 @@ export default function LibraryPage({ settings, onOpenDownloads }: { settings: A
         onCopy={setCopying}
         onCast={setCasting}
         onItemUpdated={handleItemUpdated}
+        onSettingsChanged={refreshSettings}
       />
       </>
       )}

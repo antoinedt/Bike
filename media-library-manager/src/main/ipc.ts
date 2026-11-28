@@ -14,8 +14,7 @@ import {
   updateNetworkShare,
   updateSiteProfile,
   updateTmdbApiKey,
-  updateTorrentDownloadFolder
-} from "./settings.js";
+  updateTorrentDownloadFolder, setFolderExcluded, setShowExcludedFolders } from "./settings.js";
 import { libraryScanStatus, scanLibrary } from "./library/libraryScan.js";
 import { relPathFromMediaPath, testShareConnection } from "./network/smbClient.js";
 import { downloadRawFile } from "./network/smbRawClient.js";
@@ -73,6 +72,13 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.appClearLog, () => clearLog());
   ipcMain.handle(IPC.resumeGet, (_e, itemId: string) => getResume(itemId));
   ipcMain.handle(IPC.resumeList, () => listResume());
+  ipcMain.handle(IPC.folderSetExcluded, (_e, key: string, excluded: boolean) => {
+    setFolderExcluded(key, excluded);
+    // Rescan that kind of source in the background: an excluded folder's files drop out, an
+    // included one's come back.
+    void scanLibrary(key.startsWith("network:") ? "network" : "local").catch(() => {});
+  });
+  ipcMain.handle(IPC.folderSetShowExcluded, (_e, show: boolean) => setShowExcludedFolders(show));
   ipcMain.handle(IPC.resumeSave, (_e, itemId: string, positionMs: number, durationMs: number, ended: boolean) =>
     saveResume(itemId, positionMs, durationMs, ended)
   );

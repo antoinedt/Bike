@@ -62,6 +62,8 @@ const api = {
   },
   getLibraryScanStatus: () => ipcRenderer.invoke("library:getScanStatus"),
   getAppVersion: () => ipcRenderer.invoke("app:version"),
+  setFolderExcluded: (key: string, excluded: boolean) => ipcRenderer.invoke("folder:setExcluded", key, excluded),
+  setShowExcludedFolders: (show: boolean) => ipcRenderer.invoke("folder:setShowExcluded", show),
   openLog: () => ipcRenderer.invoke("app:openLog"),
   clearLog: () => ipcRenderer.invoke("app:clearLog"),
   getResume: (itemId: string) => ipcRenderer.invoke("resume:get", itemId),

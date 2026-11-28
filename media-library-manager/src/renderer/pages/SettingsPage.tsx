@@ -2,6 +2,7 @@ import { IconButton } from "../components/Icon.js";
 import { useEffect, useState } from "react";
 import ArtworkFetchSection from "../components/ArtworkFetchSection.js";
 import FormDialog from "../components/FormDialog.js";
+import { pathForFolderKey } from "../lib/folderTree.js";
 import VersionSection from "../components/VersionSection.js";
 import type { AppSettings, LocalFolder, MediaItem, NetworkShare, SiteProfile } from "../../shared/types.js";
 
@@ -33,6 +34,7 @@ export default function SettingsPage({
       <VersionSection />
       <FoldersSection settings={settings} refreshSettings={refreshSettings} />
       <SharesSection settings={settings} refreshSettings={refreshSettings} />
+      <ExcludedSection settings={settings} refreshSettings={refreshSettings} />
       <TmdbSection settings={settings} refreshSettings={refreshSettings} />
       <ArtworkFetchSection settings={settings} />
       <RemoteSection settings={settings} refreshSettings={refreshSettings} />
@@ -655,5 +657,48 @@ function ScanButton({ label, scan, source, disabled }: { label: string; scan: ()
       </button>
       {result && <span className={failed ? "error" : "notice"}>{result}</span>}
     </>
+  );
+}
+
+/** Folders left out of scans: list them, include one again, or show them in the Folders view. */
+function ExcludedSection({ settings, refreshSettings }: { settings: AppSettings; refreshSettings: () => Promise<void> }) {
+  const excluded = settings.excludedFolders ?? [];
+  return (
+    <section className="settings-section">
+      <h2>Excluded folders</h2>
+      <p className="hint">
+        In the Library's Folders view, open a folder and tick "Exclude this folder" to leave it (and everything in
+        it) out of the library.
+      </p>
+      <label className="checkbox-label">
+        <input
+          type="checkbox"
+          checked={settings.showExcludedFolders}
+          onChange={async (e) => {
+            await window.api.setShowExcludedFolders(e.target.checked);
+            await refreshSettings();
+          }}
+        />
+        Show excluded folders in the Folders view (greyed out), so they can be included again
+      </label>
+      {excluded.length > 0 && (
+        <ul className="settings-list">
+          {excluded.map((key) => (
+            <li key={key}>
+              <span className="settings-item-label">🚫 {(pathForFolderKey(key, settings) ?? [key]).join(" / ")}</span>
+              <button
+                className="btn btn-small"
+                onClick={async () => {
+                  await window.api.setFolderExcluded(key, false);
+                  await refreshSettings();
+                }}
+              >
+                Include again
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }

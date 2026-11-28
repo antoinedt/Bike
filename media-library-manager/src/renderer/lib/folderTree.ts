@@ -35,3 +35,34 @@ export function folderSegmentsForItem(item: MediaItem, settings: AppSettings): s
   const segments = rel.split("/").filter(Boolean);
   return [...topSegments, ...segments.slice(0, -1)];
 }
+
+/**
+ * The exclusion key ("local:<folderId>:<rel>" / "network:<shareId>:<rel>") for a folder being
+ * browsed, or null when [path] is a grouping level (Local, a share's root) rather than a folder
+ * inside one.
+ */
+export function folderKeyForPath(path: string[], settings: AppSettings): string | null {
+  if (path.length === 0) return null;
+  if (path[0] === "Local") {
+    const multi = settings.localFolders.length > 1;
+    const folder = multi ? settings.localFolders.find((f) => f.label === path[1]) : settings.localFolders[0];
+    const rel = path.slice(multi ? 2 : 1);
+    return folder && rel.length > 0 ? `local:${folder.id}:${rel.join("/")}` : null;
+  }
+  const share = settings.networkShares.find((s) => s.label === path[0]);
+  const rel = path.slice(1);
+  return share && rel.length > 0 ? `network:${share.id}:${rel.join("/")}` : null;
+}
+
+/** The Folders-view path of an exclusion key (the inverse of folderKeyForPath); null if its source is gone. */
+export function pathForFolderKey(key: string, settings: AppSettings): string[] | null {
+  const [kind, id, ...relParts] = key.split(":");
+  const rel = relParts.join(":").split("/").filter(Boolean);
+  if (kind === "local") {
+    const folder = settings.localFolders.find((f) => f.id === id);
+    if (!folder) return null;
+    return [...(settings.localFolders.length > 1 ? ["Local", folder.label] : ["Local"]), ...rel];
+  }
+  const share = settings.networkShares.find((s) => s.id === id);
+  return share ? [share.label, ...rel] : null;
+}

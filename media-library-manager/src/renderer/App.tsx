@@ -41,7 +41,7 @@ export default function App() {
         {!settings ? (
           <div className="empty-state">Loading…</div>
         ) : tab === "library" ? (
-          <LibraryPage settings={settings} onOpenDownloads={() => setTab("downloads")} />
+          <LibraryPage settings={settings} refreshSettings={refreshSettings} onOpenDownloads={() => setTab("downloads")} />
         ) : tab === "tv" ? (
           <TvPage />
         ) : tab === "downloads" ? (
