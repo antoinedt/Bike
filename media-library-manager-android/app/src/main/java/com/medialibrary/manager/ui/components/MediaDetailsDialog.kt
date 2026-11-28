@@ -43,7 +43,9 @@ fun MediaDetailsDialog(
     onPickImage: ((onPicked: (String) -> Unit) -> Unit)? = null,
     onDismiss: () -> Unit,
     onSave: (title: String, year: String, tags: List<String>, artworkUrl: String?) -> Unit,
-    onClear: () -> Unit
+    onClear: () -> Unit,
+    /** Looks this one file up again; the progress dialog shows what was found. */
+    onFetchInfo: (() -> Unit)? = null
 ) {
     var title by remember(item.id) { mutableStateOf(item.title ?: "") }
     var year by remember(item.id) { mutableStateOf(item.year ?: "") }
@@ -85,9 +87,14 @@ fun MediaDetailsDialog(
                         modifier = Modifier.fillMaxWidth().aspectRatio(1.5f)
                     )
                 }
-                if (onPickImage != null) {
-                    OutlinedButton(onClick = { onPickImage { picked -> artworkUrl = picked } }) {
-                        Text("Choose image…")
+                androidx.compose.foundation.layout.Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (onPickImage != null) {
+                        OutlinedButton(onClick = { onPickImage { picked -> artworkUrl = picked } }) {
+                            Text("Choose image…")
+                        }
+                    }
+                    if (onFetchInfo != null) {
+                        OutlinedButton(onClick = onFetchInfo) { Text("Fetch artwork & info") }
                     }
                 }
                 AppTextField(

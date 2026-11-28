@@ -96,6 +96,7 @@ fun MediaBrowser(
     bottomBarFirst: FocusRequester? = null,
     /** Full-width rows after the library tiles, in the same scroll (search-site results). */
     gridFooter: (LazyGridScope.() -> Unit)? = null,
+    onFetchInfo: ((MediaItem) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var path by remember { mutableStateOf(listOf<String>()) }
@@ -208,6 +209,7 @@ fun MediaBrowser(
             copyingItemId = copyingItemId,
             copyProgress = copyProgress,
             footer = gridFooter,
+            onFetchInfo = onFetchInfo,
             modifier = Modifier.weight(1f).fillMaxWidth()
         )
         Spacer(Modifier.height(4.dp))

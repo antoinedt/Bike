@@ -31,6 +31,29 @@ export default function MediaDetailsPanel({
   const [saving, setSaving] = useState(false);
   const [pickingImage, setPickingImage] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const [fetching, setFetching] = useState(false);
+  const [fetchNote, setFetchNote] = useState<string | null>(null);
+
+  /** Looks this one file up again (iTunes / TMDb / MusicBrainz), replacing what it had. */
+  async function fetchInfo() {
+    setFetching(true);
+    setFetchNote(null);
+    try {
+      const all = await window.api.scanMetadata([item.id], true);
+      const fresh = all.find((i) => i.id === item.id);
+      if (fresh) {
+        setTitle(fresh.title ?? "");
+        setYear(fresh.year ?? "");
+        setArtworkUrl(fresh.artworkUrl);
+        onItemUpdated(fresh);
+        setFetchNote(fresh.artworkUrl || fresh.title ? "Updated. Save to keep any changes you make." : "No match found. You can fill it in yourself.");
+      }
+    } catch (err) {
+      setFetchNote(`Couldn't fetch: ${(err as Error).message}`);
+    } finally {
+      setFetching(false);
+    }
+  }
 
   function startEdit() {
     setTitle(item.title ?? "");
@@ -111,9 +134,15 @@ export default function MediaDetailsPanel({
           )}
           {editing ? (
             <div className="details-edit-form">
-              <button className="btn btn-small" onClick={() => void chooseImage()} disabled={pickingImage}>
-                {pickingImage ? "Choosing…" : "Choose image…"}
-              </button>
+              <div className="form-actions">
+                <button className="btn btn-small" onClick={() => void chooseImage()} disabled={pickingImage}>
+                  {pickingImage ? "Choosing…" : "Choose image…"}
+                </button>
+                <button className="btn btn-small" onClick={() => void fetchInfo()} disabled={fetching}>
+                  {fetching ? "Fetching…" : "Fetch artwork & info"}
+                </button>
+              </div>
+              {fetchNote && <p className="hint-inline">{fetchNote}</p>}
               <input
                 className="text-input"
                 placeholder="Title"

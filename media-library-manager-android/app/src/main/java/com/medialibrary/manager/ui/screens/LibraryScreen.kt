@@ -106,6 +106,18 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, isTv: Boolean, onPickImage: 
     val resumeStore = remember { com.medialibrary.manager.playback.ResumeStore(context) }
     val playback by viewModel.playback.collectAsState()
     val resumeEntries = remember(playback == null, items) { resumeStore.list() }
+    // Progress for "Fetch artwork & info" started from an item's edit dialog.
+    val fetchingArtwork by viewModel.isFetchingArtwork.collectAsState()
+    val scanEvents by viewModel.scanEvents.collectAsState()
+    val showScanDialog by viewModel.showScanDialog.collectAsState()
+    if (showScanDialog) {
+        com.medialibrary.manager.ui.components.ScanProgressDialog(
+            running = fetchingArtwork,
+            events = scanEvents,
+            onCancel = { viewModel.cancelFetchInfo() },
+            onClose = { viewModel.dismissScanDialog() }
+        )
+    }
 
     // Typing filters the library as you go; the Search button (or the keyboard's search key) also
     // asks the search sites, and their results are listed below the library's.
@@ -327,6 +339,7 @@ fun LibraryScreen(viewModel: MediaLibraryViewModel, isTv: Boolean, onPickImage: 
             },
             topBarFirst = filterRequester,
             gridFooter = siteResults,
+            onFetchInfo = { item -> viewModel.fetchInfo(setOf(item.id), force = true) },
             modifier = Modifier.weight(1f)
         )
         if (!isTv) com.medialibrary.manager.ui.components.CastBar(viewModel, Modifier.padding(top = 6.dp))

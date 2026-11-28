@@ -123,6 +123,8 @@ fun MediaGrid(
     copyProgress: Float? = null,
     /** Full-width rows after the tiles, in the same scroll (the Library's search-site results). */
     footer: (LazyGridScope.() -> Unit)? = null,
+    /** "Fetch artwork & info" for one item, from its edit dialog. */
+    onFetchInfo: ((MediaItem) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var editingItem by remember { mutableStateOf<MediaItem?>(null) }
@@ -270,7 +272,8 @@ fun MediaGrid(
             onClear = {
                 onClearInfo(item)
                 editingItem = null
-            }
+            },
+            onFetchInfo = onFetchInfo?.let { fetch -> { fetch(item); editingItem = null } }
         )
     }
 }
