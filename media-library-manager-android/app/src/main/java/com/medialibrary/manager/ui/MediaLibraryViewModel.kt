@@ -170,6 +170,8 @@ class MediaLibraryViewModel : ViewModel() {
         }
         // "Started X on TV" / "Started X, sent from Phone".
         viewModelScope.launch { remote.events.collect { _errorMessage.value = it } }
+        // Every message the app pops up goes to the log too, so "it showed an error" can be traced.
+        viewModelScope.launch { _errorMessage.collect { msg -> if (msg != null) com.medialibrary.manager.log.AppLog.log("message", msg) } }
         // New files landed in a library folder or share (a copy, or a finished download): rescan it.
         viewModelScope.launch {
             transfers.libraryChanged.collect { target ->
@@ -433,6 +435,10 @@ class MediaLibraryViewModel : ViewModel() {
                     tmdbApiKey = _settings.value.tmdbApiKey,
                     isCancelled = { scanCancelled },
                     onProgress = { event ->
+                        if (event.status == "error") com.medialibrary.manager.log.AppLog.log("artwork", "${event.itemName}: ${event.error}")
+                        event.log.filter { it.result == "error" }.forEach {
+                            com.medialibrary.manager.log.AppLog.log("artwork", "${event.itemName}: ${it.step} failed: ${it.detail}")
+                        }
                         _scanEvents.update { prev ->
                             val index = prev.indexOfFirst { it.itemId == event.itemId }
                             if (index >= 0) prev.toMutableList().also { it[index] = event } else prev + event
@@ -454,7 +460,10 @@ class MediaLibraryViewModel : ViewModel() {
                 _localItems.value = _localItems.value.map(::apply)
                 _networkItems.value = _networkItems.value.map(::apply)
                 itemCache.save(_localItems.value + _networkItems.value)
-            }.onFailure { _errorMessage.value = it.message }
+            }.onFailure {
+                com.medialibrary.manager.log.AppLog.log("artwork", "fetch failed: ${com.medialibrary.manager.log.AppLog.stackTrace(it).take(2000)}")
+                _errorMessage.value = it.message
+            }
             _isFetchingArtwork.value = false
         }
     }
